@@ -44,17 +44,8 @@ export function useEVStore() {
   const isAdmin = !isRevoked && (auth.currentUser?.email === 'jeffto135@gmail.com' || userProfile?.role === 'admin');
   const isSubAdmin = !isRevoked && (isAdmin || userProfile?.role === 'sub-admin');
 
-  // Fetch All Profiles (Sub-Admin and above)
-  useEffect(() => {
-    if (!isSubAdmin || !auth.currentUser) {
-      setAllProfiles([]);
-      return;
-    }
-    const q = query(collection(db, 'userProfiles'), orderBy('updatedAt', 'desc'));
-    return onSnapshot(q, (snap) => {
-      setAllProfiles(snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
-    });
-  }, [isSubAdmin, auth.currentUser]);
+  // Unified loading state
+  const isDataLoading = loading || profileLoading;
 
   // Sync User Profile
   useEffect(() => {
@@ -85,56 +76,61 @@ export function useEVStore() {
     return () => unsub();
   }, [auth.currentUser?.uid]);
 
-  // Fetch fleet data
+  // fetch all profiles
   useEffect(() => {
-    if (!isSubAdmin || !auth.currentUser) return;
-
-    // Fleet data (Activities and Polls for any admin level)
-    const aQuery = query(collection(db, 'activities'), orderBy('createdAt', 'desc'));
-    const unsubActivities = onSnapshot(aQuery, (snapshot) => {
-      const aList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Activity));
-      setFleetData(prev => ({ ...prev, activities: aList }));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'activities');
+    if (!isSubAdmin || !auth.currentUser) {
+      setAllProfiles([]);
+      return;
+    }
+    const q = query(collection(db, 'userProfiles'), orderBy('updatedAt', 'desc'));
+    return onSnapshot(q, (snap) => {
+      setAllProfiles(snap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
     });
+  }, [isSubAdmin, auth.currentUser]);
 
-    const pQuery = query(collection(db, 'polls'), orderBy('createdAt', 'desc'));
-    const unsubPolls = onSnapshot(pQuery, (snapshot) => {
-      const pList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Poll));
-      setFleetData(prev => ({ ...prev, polls: pList }));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'polls');
-    });
-
-    // Vehicles and Logs for Sub-Admin and above
-    let unsubVehicles = () => {};
-    let unsubLogs = () => {};
-
-    if (isSubAdmin) {
-      const vQuery = query(collection(db, 'vehicles'), orderBy('createdAt', 'desc'));
-      unsubVehicles = onSnapshot(vQuery, (snapshot) => {
-        const vList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vehicle));
-        setFleetData(prev => ({ ...prev, vehicles: vList }));
-      }, (error) => {
-        handleFirestoreError(error, OperationType.GET, 'vehicles');
-      });
-
-      const lQuery = query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(200));
-      unsubLogs = onSnapshot(lQuery, (snapshot) => {
-        const lList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LogEntry));
-        setFleetData(prev => ({ ...prev, logs: lList }));
-      }, (error) => {
-        handleFirestoreError(error, OperationType.GET, 'logs');
-      });
+  // Fetch Fleet Data (Admins)
+  useEffect(() => {
+    if (!isSubAdmin || !auth.currentUser) {
+      setFleetData({ vehicles: [], logs: [], activities: [], polls: [] });
+      return;
     }
 
+    // Use onSnapshot for real-time updates and local cache benefits
+    const unsubActivities = onSnapshot(
+      query(collection(db, 'activities'), orderBy('createdAt', 'desc')),
+      (snap) => {
+        setFleetData(prev => ({ ...prev, activities: snap.docs.map(d => ({ id: d.id, ...d.data() } as Activity)) }));
+      }
+    );
+
+    const unsubPolls = onSnapshot(
+      query(collection(db, 'polls'), orderBy('createdAt', 'desc')),
+      (snap) => {
+        setFleetData(prev => ({ ...prev, polls: snap.docs.map(d => ({ id: d.id, ...d.data() } as Poll)) }));
+      }
+    );
+
+    const unsubVehicles = onSnapshot(
+      query(collection(db, 'vehicles'), orderBy('createdAt', 'desc')),
+      (snap) => {
+        setFleetData(prev => ({ ...prev, vehicles: snap.docs.map(d => ({ id: d.id, ...d.data() } as Vehicle)) }));
+      }
+    );
+
+    const unsubLogs = onSnapshot(
+      query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(500)),
+      (snap) => {
+        setFleetData(prev => ({ ...prev, logs: snap.docs.map(d => ({ id: d.id, ...d.data() } as LogEntry)) }));
+      }
+    );
+
     return () => {
-      unsubVehicles();
-      unsubLogs();
       unsubActivities();
       unsubPolls();
+      unsubVehicles();
+      unsubLogs();
     };
-  }, [isAdmin, isSubAdmin, auth.currentUser]);
+  }, [isSubAdmin, auth.currentUser]);
 
   const updateSelectedVehicle = async (id: string | null) => {
     setSelectedVehicleId(id);
@@ -449,51 +445,59 @@ export function useEVStore() {
   const deleteAccount = async () => {
     if (!auth.currentUser) return;
     const user = auth.currentUser;
+    const uid = user.uid;
+
+    setLoading(true);
     try {
-      // 1. Delete logs
-      const logsQuery = query(collection(db, 'logs'), where('userId', '==', user.uid));
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+
+      // 1. Collect all logs
+      const logsQuery = query(collection(db, 'logs'), where('userId', '==', uid));
       const logsSnap = await getDocs(logsQuery);
-      await Promise.all(logsSnap.docs.map(d => deleteDoc(d.ref)));
+      logsSnap.forEach(doc => batch.delete(doc.ref));
 
-      // 2. Delete vehicles
-      const vehiclesQuery = query(collection(db, 'vehicles'), where('userId', '==', user.uid));
+      // 2. Collect all vehicles
+      const vehiclesQuery = query(collection(db, 'vehicles'), where('userId', '==', uid));
       const vehiclesSnap = await getDocs(vehiclesQuery);
-      await Promise.all(vehiclesSnap.docs.map(d => deleteDoc(d.ref)));
+      vehiclesSnap.forEach(doc => batch.delete(doc.ref));
 
-      // 3. Delete profile
-      await deleteDoc(doc(db, 'userProfiles', user.uid));
+      // 3. Collect notifications
+      const notifsQuery = query(collection(db, 'notifications'), where('userId', '==', uid));
+      const notifsSnap = await getDocs(notifsQuery);
+      notifsSnap.forEach(doc => batch.delete(doc.ref));
 
-      // 4. Clear local state
-      localStorage.removeItem('evlog_selected_vehicle_id');
-      setSelectedVehicleId(null);
+      // 4. User profile
+      batch.delete(doc(db, 'userProfiles', uid));
 
-      // 5. Delete auth user
+      // Execute batch deletion
+      await batch.commit();
+
+      // 5. Auth deletion (must be after data deletion success)
       try {
         await deleteUser(user);
-      } catch (error: any) {
-        if (error.code === 'auth/requires-recent-login') {
-          try {
-            const provider = new GoogleAuthProvider();
-            if (user.email) {
-              provider.setCustomParameters({ login_hint: user.email });
-            }
-            await reauthenticateWithPopup(user, provider);
-            localStorage.removeItem('evlog_selected_vehicle_id');
-            setSelectedVehicleId(null);
-            await deleteUser(user);
-          } catch (reauthError: any) {
-            if (reauthError.code === 'auth/user-mismatch') {
-              throw new Error('重新驗證失敗：請選擇正確的帳戶進行刪除。 / RE-AUTH FAILED: Please select the correct account.');
-            }
-            throw reauthError;
-          }
+      } catch (authError: any) {
+        if (authError.code === 'auth/requires-recent-login') {
+          const provider = new GoogleAuthProvider();
+          if (user.email) provider.setCustomParameters({ login_hint: user.email });
+          await reauthenticateWithPopup(user, provider);
+          await deleteUser(user);
         } else {
-          throw error;
+          throw authError;
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Account deletion failed:", error);
       throw error;
+    } finally {
+      // Force UI reset even on partial failure
+      setTimeout(() => {
+        setVehicles([]);
+        setLogs([]);
+        setSelectedVehicleId(null);
+        localStorage.removeItem('evlog_selected_vehicle_id');
+        setLoading(false);
+      }, 100);
     }
   };
 

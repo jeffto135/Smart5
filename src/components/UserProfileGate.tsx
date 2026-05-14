@@ -38,6 +38,7 @@ export const UserProfileGate: React.FC<UserProfileGateProps> = ({ user, userProf
     setSaving(true);
     try {
       await onUpdateProfile({ phoneNumber: phone });
+      alert('帳戶已啟動 / ACCOUNT ACTIVATED');
     } catch (error) {
       console.error("Failed to update profile:", error);
     } finally {

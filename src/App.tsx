@@ -82,6 +82,18 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const handleAccountDeletion = async () => {
+    try {
+      await evStore.deleteAccount();
+      // On success, reset UI state
+      setUser(null);
+      setView('dashboard');
+      window.location.reload(); // Refresh to clean everything
+    } catch (error: any) {
+      alert('刪除失敗: ' + error.message);
+    }
+  };
+
   const handleLogin = async () => {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
@@ -101,6 +113,34 @@ export default function App() {
       setIsLoggingIn(false);
     }
   };
+
+  const isActuallyInitializing = isInitializing || (user && evStore.profileLoading);
+
+  if (isActuallyInitializing) {
+    return (
+      <div className="min-h-screen bg-cyber-bg flex flex-col items-center justify-center p-6 text-center space-y-6">
+        <div className="relative">
+          <div className="w-20 h-20 bg-cyber-green/5 border border-cyber-green/20 rounded-2xl flex items-center justify-center animate-pulse">
+            <Car size={40} className="text-cyber-green/40" />
+          </div>
+          <div className="absolute inset-0 border-2 border-cyber-green/30 rounded-2xl animate-ping opacity-20" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-mono font-bold tracking-widest text-cyber-green cyber-text-glow">INITIALIZING</h1>
+          <div className="flex gap-1 justify-center">
+            {[1, 2, 3].map(i => (
+              <motion.div 
+                key={i}
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
+                className="w-1.5 h-1.5 bg-cyber-green shadow-[0_0_8px_#CCFF00]" 
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleUpdateLog = async (logId: string, newData: any) => {
     const logIndex = evStore.logs.findIndex((l) => l.id === logId);

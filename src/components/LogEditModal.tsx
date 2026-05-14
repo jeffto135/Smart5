@@ -60,11 +60,14 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
         cost, 
         location 
       });
-      onClose();
+      alert('更新成功 / UPDATE SUCCESSFUL');
     } catch (error: any) {
       alert('儲存失敗：' + error.message);
     } finally {
-      setSubmitting(false);
+      setTimeout(() => {
+        setSubmitting(false);
+        onClose();
+      }, 100);
     }
   };
 
@@ -83,11 +86,14 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
     try {
       await onDelete();
-      onClose();
+      alert('紀錄已刪除 / DELETED');
     } catch (error: any) {
       alert('刪除失敗：' + error.message);
     } finally {
-      setSubmitting(false);
+      setTimeout(() => {
+        setSubmitting(false);
+        onClose();
+      }, 100);
     }
   };
 

@@ -39,39 +39,42 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-sm bg-[#1a1a1a] border-2 border-cyber-green rounded-2xl p-6 shadow-[0_0_30px_rgba(204,255,0,0.2)]"
+            className="relative w-full max-w-sm bg-[#0a0a0a]/95 border-2 border-cyber-green rounded-2xl p-8 shadow-[0_0_50px_rgba(204,255,0,0.15)] overflow-hidden"
           >
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(204,255,0,0.3)] ${
-                variant === 'danger' ? 'bg-red-500/10 text-red-500 border border-red-500/30' : 'bg-cyber-green/10 text-cyber-green border border-cyber-green/30'
+            {/* Cyber Grid Pattern Background */}
+            <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#CCFF00 1px, transparent 0)', backgroundSize: '20px 20px' }}></div>
+            
+            <div className="flex flex-col items-center text-center space-y-6 relative z-10">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center rotate-45 border-2 transition-all duration-500 ${
+                variant === 'danger' ? 'bg-red-500/10 text-red-500 border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-cyber-green/10 text-cyber-green border-cyber-green/50 shadow-[0_0_20px_rgba(204,255,0,0.2)]'
               }`}>
-                {variant === 'danger' ? <AlertTriangle size={24} /> : <Info size={24} />}
+                <div className="-rotate-45">
+                  {variant === 'danger' ? <AlertTriangle size={32} /> : <Info size={32} />}
+                </div>
               </div>
 
               <div className="space-y-2">
-                <h3 className={`text-lg font-mono font-bold uppercase tracking-widest ${
-                  variant === 'danger' ? 'text-red-500' : 'text-cyber-green'
-                }`}>
+                <h3 className="text-xl font-mono font-black italic uppercase tracking-tighter text-white">
                   {title}
                 </h3>
-                <p className="text-xs text-white/60 font-mono leading-relaxed">
+                <p className="text-[10px] text-white/50 font-mono leading-relaxed uppercase tracking-widest px-4">
                   {message}
                 </p>
               </div>
 
-              <div className="flex gap-3 w-full pt-2">
-                <button
-                  onClick={onCancel}
-                  className="flex-1 py-3 rounded-xl bg-white/5 text-white/40 text-xs font-mono font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/10"
-                >
-                  {cancelText}
-                </button>
+              <div className="flex flex-col gap-3 w-full pt-4">
                 <CyberButton
                   onClick={onConfirm}
-                  className={`flex-1 text-xs py-3 ${variant === 'danger' ? 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : ''}`}
+                  className="w-full text-xs py-4 font-black uppercase italic"
                 >
-                  {confirmText}
+                  {confirmText} / CONFIRM
                 </CyberButton>
+                <button
+                  onClick={onCancel}
+                  className="w-full py-4 rounded-xl bg-white/5 text-white/30 text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                >
+                  {cancelText} / CANCEL
+                </button>
               </div>
             </div>
 

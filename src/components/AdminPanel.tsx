@@ -367,14 +367,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         limit: finalLimit,
         status: 'open'
       });
-      setActTitle('');
-      setActDate('');
-      setActLocation('');
-      setActLimit(20);
-      setShowAddActivity(false);
+      alert('活動已發佈 / ACTIVITY PUBLISHED');
     } catch (error) {
       console.error("Failed to create activity:", error);
-      alert('發佈失敗');
+      alert('發佈失敗 / FAILED');
+    } finally {
+      // Force UI reset with delay
+      setTimeout(() => {
+        setActTitle('');
+        setActDate('');
+        setActLocation('');
+        setActLimit(20);
+        setShowAddActivity(false);
+        setEditingId(null);
+      }, 100);
     }
   };
 
@@ -406,12 +412,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         question: pollQuestion,
         options: pollOptions.map(text => ({ text, votes: 0 }))
       });
-      setPollQuestion('');
-      setPollOptions(['', '']);
-      setShowAddPoll(false);
+      alert('投票已建立了 / POLL CREATED');
     } catch (error) {
       console.error("Failed to create poll:", error);
-      alert('發佈失敗');
+      alert('發佈失敗 / FAILED');
+    } finally {
+      // Force UI reset with delay
+      setTimeout(() => {
+        setPollQuestion('');
+        setPollOptions(['', '']);
+        setShowAddPoll(false);
+        setEditingId(null);
+      }, 100);
     }
   };
 
@@ -428,15 +440,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onConfirm: async () => {
         try {
           await onUpdateActivity(id, finalData);
-          setEditingId(null);
-          setActTitle('');
-          setActDate('');
-          setActLocation('');
-          setActLimit(20);
-          setShowAddActivity(false);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          alert('更新成功 / ACTIVITY UPDATED');
         } catch (error: any) {
           alert('更新失敗: ' + (error.message || '未知錯誤'));
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          setTimeout(() => {
+            setEditingId(null);
+            setActTitle('');
+            setActDate('');
+            setActLocation('');
+            setActLimit(20);
+            setShowAddActivity(false);
+          }, 100);
         }
       }
     });
@@ -451,13 +467,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onConfirm: async () => {
         try {
           await onUpdatePoll(id, data);
-          setEditingId(null);
-          setPollQuestion('');
-          setPollOptions(['', '']);
-          setShowAddPoll(false);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          alert('更新成功 / POLL UPDATED');
         } catch (error: any) {
           alert('更新失敗: ' + (error.message || '未知錯誤'));
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          setTimeout(() => {
+            setEditingId(null);
+            setPollQuestion('');
+            setPollOptions(['', '']);
+            setShowAddPoll(false);
+          }, 100);
         }
       }
     });
@@ -472,9 +492,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onConfirm: async () => {
         try {
           await onDeleteActivity(id);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          alert('活動已刪除 / ACTIVITY DELETED');
         } catch (error: any) {
           alert('刪除失敗: ' + (error.message || '未知錯誤'));
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
         }
       }
     });
@@ -489,9 +511,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onConfirm: async () => {
         try {
           await onDeletePoll(id);
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          alert('投票已刪除 / POLL DELETED');
         } catch (error: any) {
           alert('刪除失敗: ' + (error.message || '未知錯誤'));
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
         }
       }
     });
@@ -520,8 +544,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: '刪除紀錄',
       message: '此操作無法撤銷，確定要永久刪除嗎？',
       onConfirm: async () => {
-        await onDeleteLog(id);
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onDeleteLog(id);
+          alert('紀錄已刪除 / LOG DELETED');
+        } catch (error) {
+          alert('刪除失敗');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          setTimeout(() => {
+            setEditingLogId(null);
+          }, 100);
+        }
       }
     });
   };
@@ -533,9 +566,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: '更新紀錄',
       message: '確定要更新此項資料嗎？',
       onConfirm: async () => {
-        await onUpdateLog(id, data);
-        setEditingLogId(null);
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onUpdateLog(id, data);
+          alert('紀錄已更新 / LOG UPDATED');
+        } catch (error) {
+          alert('更新失敗');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          setTimeout(() => {
+            setEditingLogId(null);
+          }, 100);
+        }
       }
     });
   };
@@ -547,8 +588,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: '刪除車輛',
       message: '此操作無法撤銷，確定要永久刪除嗎？',
       onConfirm: async () => {
-        await onDeleteVehicle(id);
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onDeleteVehicle(id);
+          alert('車輛已刪除 / VEHICLE DELETED');
+        } catch (error) {
+          alert('刪除失敗');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };
@@ -560,9 +607,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: '刪除成員',
       message: '此操作無法撤銷，確定要永久刪除嗎？',
       onConfirm: async () => {
-        await onDeleteMember(id);
-        setSelectedMember(null);
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onDeleteMember(id);
+          alert('成員已刪除 / MEMBER DELETED');
+        } catch (error) {
+          alert('刪除失敗');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          setTimeout(() => {
+            setSelectedMember(null);
+          }, 100);
+        }
       }
     });
   };
@@ -587,8 +642,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: '清除所有活動',
       message: '此操作無法撤銷，確定要永久刪除嗎？',
       onConfirm: async () => {
-        await onClearActivities();
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onClearActivities();
+          alert('所有活動已清除 / ACTIVITIES CLEARED');
+        } catch (error) {
+          alert('清除失敗');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };
@@ -600,8 +661,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       title: '清除所有投票',
       message: '此操作無法撤銷，確定要永久刪除嗎？',
       onConfirm: async () => {
-        await onClearPolls();
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onClearPolls();
+          alert('所有投票已清除 / POLLS CLEARED');
+        } catch (error) {
+          alert('清除失敗');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };

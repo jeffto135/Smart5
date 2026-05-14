@@ -45,28 +45,37 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     e.preventDefault();
     setSubmitting(true);
     
-    const now = new Date();
-    const selectedDate = new Date(timestamp);
-    selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+    try {
+      const now = new Date();
+      const selectedDate = new Date(timestamp);
+      selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-    const data: any = { 
-      timestamp: Timestamp.fromDate(selectedDate),
-      odometer, 
-      batteryPercent: battery, 
-      cost, 
-      location,
-      distance: Math.max(0, distance),
-      batteryDiff: isCharging ? (battery - (vehicle.lastBatteryPercent || 0)) : Math.max(0, batteryDiff),
-      isCharging,
-    };
+      const data: any = { 
+        timestamp: Timestamp.fromDate(selectedDate),
+        odometer, 
+        batteryPercent: battery, 
+        cost, 
+        location,
+        distance: Math.max(0, distance),
+        batteryDiff: isCharging ? (battery - (vehicle.lastBatteryPercent || 0)) : Math.max(0, batteryDiff),
+        isCharging,
+      };
 
-    if (efficiency && !isNaN(efficiency)) {
-      data.efficiency = parseFloat(efficiency.toFixed(2));
+      if (efficiency && !isNaN(efficiency)) {
+        data.efficiency = parseFloat(efficiency.toFixed(2));
+      }
+
+      await onSave(data);
+      alert('記錄錄入成功 / LOGGED SUCCESSFUL');
+    } catch (error) {
+      console.error("Save error:", error);
+      alert('儲存失敗，請檢查輸入數據');
+    } finally {
+      setTimeout(() => {
+        setSubmitting(false);
+        onCancel();
+      }, 100);
     }
-
-    await onSave(data);
-    setSubmitting(false);
-    onCancel();
   };
 
   return (

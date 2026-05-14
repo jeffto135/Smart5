@@ -39,6 +39,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
 
   const [saving, setSaving] = useState(false);
 
+  const resetForm = () => {
+    setEditingVehicle(null);
+    setIsAdding(false);
+    setName('');
+    setPlate('');
+    setBrand('');
+    setModel('');
+    setCapacity(0);
+  };
+
   const openEdit = (v: Vehicle) => {
     setEditingVehicle(v);
     setIsAdding(false);
@@ -76,16 +86,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     try {
       if (isAdding) {
         await onAdd(data as any);
+        alert('車輛已成功新增 / VEHICLE ADDED');
       } else if (editingVehicle) {
         await onUpdate(editingVehicle.id, data);
+        alert('更新成功 / UPDATE SUCCESSFUL');
       }
-      setEditingVehicle(null);
-      setIsAdding(false);
     } catch (error) {
       console.error("Save error:", error);
-      alert('儲存失敗，請檢查網路連線。');
+      alert('儲存失敗，請檢查網路連線');
     } finally {
-      setSaving(false);
+      // Force UI reset with delay to ensure React state cycle
+      setTimeout(() => {
+        setSaving(false);
+        resetForm();
+      }, 100);
     }
   };
 
@@ -251,10 +265,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => {
-                setEditingVehicle(null);
-                setIsAdding(false);
-              }}
+              onClick={resetForm}
               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             />
             <motion.div
@@ -331,10 +342,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
 
                   <div className="flex flex-wrap gap-3 pt-4">
                     <button
-                      onClick={() => {
-                        setEditingVehicle(null);
-                        setIsAdding(false);
-                      }}
+                      onClick={resetForm}
                       className="flex-1 py-4 rounded-xl bg-white/5 border border-white/10 text-white/50 text-sm font-mono uppercase tracking-widest hover:bg-white/10 transition-colors"
                     >
                       取消
@@ -378,9 +386,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               className="relative w-full max-w-xs"
             >
-              <CyberCard title="危險操作" className="border-red-500/50">
+              <CyberCard title="危險操作" className="border-cyber-green/50 shadow-[0_0_30px_rgba(204,255,0,0.2)]">
                 <div className="py-4 space-y-6">
-                  <div className="text-center space-y-2">
+                  <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-12 h-12 rounded-full border-2 border-cyber-green/30 bg-cyber-green/10 flex items-center justify-center text-cyber-green animate-pulse">
+                      <Trash2 size={24} />
+                    </div>
                     <p className="text-white text-lg font-bold">確定要刪除車輛嗎？</p>
                     <p className="text-white/40 text-[10px] uppercase tracking-widest font-mono">此操作無法復原，所有紀錄將會保留但不再連結。</p>
                   </div>
@@ -392,18 +403,27 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                     >
                       取消
                     </button>
-                    <button
+                    <CyberButton
                       onClick={async () => {
                         if (editingVehicle) {
-                          await onDelete(editingVehicle.id);
-                          setShowDeleteConfirm(false);
-                          setEditingVehicle(null);
+                          try {
+                            await onDelete(editingVehicle.id);
+                            alert('刪除成功 / DELETED');
+                          } catch (error) {
+                            alert('刪除失敗');
+                          } finally {
+                            // Force immediate and delayed close sequence
+                            setShowDeleteConfirm(false);
+                            setTimeout(() => {
+                              resetForm();
+                            }, 100);
+                          }
                         }
                       }}
-                      className="flex-1 py-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-500 text-xs font-mono font-bold uppercase tracking-widest hover:bg-red-500/40 transition-colors shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                      className="flex-1"
                     >
                       確認刪除
-                    </button>
+                    </CyberButton>
                   </div>
                 </div>
               </CyberCard>
@@ -544,7 +564,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                           // Auth change will trigger redirect or logout
                         } catch (error) {
                           alert("刪除失敗。請嘗試重新登入後再次執行此操作。");
+                        } finally {
                           setIsDeletingAcc(false);
+                          setShowAccDeleteConfirm(false);
                         }
                       }}
                       className="w-full py-4 rounded-xl bg-red-600 text-white text-sm font-bold uppercase italic tracking-widest hover:bg-red-700 transition-all shadow-[0_0_20px_rgba(220,38,38,0.4)] disabled:opacity-50"
