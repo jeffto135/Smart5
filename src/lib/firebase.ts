@@ -1,12 +1,24 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigManual from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+// Use environment variables if available (for Vercel), otherwise fallback to the applet config
+const config = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigManual.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigManual.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigManual.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigManual.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigManual.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigManual.appId,
+};
+
+const databaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigManual.firestoreDatabaseId;
+
+const app = initializeApp(config);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
+}, databaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

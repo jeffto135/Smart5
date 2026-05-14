@@ -1,21 +1,16 @@
 {
-  "name": "EVlog Fleet",
+  "name": "EVlog",
   "short_name": "EVlog",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#050505",
+  "background_color": "#0a0a0a",
   "theme_color": "#CCFF00",
-  "description": "EV tracking and management system",
   "icons": [
     {
-      "src": "https://cdn.pixabay.com/photo/2021/01/21/11/02/ev-icon-5937107_960_720.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "https://cdn.pixabay.com/photo/2021/01/21/11/02/ev-icon-5937107_960_720.png",
+      "src": "https://img.icons8.com/neon/512/experimental-car-neon.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

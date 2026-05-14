@@ -170,6 +170,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editName, setEditName] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
+  const [vehicleSearch, setVehicleSearch] = useState('');
+  const [vehiclePage, setVehiclePage] = useState(1);
+  const VEHICLES_PER_PAGE = 20;
+
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberPage, setMemberPage] = useState(1);
+  const MEMBERS_PER_PAGE = 20;
+
+  const [logSearch, setLogSearch] = useState('');
+
   useEffect(() => {
     if (userProfile?.displayName) {
       setEditName(userProfile.displayName === '匿名用戶' ? '' : userProfile.displayName);
@@ -237,13 +247,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const sortedProfiles = useMemo(() => {
     const rolesOrder = { 'admin': 0, 'sub-admin': 1, 'member': 2 };
-    return [...allProfiles].sort((a, b) => {
+    const filtered = allProfiles.filter(p => {
+      const search = memberSearch.toLowerCase();
+      const displayName = p.displayName?.toLowerCase() || '';
+      const email = p.email?.toLowerCase() || '';
+      const phone = p.phoneNumber?.toLowerCase() || '';
+      return displayName.includes(search) || email.includes(search) || phone.includes(search);
+    });
+
+    return [...filtered].sort((a, b) => {
       const roleA = rolesOrder[a.role as keyof typeof rolesOrder] ?? 3;
       const roleB = rolesOrder[b.role as keyof typeof rolesOrder] ?? 3;
       if (roleA !== roleB) return roleA - roleB;
       return (b.joinedAt?.toMillis() || 0) - (a.joinedAt?.toMillis() || 0);
     });
-  }, [allProfiles]);
+  }, [allProfiles, memberSearch]);
+
+  const pagedProfiles = useMemo(() => {
+    const start = (memberPage - 1) * MEMBERS_PER_PAGE;
+    return sortedProfiles.slice(start, start + MEMBERS_PER_PAGE);
+  }, [sortedProfiles, memberPage]);
+
+  const filteredVehicles = useMemo(() => {
+    return fleetData.vehicles.filter(v => {
+      const search = vehicleSearch.toLowerCase();
+      const name = v.name.toLowerCase();
+      const plate = v.plate?.toLowerCase() || '';
+      const brand = v.brand.toLowerCase();
+      const model = v.model?.toLowerCase() || '';
+      return name.includes(search) || plate.includes(search) || brand.includes(search) || model.includes(search);
+    });
+  }, [fleetData.vehicles, vehicleSearch]);
+
+  const pagedVehicles = useMemo(() => {
+    const start = (vehiclePage - 1) * VEHICLES_PER_PAGE;
+    return filteredVehicles.slice(start, start + VEHICLES_PER_PAGE);
+  }, [filteredVehicles, vehiclePage]);
+
+  const filteredGroupedLogs = useMemo(() => {
+    const groups: Record<string, LogEntry[]> = {};
+    const search = logSearch.toLowerCase();
+    
+    fleetData.logs.forEach(log => {
+      const vehicle = fleetData.vehicles.find(v => v.id === log.vehicleId);
+      const plate = vehicle?.plate || '未知車牌';
+      const name = vehicle?.name || '';
+      
+      if (plate.toLowerCase().includes(search) || name.toLowerCase().includes(search)) {
+        if (!groups[plate]) groups[plate] = [];
+        groups[plate].push(log);
+      }
+    });
+    return groups;
+  }, [fleetData.logs, fleetData.vehicles, logSearch]);
 
   const getUserDetails = (uids: string[]) => {
     return uids.map(uid => {
@@ -924,7 +980,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              {(Object.entries(groupedLogs) as [string, LogEntry[]][]).map(([plate, logs]) => (
+              <div className="mb-4">
+                <CyberInput 
+                  placeholder="搜尋車牌或車名 / SEARCH LOGS..." 
+                  value={logSearch} 
+                  onChange={e => setLogSearch(e.target.value)}
+                />
+              </div>
+              {(Object.entries(filteredGroupedLogs) as [string, LogEntry[]][]).map(([plate, logs]) => (
                 <div key={plate} className="space-y-2">
                   <button 
                     onClick={() => setExpandedPlate(expandedPlate === plate ? null : plate)}
@@ -1092,7 +1155,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               className="space-y-4"
             >
               <h3 className="text-sm font-mono font-bold uppercase tracking-widest text-white/50 mb-6">成員管理</h3>
-              {sortedProfiles.map(profile => {
+              <div className="mb-4">
+                <CyberInput 
+                  placeholder="搜尋姓名、電話或電郵 / SEARCH MEMBERS..." 
+                  value={memberSearch} 
+                  onChange={e => {
+                    setMemberSearch(e.target.value);
+                    setMemberPage(1);
+                  }}
+                />
+              </div>
+              {pagedProfiles.map(profile => {
                 const userVehicles = fleetData.vehicles.filter(v => v.userId === profile.id);
                 return (
                   <CyberCard key={profile.id} className="bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer" onClick={() => setSelectedMember(profile)}>
@@ -1142,6 +1215,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </CyberCard>
                 );
               })}
+
+              {sortedProfiles.length > MEMBERS_PER_PAGE && (
+                <div className="flex justify-between items-center pt-4">
+                  <button 
+                    onClick={() => {
+                      setMemberPage(p => Math.max(1, p - 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={memberPage === 1}
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
+                  >
+                    PREV
+                  </button>
+                  <span className="text-[10px] font-mono text-white/20">PAGE {memberPage} / {Math.ceil(sortedProfiles.length / MEMBERS_PER_PAGE)}</span>
+                  <button 
+                    onClick={() => {
+                      setMemberPage(p => Math.min(Math.ceil(sortedProfiles.length / MEMBERS_PER_PAGE), p + 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={memberPage === Math.ceil(sortedProfiles.length / MEMBERS_PER_PAGE)}
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
+                  >
+                    NEXT
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -1153,7 +1252,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              {fleetData.vehicles.map(v => (
+              <div className="mb-4">
+                <CyberInput 
+                  placeholder="搜尋車牌、品牌或型號 / SEARCH VEHICLES..." 
+                  value={vehicleSearch} 
+                  onChange={e => {
+                    setVehicleSearch(e.target.value);
+                    setVehiclePage(1);
+                  }}
+                />
+              </div>
+
+              {pagedVehicles.map(v => (
                 <CyberCard key={v.id} className="p-4 bg-white/[0.02]">
                   <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center gap-3">
@@ -1192,6 +1302,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </CyberCard>
               ))}
+
+              {filteredVehicles.length > VEHICLES_PER_PAGE && (
+                <div className="flex justify-between items-center pt-4">
+                  <button 
+                    onClick={() => {
+                      setVehiclePage(p => Math.max(1, p - 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={vehiclePage === 1}
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
+                  >
+                    PREV
+                  </button>
+                  <span className="text-[10px] font-mono text-white/20">PAGE {vehiclePage} / {Math.ceil(filteredVehicles.length / VEHICLES_PER_PAGE)}</span>
+                  <button 
+                    onClick={() => {
+                      setVehiclePage(p => Math.min(Math.ceil(filteredVehicles.length / VEHICLES_PER_PAGE), p + 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={vehiclePage === Math.ceil(filteredVehicles.length / VEHICLES_PER_PAGE)}
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
+                  >
+                    NEXT
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
 

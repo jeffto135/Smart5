@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, BarChart3, Clock, CheckCircle2 } from 'lucide-react';
 import { Poll } from '../types';
 import { motion } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
+import { ConfirmationModal } from './ui/ConfirmationModal';
 import { format } from 'date-fns';
 
 interface PollListProps {
@@ -13,6 +14,18 @@ interface PollListProps {
 }
 
 export const PollList: React.FC<PollListProps> = ({ polls, userId, onVote, onClose }) => {
+  const [confirmingVote, setConfirmingVote] = useState<{ pollId: string; optionIndex: number } | null>(null);
+
+  const handleVoteClick = (pollId: string, optionIndex: number) => {
+    setConfirmingVote({ pollId, optionIndex });
+  };
+
+  const executeVote = async () => {
+    if (!confirmingVote) return;
+    await onVote(confirmingVote.pollId, confirmingVote.optionIndex);
+    setConfirmingVote(null);
+  };
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex items-center gap-4 mb-8">
@@ -80,7 +93,7 @@ export const PollList: React.FC<PollListProps> = ({ polls, userId, onVote, onClo
                             </div>
                           ) : (
                             <button
-                              onClick={() => onVote(poll.id, idx)}
+                              onClick={() => handleVoteClick(poll.id, idx)}
                               className="w-full p-4 text-left rounded-xl bg-white/5 border border-white/10 hover:border-cyber-green hover:bg-cyber-green/10 transition-all text-xs font-mono font-bold group relative overflow-hidden"
                             >
                               <div className="relative z-10 flex justify-between items-center">
@@ -109,6 +122,15 @@ export const PollList: React.FC<PollListProps> = ({ polls, userId, onVote, onClo
           );
         })
       )}
+
+      <ConfirmationModal
+        isOpen={!!confirmingVote}
+        title="確認投票"
+        message="確定要投下這一票嗎？\nSUBMIT YOUR VOTE?"
+        variant="info"
+        onConfirm={executeVote}
+        onCancel={() => setConfirmingVote(null)}
+      />
     </div>
   );
 };

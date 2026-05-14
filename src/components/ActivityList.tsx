@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Calendar, MapPin, Users, ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { Activity } from '../types';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { CyberButton } from './ui/CyberButton';
 import { CyberCard } from './ui/CyberCard';
+import { ConfirmationModal } from './ui/ConfirmationModal';
 
 interface ActivityListProps {
   activities: Activity[];
@@ -13,6 +14,18 @@ interface ActivityListProps {
 }
 
 export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, onRegister, onClose }) => {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  const handleRegisterClick = (id: string) => {
+    setConfirmingId(id);
+  };
+
+  const executeRegister = async () => {
+    if (!confirmingId) return;
+    await onRegister(confirmingId);
+    setConfirmingId(null);
+  };
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex items-center gap-4 mb-8">
@@ -85,7 +98,7 @@ export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, 
                       </div>
                     ) : (
                       <CyberButton 
-                        onClick={() => onRegister(activity.id)}
+                        onClick={() => handleRegisterClick(activity.id)}
                         disabled={isClosed || isFull}
                         className="py-2 px-8 text-[11px] h-10 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
                       >
@@ -99,6 +112,15 @@ export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, 
           );
         })
       )}
+
+      <ConfirmationModal
+        isOpen={!!confirmingId}
+        title="確認報名"
+        message="確定要報名參加此項活動嗎？\nJOIN THIS ACTIVITY?"
+        variant="info"
+        onConfirm={executeRegister}
+        onCancel={() => setConfirmingId(null)}
+      />
     </div>
   );
 };
