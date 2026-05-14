@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Represents an electric vehicle owned by a user.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nickname." },
+        "plate": { "type": "string", "description": "License plate." },
+        "brand": { "type": "string", "description": "Brand (e.g., Tesla)." },
+        "model": { "type": "string", "description": "Model." },
+        "batteryCapacity": { "type": "number", "description": "Total battery capacity in kWh." },
+        "userId": { "type": "string", "description": "Uploader UID." },
+        "lastOdometer": { "type": "number", "description": "Last recorded mileage." },
+        "lastBatteryPercent": { "type": "number", "description": "Last recorded battery percentage." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId"]
+    },
+    "Log": {
+      "title": "Log",
+      "description": "A single entry recording vehicle state.",
+      "type": "object",
+      "properties": {
+        "vehicleId": { "type": "string", "description": "Reference to Vehicle ID." },
+        "userId": { "type": "string", "description": "Uploader UID." },
+        "odometer": { "type": "number", "description": "Current total mileage." },
+        "batteryPercent": { "type": "number", "description": "Current battery percentage." },
+        "cost": { "type": "number", "description": "Charging cost in HKD." },
+        "location": { "type": "string", "description": "Optional location note." },
+        "distance": { "type": "number", "description": "Kilometers traveled since last log." },
+        "batteryDiff": { "type": "number", "description": "Battery percentage consumed since last log." },
+        "isCharging": { "type": "boolean", "description": "Auto-detected charging event." },
+        "efficiency": { "type": "number", "description": "Energy efficiency (kWh/100km)." },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["vehicleId", "userId", "odometer", "batteryPercent", "isCharging", "timestamp"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Extended user profile data.",
+      "type": "object",
+      "properties": {
+        "phoneNumber": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "sub-admin", "member"] },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phoneNumber", "role"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or user specific notifications.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "success", "alert", "reminder"] },
+        "readBy": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "readBy"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Event for users to register.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" },
+        "limit": { "type": "number" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date", "status"]
+    },
+    "Poll": {
+      "title": "Poll",
+      "description": "A real-time poll for users.",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "options": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "text": { "type": "string" },
+              "votes": { "type": "number" }
+            }
+          }
+        },
+        "voters": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["question", "options"]
+    }
+  },
+  "firestore": {
+    "vehicles": {
+      "schema": "Vehicle",
+      "description": "User's vehicles."
+    },
+    "logs": {
+      "schema": "Log",
+      "description": "Activity logs for vehicles."
+    },
+    "admins": {
+      "schema": { "type": "object", "properties": { "role": { "type": "string" } } },
+      "description": "System administrators."
+    },
+    "userProfiles": {
+      "schema": "UserProfile",
+      "description": "Private user information."
+    },
+    "activities": {
+      "schema": "Activity",
+      "description": "List of activities."
+    },
+    "polls": {
+      "schema": "Poll",
+      "description": "List of polls."
+    },
+    "notifications": {
+      "schema": "Notification",
+      "description": "List of system notifications."
+    }
+  }
+}

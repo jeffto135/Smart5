@@ -1,0 +1,195 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'jeffto135@gmail.com' ||
+        (exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isSubAdmin() {
+      return isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) && 
+                          get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.role == 'sub-admin');
+    }
+
+    // --- Vehicle Validation ---
+    function isValidVehicle(data) {
+      return (data.name is string || !data.keys().hasAll(['name'])) &&
+             (data.plate is string || !data.keys().hasAll(['plate'])) &&
+             (data.brand is string || !data.keys().hasAll(['brand'])) &&
+             (data.model is string || !data.keys().hasAll(['model'])) &&
+             (data.batteryCapacity is number || !data.keys().hasAll(['batteryCapacity'])) &&
+             data.userId == request.auth.uid &&
+             data.lastOdometer is number && data.lastOdometer >= 0 &&
+             data.lastBatteryPercent is number && data.lastBatteryPercent >= 0 && data.lastBatteryPercent <= 100;
+    }
+
+    // --- Log Validation ---
+    function isValidLog(data) {
+      return data.vehicleId is string && isValidId(data.vehicleId) &&
+             data.userId == request.auth.uid &&
+             data.odometer is number && data.odometer >= 0 &&
+             data.batteryPercent is number && data.batteryPercent >= 0 && data.batteryPercent <= 100 &&
+             (data.cost is number || !data.keys().hasAll(['cost'])) &&
+             (data.location is string || !data.keys().hasAll(['location'])) &&
+             (data.distance is number || !data.keys().hasAll(['distance'])) &&
+             (data.batteryDiff is number || !data.keys().hasAll(['batteryDiff'])) &&
+             (data.id is string || !data.keys().hasAll(['id'])) &&
+             data.timestamp is timestamp;
+    }
+
+    // --- UserProfile Validation ---
+    function isValidProfile(data) {
+      return (data.phoneNumber is string || !data.keys().hasAll(['phoneNumber'])) &&
+             data.role in ['admin', 'sub-admin', 'member'] &&
+             (data.email is string || !data.keys().hasAll(['email'])) &&
+             (data.displayName is string || !data.keys().hasAll(['displayName'])) &&
+             (data.photoURL is string || !data.keys().hasAll(['photoURL'])) &&
+             (data.joinedAt is timestamp || !data.keys().hasAll(['joinedAt'])) &&
+             data.updatedAt == request.time;
+    }
+
+    // --- Activity Validation ---
+    function isValidActivity(data) {
+      return data.title is string && data.title.size() <= 200 &&
+             data.date is string &&
+             data.location is string &&
+             data.limit is number && data.limit >= 1 &&
+             data.participants is list &&
+             data.status in ['open', 'closed'] &&
+             data.createdAt is timestamp;
+    }
+
+    // --- Poll Validation ---
+    function isValidPoll(data) {
+      return data.question is string && data.question.size() <= 500 &&
+             data.options is list && data.options.size() >= 2 &&
+             data.voters is list &&
+             data.createdAt is timestamp;
+    }
+
+    // --- Rules ---
+    
+    match /activities/{activityId} {
+      allow read: if isSignedIn();
+      allow create: if isSubAdmin() && isValidActivity(incoming());
+      allow update: if isSubAdmin() ||
+                      (isSignedIn() && 
+                       existing().status == 'open' &&
+                       existing().participants.size() < existing().limit &&
+                       !(request.auth.uid in existing().participants) &&
+                       incoming().participants.hasAll(existing().participants) &&
+                       incoming().participants.size() == existing().participants.size() + 1 &&
+                       request.auth.uid in incoming().participants &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['participants']));
+      allow delete: if isSubAdmin();
+    }
+
+    match /polls/{pollId} {
+      allow read: if isSignedIn();
+      allow create: if isSubAdmin() && isValidPoll(incoming());
+      allow update: if isSubAdmin() ||
+                      (isSignedIn() &&
+                       !(request.auth.uid in existing().voters) &&
+                       incoming().voters.hasAll(existing().voters) &&
+                       incoming().voters.size() == existing().voters.size() + 1 &&
+                       request.auth.uid in incoming().voters &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['options', 'voters']));
+      allow delete: if isSubAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == 'all');
+      allow create: if isSignedIn(); 
+      allow update: if isSignedIn() && (
+        isSubAdmin() || (
+          (resource.data.userId == request.auth.uid || resource.data.userId == 'all') &&
+          incoming().get('readBy', []).hasAll(existing().get('readBy', [])) &&
+          incoming().get('dismissedBy', []).hasAll(existing().get('dismissedBy', [])) &&
+          request.auth.uid in (incoming().get('readBy', []) + incoming().get('dismissedBy', [])) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['readBy', 'dismissedBy'])
+        )
+      );
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /userProfiles/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSubAdmin();
+      allow create: if isOwner(userId) && isValidProfile(incoming());
+      allow update: if (isOwner(userId) || isSubAdmin()) && isValidProfile(incoming()) && 
+                      (isSubAdmin() ? true : incoming().role == existing().role) &&
+                      (isAdmin() ? true : incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'updatedAt']));
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /admins/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /vehicles/{vehicleId} {
+      allow create: if isSignedIn() && isValidId(vehicleId) && 
+                      isValidVehicle(incoming()) &&
+                      incoming().createdAt == request.time;
+      
+      allow read: if isOwner(existing().userId) || isSubAdmin();
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isSubAdmin();
+
+      allow update: if (isOwner(existing().userId) || isSubAdmin()) && 
+                      isValidVehicle(incoming()) &&
+                      // isSubAdmin can change userId if needed, but owners cannot
+                      (isSubAdmin() ? true : incoming().userId == existing().userId) &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'plate', 'brand', 'model', 'batteryCapacity', 'lastOdometer', 'lastBatteryPercent', 'userId']);
+      
+      allow delete: if isOwner(existing().userId) || isSubAdmin();
+    }
+
+    match /logs/{logId} {
+      allow create: if isSignedIn() && isValidId(logId) &&
+                      isValidLog(incoming()) &&
+                      // Ensure vehicle belongs to user (or sub-admin can create for anyone)
+                      (isSubAdmin() || get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.userId == request.auth.uid);
+      
+      allow read: if isOwner(existing().userId) || isSubAdmin();
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isSubAdmin();
+
+      allow update: if (isOwner(existing().userId) || isSubAdmin()) &&
+                      isValidLog(incoming()) &&
+                      (isSubAdmin() ? true : (incoming().userId == existing().userId && incoming().vehicleId == existing().vehicleId)) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['odometer', 'batteryPercent', 'cost', 'location', 'distance', 'batteryDiff', 'timestamp', 'userId', 'vehicleId']);
+      
+      allow delete: if isOwner(existing().userId) || isSubAdmin();
+    }
+  }
+}
