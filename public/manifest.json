@@ -3,7 +3,8 @@
   "short_name": "EVlog",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
+  "orientation": "portrait",
+  "background_color": "#000000",
   "theme_color": "#CCFF00",
   "icons": [
     {
