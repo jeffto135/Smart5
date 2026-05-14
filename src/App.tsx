@@ -22,6 +22,7 @@ import { LogEntry } from './types';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isFirestoreOffline, setIsFirestoreOffline] = useState(false);
   const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList'>('dashboard');
   const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -78,6 +79,15 @@ export default function App() {
         setEditingLog(null);
       }
     });
+
+    // Check connectivity
+    const checkConn = async () => {
+      const { testFirestoreConnection } = await import('./lib/firebase');
+      const ok = await testFirestoreConnection();
+      setIsFirestoreOffline(!ok);
+    };
+    checkConn();
+
     return () => unsubscribe();
   }, []);
 
@@ -87,13 +97,16 @@ export default function App() {
     try {
       await signInWithGoogle();
     } catch (error: any) {
-      console.error('Initial redirect error:', error);
+      console.error('Login error:', error);
       if (error.code === 'auth/unauthorized-domain') {
         const domain = window.location.hostname;
         alert(`登錄失敗：未授權的網域。\n\n請在 Firebase 控制台將「${domain}」加入「授權網域」列表。\n\n路徑：Firebase Console > Authentication > Settings > Authorized domains`);
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        console.log('Login popup closed by user');
       } else {
-        alert('無法發起登錄：' + (error.message || '未知錯誤'));
+        alert('登錄發生錯誤: ' + (error.message || '未知錯誤'));
       }
+    } finally {
       setIsLoggingIn(false);
     }
   };
@@ -310,11 +323,14 @@ export default function App() {
                 <ChevronDown size={14} className={`text-cyber-green transition-transform duration-300 ${showVehicleSelector ? 'rotate-180' : ''}`} />
               )}
             </button>
-            <p className="text-[9px] uppercase tracking-[0.2em] opacity-40 font-mono flex gap-2">
+            <p className="text-[9px] uppercase tracking-[0.2em] opacity-40 font-mono flex gap-2 items-center">
               <span>{evStore.vehicle?.plate || (evStore.loading ? 'FETCHING' : 'OFFLINE')}</span>
               {evStore.vehicle?.batteryCapacity ? (
                 <span className="text-cyber-green/60">[{evStore.vehicle.batteryCapacity}kWh]</span>
               ) : null}
+              {isFirestoreOffline && (
+                <span className="text-red-500 animate-pulse">[CONNECTION LOST]</span>
+              )}
             </p>
 
             {/* Vehicle Selector Dropdown */}

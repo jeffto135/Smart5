@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from 'firebase/auth';
 import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfigManual from '../../firebase-applet-config.json';
 
@@ -20,39 +20,29 @@ console.log('Initializing Firebase with Project ID:', config.projectId);
 const app = initializeApp(config);
 
 // Only pass databaseId if it is NOT "(default)" or empty
+// experimentalForceLongPolling is crucial for some restricted network environments (like previews)
 export const db = (databaseId && databaseId !== '(default)') 
-  ? initializeFirestore(app, { 
-      experimentalForceLongPolling: true,
-      host: "firestore.googleapis.com",
-      ssl: true
-    }, databaseId)
-  : initializeFirestore(app, { 
-      experimentalForceLongPolling: true,
-      host: "firestore.googleapis.com",
-      ssl: true
-    });
+  ? initializeFirestore(app, { experimentalForceLongPolling: true }, databaseId)
+  : initializeFirestore(app, { experimentalForceLongPolling: true });
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const signInWithGoogle = () => signInWithRedirect(auth, googleProvider);
+export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 export const handleRedirectResult = () => getRedirectResult(auth);
 export const logout = () => signOut(auth);
 
-async function testConnection() {
+// Removed testConnection to avoid confusion during startup
+// It will be replaced by actual data fetching in the store
+ 
+export async function testFirestoreConnection() {
   try {
     const testDoc = doc(db, 'test', 'connection');
     await getDocFromServer(testDoc);
     console.log("Firebase Firestore connection successful.");
+    return true;
   } catch (error: any) {
-    if (error?.message?.includes('the client is offline')) {
-      console.error("Firebase is offline. This might be due to network issues or restricted environment.");
-    } else if (error?.code === 'permission-denied') {
-      console.warn("Firestore connection check: Permission denied (this is expected if rules are strict).");
-    } else {
-      console.error("Firebase Firestore connection test failed:", error);
-    }
+    console.error("Firebase Firestore connection test failed:", error);
+    return false;
   }
 }
-
-testConnection();
