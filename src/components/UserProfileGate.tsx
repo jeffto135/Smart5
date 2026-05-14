@@ -7,13 +7,26 @@ import { CyberCard } from './ui/CyberCard';
 interface UserProfileGateProps {
   user: any;
   userProfile: any;
+  profileLoading: boolean;
   onUpdateProfile: (data: { phoneNumber: string }) => Promise<void>;
   children: React.ReactNode;
 }
 
-export const UserProfileGate: React.FC<UserProfileGateProps> = ({ user, userProfile, onUpdateProfile, children }) => {
+export const UserProfileGate: React.FC<UserProfileGateProps> = ({ user, userProfile, profileLoading, onUpdateProfile, children }) => {
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // If still fetching profile, show a subtle loading state
+  if (profileLoading) {
+    return (
+      <div className="fixed inset-0 bg-cyber-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-2 border-cyber-green/20 border-t-cyber-green rounded-full animate-spin" />
+          <p className="text-[10px] font-mono text-cyber-green/60 uppercase tracking-widest">Verifying Identity...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Only show gate if user is logged in BUT profile has no phone number
   const needsPhone = user && (!userProfile || !userProfile.phoneNumber);

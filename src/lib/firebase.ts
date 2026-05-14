@@ -15,10 +15,23 @@ const config = {
 
 const databaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigManual.firestoreDatabaseId;
 
+console.log('Initializing Firebase with Project ID:', config.projectId);
+
 const app = initializeApp(config);
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-}, databaseId);
+
+// Only pass databaseId if it is NOT "(default)" or empty
+export const db = (databaseId && databaseId !== '(default)') 
+  ? initializeFirestore(app, { 
+      experimentalForceLongPolling: true,
+      host: "firestore.googleapis.com",
+      ssl: true
+    }, databaseId)
+  : initializeFirestore(app, { 
+      experimentalForceLongPolling: true,
+      host: "firestore.googleapis.com",
+      ssl: true
+    });
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -28,10 +41,16 @@ export const logout = () => signOut(auth);
 
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration or connectivity.");
+    const testDoc = doc(db, 'test', 'connection');
+    await getDocFromServer(testDoc);
+    console.log("Firebase Firestore connection successful.");
+  } catch (error: any) {
+    if (error?.message?.includes('the client is offline')) {
+      console.error("Firebase is offline. This might be due to network issues or restricted environment.");
+    } else if (error?.code === 'permission-denied') {
+      console.warn("Firestore connection check: Permission denied (this is expected if rules are strict).");
+    } else {
+      console.error("Firebase Firestore connection test failed:", error);
     }
   }
 }

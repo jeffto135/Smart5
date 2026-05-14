@@ -21,6 +21,7 @@ import { LogEntry } from './types';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList'>('dashboard');
   const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -56,8 +57,11 @@ export default function App() {
         }
       } catch (error: any) {
         console.error('Redirect login error:', error);
-        if (error.code === 'auth/network-request-failed') {
-          alert('登錄失敗：網絡請求失敗。請檢查網域授權或網絡連接。');
+        if (error.code === 'auth/unauthorized-domain') {
+          const domain = window.location.hostname;
+          alert(`登錄失敗：未授權的網域。\n\n請在 Firebase 控制台將「${domain}」加入「授權網域」列表。\n\n路徑：Firebase Console > Authentication > Settings > Authorized domains`);
+        } else if (error.code === 'auth/network-request-failed') {
+          alert('登錄失敗：網絡請求失敗。請檢查網絡連接或 Firebase 設定。');
         } else {
           alert('登錄發生錯誤: ' + (error.message || '未知錯誤'));
         }
@@ -66,7 +70,9 @@ export default function App() {
     checkRedirect();
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
+      console.log('Auth state changed:', u ? `Logged in as ${u.email}` : 'Logged out');
       setUser(u);
+      setIsInitializing(false);
       if (!u) {
         setView('dashboard');
         setEditingLog(null);
@@ -82,7 +88,12 @@ export default function App() {
       await signInWithGoogle();
     } catch (error: any) {
       console.error('Initial redirect error:', error);
-      alert('無法發起登錄：' + (error.message || '未知錯誤'));
+      if (error.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        alert(`登錄失敗：未授權的網域。\n\n請在 Firebase 控制台將「${domain}」加入「授權網域」列表。\n\n路徑：Firebase Console > Authentication > Settings > Authorized domains`);
+      } else {
+        alert('無法發起登錄：' + (error.message || '未知錯誤'));
+      }
       setIsLoggingIn(false);
     }
   };
@@ -176,6 +187,32 @@ export default function App() {
     });
   };
 
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-cyber-bg flex flex-col items-center justify-center p-6 text-center space-y-6">
+        <div className="relative">
+          <div className="w-20 h-20 bg-cyber-green/5 border border-cyber-green/20 rounded-2xl flex items-center justify-center animate-pulse">
+            <Car size={40} className="text-cyber-green/40" />
+          </div>
+          <div className="absolute inset-0 border-2 border-cyber-green/30 rounded-2xl animate-ping opacity-20" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-mono font-bold tracking-widest text-cyber-green cyber-text-glow">INITIALIZING</h1>
+          <div className="flex gap-1 justify-center">
+            {[1, 2, 3].map(i => (
+              <motion.div 
+                key={i}
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
+                className="w-1.5 h-1.5 bg-cyber-green shadow-[0_0_8px_#CCFF00]" 
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center space-y-12">
@@ -246,6 +283,7 @@ export default function App() {
       <UserProfileGate 
         user={user} 
         userProfile={evStore.userProfile} 
+        profileLoading={evStore.profileLoading}
         onUpdateProfile={evStore.updateUserProfile}
       >
         {/* Background decorations */}

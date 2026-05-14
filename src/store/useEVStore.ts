@@ -37,6 +37,7 @@ export function useEVStore() {
     polls: Poll[] 
   }>({ vehicles: [], logs: [], activities: [], polls: [] });
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   // Derive permissions
   const isRevoked = auth.currentUser?.email === 'apadrama30@gmail.com';
@@ -59,16 +60,20 @@ export function useEVStore() {
   useEffect(() => {
     if (!auth.currentUser) {
       setUserProfile(null);
+      setProfileLoading(false);
       return;
     }
+    setProfileLoading(true);
     const unsub = onSnapshot(doc(db, 'userProfiles', auth.currentUser.uid), (snap) => {
       if (snap.exists()) {
         setUserProfile({ id: snap.id, ...snap.data() } as UserProfile);
       } else {
         setUserProfile(null);
       }
+      setProfileLoading(false);
     }, (error) => {
       console.warn("Profile fetch failed:", error);
+      setProfileLoading(false);
     });
     return () => unsub();
   }, [auth.currentUser?.uid]);
@@ -753,6 +758,7 @@ export function useEVStore() {
     allProfiles,
     fleetData,
     userProfile,
+    profileLoading,
     addVehicle,
     updateVehicle,
     deleteVehicle,

@@ -99,6 +99,10 @@ service cloud.firestore {
 
     // --- Rules ---
     
+    match /test/connection {
+      allow read: if true;
+    }
+
     match /activities/{activityId} {
       allow read: if isSignedIn();
       allow create: if isSubAdmin() && isValidActivity(incoming());
