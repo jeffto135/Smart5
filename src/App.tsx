@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, signInWithGoogle, logout } from './lib/firebase';
+import { auth, signInWithGoogle, logout, handleRedirectResult } from './lib/firebase';
 import { useEVStore } from './store/useEVStore';
 import { Dashboard } from './components/Dashboard';
 import { LogEntryForm } from './components/LogEntryForm';
@@ -48,6 +48,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const result = await handleRedirectResult();
+        if (result?.user) {
+          console.log('Redirect result successful:', result.user.email);
+        }
+      } catch (error: any) {
+        console.error('Redirect login error:', error);
+        if (error.code === 'auth/network-request-failed') {
+          alert('登錄失敗：網絡請求失敗。請檢查網域授權或網絡連接。');
+        } else {
+          alert('登錄發生錯誤: ' + (error.message || '未知錯誤'));
+        }
+      }
+    };
+    checkRedirect();
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (!u) {
@@ -64,17 +81,8 @@ export default function App() {
     try {
       await signInWithGoogle();
     } catch (error: any) {
-      if (error.code === 'auth/popup-closed-by-user') {
-        console.log('Login popup closed by user');
-      } else if (error.code === 'auth/network-request-failed') {
-        alert('登錄失敗：網絡請求失敗。請檢查是否：\n1. 瀏覽器阻止了彈出視窗\n2. 安裝了廣告攔截器 (AdBlock)\n3. Firebase 控制台未授權當前網域\n\n建議：嘗試在「新分頁」中打開應用程式。');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        console.log('Login popup request cancelled (previous pending)');
-      } else {
-        console.error('Login error:', error);
-        alert('登錄發生錯誤: ' + (error.message || '未知錯誤'));
-      }
-    } finally {
+      console.error('Initial redirect error:', error);
+      alert('無法發起登錄：' + (error.message || '未知錯誤'));
       setIsLoggingIn(false);
     }
   };
