@@ -44,6 +44,7 @@ export interface UserProfile {
   email?: string;
   photoURL?: string;
   displayName?: string;
+  selectedVehicleId?: string | null;
   joinedAt?: Timestamp;
   updatedAt: Timestamp;
 }

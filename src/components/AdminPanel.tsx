@@ -359,18 +359,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleCreateActivity = async () => {
     if (!actTitle || !actDate) return;
     const finalLimit = Math.max(1, actLimit);
-    await onAddActivity({
-      title: actTitle,
-      date: actDate,
-      location: actLocation,
-      limit: finalLimit,
-      status: 'open'
-    });
-    setActTitle('');
-    setActDate('');
-    setActLocation('');
-    setActLimit(20);
-    setShowAddActivity(false);
+    try {
+      await onAddActivity({
+        title: actTitle,
+        date: actDate,
+        location: actLocation,
+        limit: finalLimit,
+        status: 'open'
+      });
+      setActTitle('');
+      setActDate('');
+      setActLocation('');
+      setActLimit(20);
+      setShowAddActivity(false);
+    } catch (error) {
+      console.error("Failed to create activity:", error);
+      alert('發佈失敗');
+    }
   };
 
   const handleSendNotification = async () => {
@@ -396,13 +401,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleCreatePoll = async () => {
     if (!pollQuestion || pollOptions.some(o => !o)) return;
-    await onAddPoll({
-      question: pollQuestion,
-      options: pollOptions.map(text => ({ text, votes: 0 }))
-    });
-    setPollQuestion('');
-    setPollOptions(['', '']);
-    setShowAddPoll(false);
+    try {
+      await onAddPoll({
+        question: pollQuestion,
+        options: pollOptions.map(text => ({ text, votes: 0 }))
+      });
+      setPollQuestion('');
+      setPollOptions(['', '']);
+      setShowAddPoll(false);
+    } catch (error) {
+      console.error("Failed to create poll:", error);
+      alert('發佈失敗');
+    }
   };
 
   const handleUpdateActivity = async (id: string, data: Partial<Activity>) => {

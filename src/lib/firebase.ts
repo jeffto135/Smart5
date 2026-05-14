@@ -15,15 +15,17 @@ const config = {
 
 const databaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigManual.firestoreDatabaseId;
 
-console.log('Initializing Firebase with Project ID:', config.projectId);
-
 const app = initializeApp(config);
 
 // Only pass databaseId if it is NOT "(default)" or empty
-// experimentalForceLongPolling is crucial for some restricted network environments (like previews)
+// experimentalForceLongPolling is often needed in restricted networks
 export const db = (databaseId && databaseId !== '(default)') 
-  ? initializeFirestore(app, { experimentalForceLongPolling: true }, databaseId)
-  : initializeFirestore(app, { experimentalForceLongPolling: true });
+  ? initializeFirestore(app, { 
+      experimentalForceLongPolling: true,
+    }, databaseId)
+  : initializeFirestore(app, { 
+      experimentalForceLongPolling: true,
+    });
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
@@ -35,14 +37,5 @@ export const logout = () => signOut(auth);
 // Removed testConnection to avoid confusion during startup
 // It will be replaced by actual data fetching in the store
  
-export async function testFirestoreConnection() {
-  try {
-    const testDoc = doc(db, 'test', 'connection');
-    await getDocFromServer(testDoc);
-    console.log("Firebase Firestore connection successful.");
-    return true;
-  } catch (error: any) {
-    console.error("Firebase Firestore connection test failed:", error);
-    return false;
-  }
-}
+// Removed testFirestoreConnection as it can be unreliable in some environments
+// Connectivity will be monitored by actual stream status if needed

@@ -73,15 +73,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       batteryCapacity: Number(capacity)
     };
 
-    if (isAdding) {
-      await onAdd(data as any); // Type cast as necessary if onAdd expects name string (already updated store)
-    } else if (editingVehicle) {
-      await onUpdate(editingVehicle.id, data);
+    try {
+      if (isAdding) {
+        await onAdd(data as any);
+      } else if (editingVehicle) {
+        await onUpdate(editingVehicle.id, data);
+      }
+      setEditingVehicle(null);
+      setIsAdding(false);
+    } catch (error) {
+      console.error("Save error:", error);
+      alert('儲存失敗，請檢查網路連線。');
+    } finally {
+      setSaving(false);
     }
-    
-    setSaving(false);
-    setEditingVehicle(null);
-    setIsAdding(false);
   };
 
   const selectedBrandData = HK_EV_MODELS.find(b => b.brand === brand);

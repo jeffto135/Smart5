@@ -22,7 +22,6 @@ import { LogEntry } from './types';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [isFirestoreOffline, setIsFirestoreOffline] = useState(false);
   const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList'>('dashboard');
   const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -79,14 +78,6 @@ export default function App() {
         setEditingLog(null);
       }
     });
-
-    // Check connectivity
-    const checkConn = async () => {
-      const { testFirestoreConnection } = await import('./lib/firebase');
-      const ok = await testFirestoreConnection();
-      setIsFirestoreOffline(!ok);
-    };
-    checkConn();
 
     return () => unsubscribe();
   }, []);
@@ -328,9 +319,6 @@ export default function App() {
               {evStore.vehicle?.batteryCapacity ? (
                 <span className="text-cyber-green/60">[{evStore.vehicle.batteryCapacity}kWh]</span>
               ) : null}
-              {isFirestoreOffline && (
-                <span className="text-red-500 animate-pulse">[CONNECTION LOST]</span>
-              )}
             </p>
 
             {/* Vehicle Selector Dropdown */}

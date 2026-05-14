@@ -23,7 +23,7 @@ import { OperationType, handleFirestoreError } from '../lib/utils';
 
 export function useEVStore() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(localStorage.getItem('evlog_selected_vehicle_id'));
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
@@ -65,8 +65,15 @@ export function useEVStore() {
     }
     setProfileLoading(true);
     const unsub = onSnapshot(doc(db, 'userProfiles', auth.currentUser.uid), (snap) => {
+      const profileData = snap.data();
       if (snap.exists()) {
-        setUserProfile({ id: snap.id, ...snap.data() } as UserProfile);
+        const profile = { id: snap.id, ...profileData } as UserProfile;
+        setUserProfile(profile);
+        
+        // Sync selectedVehicleId from cloud
+        if (profile.selectedVehicleId && profile.selectedVehicleId !== selectedVehicleId) {
+          setSelectedVehicleId(profile.selectedVehicleId);
+        }
       } else {
         setUserProfile(null);
       }
@@ -128,6 +135,19 @@ export function useEVStore() {
       unsubPolls();
     };
   }, [isAdmin, isSubAdmin, auth.currentUser]);
+
+  const updateSelectedVehicle = async (id: string | null) => {
+    setSelectedVehicleId(id);
+    if (auth.currentUser) {
+      try {
+        await setDoc(doc(db, 'userProfiles', auth.currentUser.uid), {
+          selectedVehicleId: id
+        }, { merge: true });
+      } catch (error) {
+        console.warn("Failed to sync vehicle selection:", error);
+      }
+    }
+  };
 
   const vehicle = vehicles.find(v => v.id === selectedVehicleId) || vehicles[0] || null;
 
@@ -481,7 +501,7 @@ export function useEVStore() {
     try {
       await deleteDoc(doc(db, 'vehicles', vehicleId));
       if (selectedVehicleId === vehicleId) {
-        setSelectedVehicleId(null);
+        await updateSelectedVehicle(null);
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'vehicles');
@@ -747,7 +767,7 @@ export function useEVStore() {
     vehicle,
     vehicles,
     selectedVehicleId,
-    setSelectedVehicleId,
+    setSelectedVehicleId: updateSelectedVehicle,
     logs,
     activities,
     polls,
