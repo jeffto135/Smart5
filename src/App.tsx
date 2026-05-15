@@ -289,6 +289,12 @@ export default function App() {
             </CyberButton>
           </div>
         </CyberCard>
+        
+        <footer className="mt-8 text-center">
+          <p className="text-[10px] text-white/20 font-mono tracking-widest uppercase">
+            Powered by <a href="https://effortless.com.hk/" target="_blank" rel="noopener noreferrer" className="hover:text-cyber-green transition-colors decoration-cyber-green/30 underline-offset-2 underline">Effortless Production Limited</a>
+          </p>
+        </footer>
       </div>
     );
   }
@@ -339,8 +345,12 @@ export default function App() {
       {/* Header */}
       <header className="p-8 flex justify-between items-center relative z-20">
         <div className="flex items-center gap-4 flex-1">
-          <div className="w-10 h-10 cyber-border flex items-center justify-center rounded-lg bg-cyber-green/5">
-            <div className="w-4 h-4 bg-cyber-green rounded-sm shadow-[0_0_10px_#CCFF00]"></div>
+          <div className="w-10 h-10 cyber-border flex items-center justify-center rounded-lg bg-cyber-green/5 overflow-hidden p-1">
+            <img 
+              src="https://effortless.com.hk/wp-content/uploads/2026/05/Smart5-owners-club-HK-logo-1-768x700.png" 
+              alt="Smart5 Club Logo" 
+              className="w-full h-full object-contain"
+            />
           </div>
           <div className="flex-1 min-w-0 relative">
             <button 
@@ -558,6 +568,12 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <footer className="mt-12 mb-4 text-center">
+          <p className="text-[10px] text-white/20 font-mono tracking-widest uppercase">
+            Powered by <a href="https://effortless.com.hk/" target="_blank" rel="noopener noreferrer" className="hover:text-cyber-green transition-colors decoration-cyber-green/30 underline-offset-2 underline">Effortless Production Limited</a>
+          </p>
+        </footer>
       </main>
 
       <AnimatePresence>
@@ -621,7 +637,7 @@ export default function App() {
           <div className="flex flex-1 justify-around items-center">
             {[
               { id: 'messages', label: '訊息', icon: MessageSquare },
-              { id: 'settings', label: '我的', icon: UserIcon },
+              { id: 'settings', label: '更多', icon: UserIcon },
             ].map((item) => (
               <button
                 key={item.id}

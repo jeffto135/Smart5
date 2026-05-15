@@ -1687,6 +1687,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <p className="text-[10px] uppercase font-mono tracking-[0.4em] text-white/20">暫無數據可供顯示</p>
         </div>
       )}
+
+      <footer className="mt-20 mb-8 text-center px-6">
+        <p className="text-[10px] text-white/20 font-mono tracking-widest uppercase">
+          Powered by <a href="https://effortless.com.hk/" target="_blank" rel="noopener noreferrer" className="hover:text-cyber-green transition-colors decoration-cyber-green/30 underline-offset-2 underline">Effortless Production Limited</a>
+        </p>
+      </footer>
     </div>
   );
 };

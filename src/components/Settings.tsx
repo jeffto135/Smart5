@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { Settings, Save, ArrowLeft, Car, ShieldCheck, Mail, ChevronRight, X, Trash2, Trophy, Phone, UserX } from 'lucide-react';
+import { Settings, Save, ArrowLeft, Car, ShieldCheck, Mail, ChevronRight, X, Trash2, Trophy, Phone, UserX, ExternalLink, BookOpen, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
@@ -109,7 +109,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
-          系統設定
+          更多資訊
         </h2>
         <div className="flex flex-col items-end gap-1">
           <button 
@@ -208,7 +208,93 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
           </section>
         )}
 
-        {/* Section 2: Vehicle Management */}
+        {/* Section 2: Useful Resources */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 px-1">
+            <div className="w-1 h-4 bg-cyber-green rounded-full shadow-[0_0_8px_rgba(204,255,0,0.5)]"></div>
+            <h3 className="text-sm font-mono font-bold uppercase tracking-[0.2em] text-white/80">實用資訊</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-3">
+            <a 
+              href="https://effortless.com.hk/smart5/smart5-%E6%96%B0%E7%95%8C%E5%81%9C%E8%BB%8A%E5%A0%B4/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="group block"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <MapPin className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">新界停車場</span>
+                  </div>
+                  <ExternalLink size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </a>
+
+            <a 
+              href="https://effortless.com.hk/smart5/smart5-%E4%B9%9D%E9%BE%8D%E5%81%9C%E8%BB%8A%E5%A0%B4/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="group block"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <MapPin className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">九龍停車場</span>
+                  </div>
+                  <ExternalLink size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </a>
+
+            <a 
+              href="https://effortless.com.hk/smart5/smart5-%E6%B8%AF%E5%B3%B6%E5%81%9C%E8%BB%8A%E5%A0%B4/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="group block"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <MapPin className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">港島停車場</span>
+                  </div>
+                  <ExternalLink size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </a>
+
+            <a 
+              href="https://effortless.com.hk/wp-content/uploads/2026/02/%EF%BC%8Csmart_user_manual_5_20250908_tc_260207_094711.pdf" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="group block"
+            >
+              <CyberCard className="bg-cyber-green/[0.02] border-cyber-green/20 hover:border-cyber-green/40 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/20 border border-cyber-green/30 flex items-center justify-center">
+                      <BookOpen className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-cyber-green">User Manual</span>
+                  </div>
+                  <ExternalLink size={14} className="text-cyber-green/40 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </a>
+          </div>
+        </section>
+
+        {/* Section 3: Vehicle Management */}
         <section className="space-y-4 pb-10">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
