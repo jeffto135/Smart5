@@ -13,6 +13,8 @@ import { PollList } from './components/PollList';
 import { NotificationList } from './components/NotificationList';
 import { UserProfileGate } from './components/UserProfileGate';
 import { ConfirmationModal } from './components/ui/ConfirmationModal';
+import { DisclaimerModal } from './components/DisclaimerModal';
+import { UserAgreementModal } from './components/UserAgreementModal';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
 import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun } from 'lucide-react';
@@ -28,6 +30,8 @@ export default function App() {
   const evStore = useEVStore();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showVehicleSelector, setShowVehicleSelector] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [showUserAgreement, setShowUserAgreement] = useState(false);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -287,13 +291,36 @@ export default function App() {
             >
               {isLoggingIn ? '正在登錄...' : '開始同步我的數據'}
             </CyberButton>
+
+            <p className="text-[10px] text-white/30 leading-relaxed max-w-[280px] mx-auto text-center">
+              點擊『開始同步我的數據』即表示您已同意
+              <button 
+                onClick={() => setShowUserAgreement(true)}
+                className="text-cyber-green hover:underline mx-0.5 transition-all"
+              >
+                [用戶協議]
+              </button>
+              與 
+              <button 
+                onClick={() => setShowDisclaimer(true)}
+                className="text-cyber-green hover:underline mx-0.5 transition-all"
+              >
+                [版權及免責聲明]
+              </button>。
+            </p>
           </div>
         </CyberCard>
         
-        <footer className="mt-8 text-center">
+        <footer className="mt-8 text-center space-y-2">
           <p className="text-[10px] text-white/20 font-mono tracking-widest uppercase">
             Powered by <a href="https://effortless.com.hk/" target="_blank" rel="noopener noreferrer" className="hover:text-cyber-green transition-colors decoration-cyber-green/30 underline-offset-2 underline">Effortless Production Limited</a>
           </p>
+          <button 
+            onClick={() => setShowDisclaimer(true)}
+            className="block w-full text-[9px] text-white/10 font-mono tracking-widest uppercase hover:text-white/30 transition-colors"
+          >
+            Copyright © 2026 Effortless Production Limited. All Rights Reserved.
+          </button>
         </footer>
       </div>
     );
@@ -569,10 +596,16 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <footer className="mt-12 mb-4 text-center">
+        <footer className="mt-12 mb-4 text-center space-y-2">
           <p className="text-[10px] text-white/20 font-mono tracking-widest uppercase">
             Powered by <a href="https://effortless.com.hk/" target="_blank" rel="noopener noreferrer" className="hover:text-cyber-green transition-colors decoration-cyber-green/30 underline-offset-2 underline">Effortless Production Limited</a>
           </p>
+          <button 
+            onClick={() => setShowDisclaimer(true)}
+            className="block w-full text-[9px] text-white/10 font-mono tracking-widest uppercase hover:text-white/30 transition-colors"
+          >
+            Copyright © 2026 Effortless Production Limited. All Rights Reserved.
+          </button>
         </footer>
       </main>
 
@@ -594,6 +627,16 @@ export default function App() {
         variant={confirmModal.variant}
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <DisclaimerModal 
+        isOpen={showDisclaimer}
+        onClose={() => setShowDisclaimer(false)}
+      />
+
+      <UserAgreementModal 
+        isOpen={showUserAgreement}
+        onClose={() => setShowUserAgreement(false)}
       />
 
       {/* Bottom Navigation */}

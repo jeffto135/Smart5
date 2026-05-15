@@ -37,6 +37,7 @@ import { CyberCard } from './ui/CyberCard';
 import { CyberButton } from './ui/CyberButton';
 import { CyberInput } from './ui/CyberInput';
 import { ConfirmationModal } from './ui/ConfirmationModal';
+import { DisclaimerModal } from './DisclaimerModal';
 import { Vehicle, LogEntry, Activity, Poll, UserProfile } from '../types';
 import { format } from 'date-fns';
 
@@ -152,6 +153,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editOdometer, setEditOdometer] = useState<number>(0);
   const [editCost, setEditCost] = useState<number>(0);
+
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -1688,11 +1691,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      <footer className="mt-20 mb-8 text-center px-6">
+      <footer className="mt-20 mb-8 text-center px-6 space-y-2">
         <p className="text-[10px] text-white/20 font-mono tracking-widest uppercase">
           Powered by <a href="https://effortless.com.hk/" target="_blank" rel="noopener noreferrer" className="hover:text-cyber-green transition-colors decoration-cyber-green/30 underline-offset-2 underline">Effortless Production Limited</a>
         </p>
+        <button 
+          onClick={() => setShowDisclaimer(true)}
+          className="block w-full text-[9px] text-white/10 font-mono tracking-widest uppercase hover:text-white/30 transition-colors"
+        >
+          Copyright © 2026 Effortless Production Limited. All Rights Reserved.
+        </button>
       </footer>
+
+      <DisclaimerModal 
+        isOpen={showDisclaimer}
+        onClose={() => setShowDisclaimer(false)}
+      />
     </div>
   );
 };

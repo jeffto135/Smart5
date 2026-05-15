@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { Settings, Save, ArrowLeft, Car, ShieldCheck, Mail, ChevronRight, X, Trash2, Trophy, Phone, UserX, ExternalLink, BookOpen, MapPin } from 'lucide-react';
+import { Settings, Save, ArrowLeft, Car, ShieldCheck, Mail, ChevronRight, X, Trash2, Trophy, Phone, UserX, ExternalLink, BookOpen, MapPin, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
 import { CyberCard } from './ui/CyberCard';
 import { Vehicle, UserProfile } from '../types';
 import { HK_EV_MODELS } from '../constants';
+import { DisclaimerModal } from './DisclaimerModal';
+import { UserAgreementModal } from './UserAgreementModal';
 
 interface SettingsPageProps {
   user: User | null;
@@ -29,6 +31,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showAccDeleteConfirm, setShowAccDeleteConfirm] = useState(false);
   const [isDeletingAcc, setIsDeletingAcc] = useState(false);
+  const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
+  const [showUserAgreementModal, setShowUserAgreementModal] = useState(false);
   
   // Modal states for form
   const [name, setName] = useState('');
@@ -295,7 +299,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
         </section>
 
         {/* Section 3: Vehicle Management */}
-        <section className="space-y-4 pb-10">
+        <section className="space-y-4">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <div className="w-1 h-4 bg-cyber-green rounded-full shadow-[0_0_8px_rgba(204,255,0,0.5)]"></div>
@@ -339,6 +343,49 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                 </CyberCard>
               </button>
             ))}
+          </div>
+        </section>
+
+        {/* Section 4: Legal & Policies */}
+        <section className="space-y-4 pb-12">
+          <div className="flex items-center gap-2 px-1">
+            <div className="w-1 h-4 bg-cyber-green rounded-full shadow-[0_0_8px_rgba(204,255,0,0.5)]"></div>
+            <h3 className="text-sm font-mono font-bold uppercase tracking-[0.2em] text-white/80">政策與協議</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            <button 
+              onClick={() => setShowUserAgreementModal(true)}
+              className="group block w-full text-left"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <FileText className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">用戶協議</span>
+                  </div>
+                  <ChevronRight size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </button>
+
+            <button 
+              onClick={() => setShowDisclaimerModal(true)}
+              className="group block w-full text-left"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <ShieldCheck className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">版權及免責聲明</span>
+                  </div>
+                  <ChevronRight size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </button>
           </div>
         </section>
       </div>
@@ -673,6 +720,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
           </div>
         )}
       </AnimatePresence>
+
+      <DisclaimerModal 
+        isOpen={showDisclaimerModal}
+        onClose={() => setShowDisclaimerModal(false)}
+      />
+
+      <UserAgreementModal 
+        isOpen={showUserAgreementModal}
+        onClose={() => setShowUserAgreementModal(false)}
+      />
     </div>
   );
 };
