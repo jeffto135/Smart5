@@ -269,7 +269,7 @@ export default function App() {
             <Car size={48} className="text-cyber-green" />
           </motion.div>
           <h1 className="text-5xl font-mono font-black italic uppercase tracking-tighter cyber-text-glow">
-            EVlog<span className="text-cyber-green">.</span>
+            Smart5 Owners<span className="text-cyber-green">.</span>
           </h1>
           <p className="text-[10px] uppercase tracking-[0.4em] opacity-40 tech-font">智能電動車記錄系統</p>
         </div>
