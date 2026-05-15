@@ -9,6 +9,7 @@ import { Vehicle, UserProfile } from '../types';
 import { HK_EV_MODELS } from '../constants';
 import { DisclaimerModal } from './DisclaimerModal';
 import { UserAgreementModal } from './UserAgreementModal';
+import { AdminConductModal } from './AdminConductModal';
 
 interface SettingsPageProps {
   user: User | null;
@@ -33,6 +34,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
   const [isDeletingAcc, setIsDeletingAcc] = useState(false);
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
   const [showUserAgreementModal, setShowUserAgreementModal] = useState(false);
+  const [showAdminConductModal, setShowAdminConductModal] = useState(false);
   
   // Modal states for form
   const [name, setName] = useState('');
@@ -386,6 +388,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                 </div>
               </CyberCard>
             </button>
+
+            <button 
+              onClick={() => setShowAdminConductModal(true)}
+              className="group block w-full text-left"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <ShieldCheck className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">管理員專業操守與監督聲明</span>
+                  </div>
+                  <ChevronRight size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </button>
           </div>
         </section>
       </div>
@@ -729,6 +748,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       <UserAgreementModal 
         isOpen={showUserAgreementModal}
         onClose={() => setShowUserAgreementModal(false)}
+      />
+
+      <AdminConductModal
+        isOpen={showAdminConductModal}
+        onClose={() => setShowAdminConductModal(false)}
       />
     </div>
   );
