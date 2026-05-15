@@ -685,7 +685,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <h1 className="text-2xl font-mono font-black italic uppercase tracking-tighter text-cyber-green shadow-[0_0_15px_rgba(204,255,0,0.3)]">
               管理後台
             </h1>
-            <p className="text-[10px] font-mono tracking-widest opacity-50">車隊管理系統 v4.0</p>
+            <p className="text-[10px] font-mono tracking-widest opacity-50">管理系統 v1.0</p>
           </div>
         </div>
         <div className="flex gap-2">
