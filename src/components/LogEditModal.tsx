@@ -59,6 +59,8 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
         userId: auth.currentUser?.uid,
         odometer, 
         batteryPercent: battery, 
+        date: timestamp,
+        status: battery > (log.batteryPercent || 0) ? "CHARGED" : "DRIVING",
         cost, 
         location 
       });

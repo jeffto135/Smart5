@@ -86,7 +86,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       try {
         // Query for ANY record before to determine if this is a cold start
         const anyBeforeQ = query(
-          collection(db, 'logs'),
+          collection(db, 'vehicleLogs'),
           where('vehicleId', '==', vehicle.id),
           limit(1)
         );
@@ -103,7 +103,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
         // Query for the closest previous record
         const q = query(
-          collection(db, 'logs'),
+          collection(db, 'vehicleLogs'),
           where('vehicleId', '==', vehicle.id),
           where('timestamp', '<', selectedTs),
           orderBy('timestamp', 'desc'),
@@ -193,16 +193,17 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
         const coldStartData: any = { 
-          timestamp: Timestamp.fromDate(selectedDate),
+          timestamp: Timestamp.fromDate(selectedDate), // Will be replaced by serverTimestamp in store, but good for local
           userId: auth.currentUser?.uid,
           odometer: Number(odometer), 
           batteryPercent: Number(battery), 
+          date: timestamp,
+          status: "DRIVING",
           cost: Number(cost), 
           location,
           distance: 0, 
           batteryDiff: 0, 
           isCharging: false,
-          status: "DRIVING", 
           createdAt: Timestamp.now()
         };
 
@@ -255,6 +256,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       userId: auth.currentUser?.uid,
       odometer: Number(odometer), 
       batteryPercent: Number(battery), 
+      date: timestamp,
+      status: isCharging ? "CHARGED" : "DRIVING",
       cost: Number(cost), 
       location,
       distance: Math.max(0, distance),
@@ -302,7 +305,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
   const setupLogSync = async (logId: string, catchUpInfo: any) => {
     const { onSnapshot: onSnap, doc: fireDoc } = await import('firebase/firestore');
-    const unsub = onSnap(fireDoc(db, 'logs', logId), (snap) => {
+    const unsub = onSnap(fireDoc(db, 'vehicleLogs', logId), (snap) => {
       if (snap.exists() && !snap.metadata.fromCache) {
         setSyncStage('synced');
         setSaveStatus({ type: 'success', message: '✅ 恭喜！離線記錄已成功補發上載至 Smart5 雲端庫！' });

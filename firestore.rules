@@ -64,6 +64,8 @@ service cloud.firestore {
              (data.distance is number || !data.keys().hasAll(['distance'])) &&
              (data.batteryDiff is number || !data.keys().hasAll(['batteryDiff'])) &&
              (data.id is string || !data.keys().hasAll(['id'])) &&
+             (data.date is string || !data.keys().hasAll(['date'])) &&
+             (data.status is string || !data.keys().hasAll(['status'])) &&
              data.timestamp is timestamp;
     }
 
@@ -110,6 +112,9 @@ service cloud.firestore {
              data.plateNumber is string &&
              data.qrCodeUsed is bool &&
              data.attended is bool &&
+             (data.status is string || !data.keys().hasAll(['status'])) &&
+             (data.cancelReason is string || !data.keys().hasAll(['cancelReason'])) &&
+             (data.lockoutUntil is timestamp || !data.keys().hasAll(['lockoutUntil'])) &&
              (data.attendedAt is timestamp || !data.keys().hasAll(['attendedAt']));
     }
 
@@ -220,7 +225,7 @@ service cloud.firestore {
       allow delete: if isOwner(existing().userId) || isSubAdmin();
     }
 
-    match /logs/{logId} {
+    match /vehicleLogs/{logId} {
       allow create: if isSignedIn() && isValidId(logId) &&
                       isValidLog(incoming()) &&
                       // Ensure vehicle belongs to user (or sub-admin can create for anyone)
@@ -245,7 +250,11 @@ service cloud.firestore {
     match /registrations/{regId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSubAdmin());
       allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidRegistration(incoming());
-      allow update: if isSubAdmin() && isValidRegistration(incoming());
+      allow update: if isSubAdmin() || (
+                      isSignedIn() && resource.data.userId == request.auth.uid &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['status', 'cancelReason', 'lockoutUntil', 'qrCodeUsed']) &&
+                      incoming().status == 'cancelled'
+                    );
       allow delete: if isSubAdmin();
     }
   }

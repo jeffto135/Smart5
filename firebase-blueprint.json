@@ -151,7 +151,7 @@
       "schema": "Vehicle",
       "description": "User's vehicles."
     },
-    "logs": {
+    "vehicleLogs": {
       "schema": "Log",
       "description": "Activity logs for vehicles."
     },

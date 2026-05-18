@@ -140,7 +140,7 @@ export function useEVStore() {
     );
 
     const unsubLogs = onSnapshot(
-      query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(500)),
+      query(collection(db, 'vehicleLogs'), orderBy('timestamp', 'desc'), limit(500)),
       (snap) => {
         setFleetData(prev => ({ ...prev, logs: snap.docs.map(d => ({ id: d.id, ...d.data() } as LogEntry)) }));
       }
@@ -332,7 +332,7 @@ export function useEVStore() {
     }
 
     const q = query(
-      collection(db, 'logs'),
+      collection(db, 'vehicleLogs'),
       where('userId', '==', auth.currentUser.uid),
       where('vehicleId', '==', vehicle.id),
       orderBy('timestamp', 'desc'),
@@ -382,6 +382,8 @@ export function useEVStore() {
   const addLog = async (data: { 
     odometer: number; 
     batteryPercent: number; 
+    date?: string;
+    status?: string;
     cost?: number; 
     location?: string; 
     timestamp?: any;
@@ -399,7 +401,7 @@ export function useEVStore() {
 
       // Check for existing log on the same day for merge logic
       const existingQuery = query(
-        collection(db, 'logs'),
+        collection(db, 'vehicleLogs'),
         where('vehicleId', '==', vehicle.id),
         where('timestamp', '>=', Timestamp.fromDate(startOfDay)),
         where('timestamp', '<=', Timestamp.fromDate(endOfDay)),
@@ -417,7 +419,7 @@ export function useEVStore() {
         const mergedLocation = [existingLog.location, data.location].filter(Boolean).join(', ');
 
         const prevOfExistingQuery = query(
-          collection(db, 'logs'),
+          collection(db, 'vehicleLogs'),
           where('vehicleId', '==', vehicle.id),
           where('timestamp', '<', Timestamp.fromDate(startOfDay)),
           orderBy('timestamp', 'desc'),
@@ -431,19 +433,23 @@ export function useEVStore() {
           ? (mergedIsCharging ? mergedBattery - prevOfExisting.batteryPercent : prevOfExisting.batteryPercent - mergedBattery)
           : 0;
 
-        await updateDoc(doc(db, 'logs', existingLog.id), {
-          odometer: mergedOdometer,
-          batteryPercent: mergedBattery,
-          cost: mergedCost,
+        await updateDoc(doc(db, 'vehicleLogs', existingLog.id), {
+          userId: auth.currentUser.uid,
+          vehicleId: vehicle.id,
+          odometer: Number(mergedOdometer),
+          batteryPercent: Number(mergedBattery),
+          date: data.date || dateStr,
+          status: data.status || (mergedIsCharging ? "CHARGED" : "DRIVING"),
+          cost: Number(mergedCost),
           isCharging: mergedIsCharging,
           location: mergedLocation,
           distance: Math.max(0, distance),
           batteryDiff: Math.max(0, batteryDiff),
-          timestamp: logTimestamp 
+          timestamp: serverTimestamp() 
         });
 
         const newestCheck = query(
-          collection(db, 'logs'),
+          collection(db, 'vehicleLogs'),
           where('vehicleId', '==', vehicle.id),
           orderBy('timestamp', 'desc'),
           limit(1)
@@ -451,8 +457,8 @@ export function useEVStore() {
         const newestSnap = await getDocs(newestCheck);
         if (newestSnap.docs[0].id === existingLog.id) {
           await updateDoc(doc(db, 'vehicles', vehicle.id), {
-            lastOdometer: mergedOdometer,
-            lastBatteryPercent: mergedBattery,
+            lastOdometer: Number(mergedOdometer),
+            lastBatteryPercent: Number(mergedBattery),
           });
         }
 
@@ -462,7 +468,7 @@ export function useEVStore() {
 
       // NEW LOG MODE - Using addDoc as requested for automatic ID
       const prevQuery = query(
-        collection(db, 'logs'),
+        collection(db, 'vehicleLogs'),
         where('vehicleId', '==', vehicle.id),
         where('timestamp', '<', logTimestamp),
         orderBy('timestamp', 'desc'),
@@ -472,7 +478,7 @@ export function useEVStore() {
       const prevLog = prevSnap.docs.length > 0 ? prevSnap.docs[0].data() as LogEntry : null;
 
       const nextQuery = query(
-        collection(db, 'logs'),
+        collection(db, 'vehicleLogs'),
         where('vehicleId', '==', vehicle.id),
         where('timestamp', '>', logTimestamp),
         orderBy('timestamp', 'asc'),
@@ -481,24 +487,30 @@ export function useEVStore() {
       const nextSnap = await getDocs(nextQuery);
       const nextLog = nextSnap.docs.length > 0 ? { id: nextSnap.docs[0].id, ...nextSnap.docs[0].data() } as LogEntry : null;
 
-      const isCharging = data.isCharging !== undefined ? data.isCharging : (prevLog ? data.batteryPercent > prevLog.batteryPercent : false);
-      const distance = data.distance !== undefined ? data.distance : (prevLog ? data.odometer - prevLog.odometer : 0);
+      const isCharging = data.isCharging !== undefined ? data.isCharging : (prevLog ? Number(data.batteryPercent) > prevLog.batteryPercent : false);
+      const distance = data.distance !== undefined ? data.distance : (prevLog ? Number(data.odometer) - prevLog.odometer : 0);
       const batteryDiff = data.batteryDiff !== undefined ? data.batteryDiff : (prevLog 
-        ? (isCharging ? data.batteryPercent - prevLog.batteryPercent : prevLog.batteryPercent - data.batteryPercent)
+        ? (isCharging ? Number(data.batteryPercent) - prevLog.batteryPercent : prevLog.batteryPercent - Number(data.batteryPercent))
         : 0);
 
-      const logDoc = await addDoc(collection(db, 'logs'), {
-        ...data,
-        vehicleId: vehicle.id,
+      const logDoc = await addDoc(collection(db, 'vehicleLogs'), {
         userId: auth.currentUser.uid,
+        vehicleId: vehicle.id,
+        odometer: Number(data.odometer),
+        batteryPercent: Number(data.batteryPercent),
+        date: data.date || dateStr,
+        status: data.status || (isCharging ? "CHARGED" : "DRIVING"),
+        cost: Number(data.cost || 0),
+        location: data.location || '',
         distance: Math.max(0, distance),
         batteryDiff: Math.max(0, batteryDiff),
         isCharging,
-        timestamp: logTimestamp,
+        timestamp: serverTimestamp(),
       });
       
       const logId = logDoc.id;
-      // Update with its own ID (optional, but keep for consistency with existing types if needed locally)
+      // Keep ID field if needed by existing types, otherwise rules might reject if not in isValidLog
+      // isValidLog says (data.id is string || !data.keys().hasAll(['id']))
       await updateDoc(logDoc, { id: logId });
 
       let catchUpInfo = null;
@@ -518,10 +530,11 @@ export function useEVStore() {
           };
         }
 
-        await updateDoc(doc(db, 'logs', nextLog.id), {
+        await updateDoc(doc(db, 'vehicleLogs', nextLog.id), {
           distance: Math.max(0, nextDistance),
           batteryDiff: Math.max(0, nextBatteryDiff),
-          isCharging: nextIsCharging
+          isCharging: nextIsCharging,
+          timestamp: serverTimestamp() // Ensure rule compliance
         });
       }
 
@@ -535,23 +548,26 @@ export function useEVStore() {
       if ('vibrate' in navigator) navigator.vibrate(50);
       return { logId, catchUpInfo };
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'logs');
+      handleFirestoreError(error, OperationType.CREATE, 'vehicleLogs');
     }
   };
 
   const updateLog = async (logId: string, data: Partial<LogEntry>) => {
     try {
-      await updateDoc(doc(db, 'logs', logId), data);
+      await updateDoc(doc(db, 'vehicleLogs', logId), {
+        ...data,
+        timestamp: serverTimestamp()
+      });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'logs');
+      handleFirestoreError(error, OperationType.UPDATE, 'vehicleLogs');
     }
   };
 
   const deleteLog = async (logId: string) => {
     try {
-      await deleteDoc(doc(db, 'logs', logId));
+      await deleteDoc(doc(db, 'vehicleLogs', logId));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, 'logs');
+      handleFirestoreError(error, OperationType.DELETE, 'vehicleLogs');
     }
   };
 
@@ -602,7 +618,7 @@ export function useEVStore() {
       const batch = writeBatch(db);
 
       // 1. Collect all logs
-      const logsQuery = query(collection(db, 'logs'), where('userId', '==', uid));
+      const logsQuery = query(collection(db, 'vehicleLogs'), where('userId', '==', uid));
       const logsSnap = await getDocs(logsQuery);
       logsSnap.forEach(doc => batch.delete(doc.ref));
 
