@@ -3,27 +3,28 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
 import { getMessaging, isSupported } from "firebase/messaging";
 
-// 全面鎖定 smart5-nine 專案憑證，並支援本地環境變數覆蓋
+// 🚨 粗暴重置：完全不用 import.meta.env，直接把 smart5-nine 的真實憑證寫死在裡面！
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY, 
+  apiKey: "AIzaSyCAM2sX_OVXioieZYZG5Jyyk3gB_tLxddU", 
   authDomain: "smart5-nine.firebaseapp.com",
   projectId: "smart5-nine",
   storageBucket: "smart5-nine.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  messagingSenderId: "592243449709", 
+  appId: "1:592243449709:web:e10c4ce39444c462fe0464",
+  measurementId: "G-ZF1ERRJQSP"
 };
 
-console.log("📡 [Firebase 核心] 正在重置並航向原始本陣:", firebaseConfig.projectId);
+// 🌟 終極診斷：直接把目前連線的 Project ID 彈成 Alert，讓我們在手機/網頁上一開機就能看到！
+if (typeof window !== "undefined") {
+  alert("📡 【目前專案無所遁形】正在強制連線至: " + firebaseConfig.projectId);
+}
 
-// 初始化 App (防重複)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// 恢復預設的 (default) 資料庫
+// 確保括號內完全空白，絕對不連去那個 ai-studio 具名資料庫！
 const db = getFirestore(app); 
 const auth = getAuth(app);
 
-// 安全的通知獲取函式，絕不卡死主頁
 export const getSafeMessaging = async () => {
   if (typeof window !== "undefined" && "serviceWorker" in navigator) {
     try {
