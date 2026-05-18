@@ -629,11 +629,41 @@ export function useEVStore() {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
     const activity = activities.find(a => a.id === id);
-    if (!activity || activity.participants.includes(uid)) return;
+    if (!activity) return;
+    
+    // 1. Is it a past activity for registration?
+    const now = new Date();
+    let regDeadline: Date;
+    
+    if (activity.deadlineDate) {
+      // Deadline date: stop at end of that day
+      regDeadline = new Date(activity.deadlineDate + 'T23:59:59');
+    } else {
+      // No deadline date: stop at event end time
+      regDeadline = activity.eventEndDate?.toDate() || new Date(activity.date + 'T23:59:59');
+    }
+
+    if (now > regDeadline) {
+      throw new Error('活動報名已截止 / REGISTRATION CLOSED');
+    }
+
+    if (activity.participants.includes(uid)) return;
     if (activity.participants.length >= activity.limit) return;
     
     try {
       const regId = `${id}_${uid}`;
+      const regDoc = doc(db, 'registrations', regId);
+      const { getDoc } = await import('firebase/firestore');
+      const snap = await getDoc(regDoc);
+      
+      if (snap.exists()) {
+        const existingData = snap.data() as ActivityRegistration;
+        if (existingData.lockoutUntil && existingData.lockoutUntil.toDate() > now) {
+          const lockoutTime = format(existingData.lockoutUntil.toDate(), 'yyyy-MM-dd HH:mm');
+          throw new Error(`系統鎖定中 / LOCKOUT: 取消後需等待至 ${lockoutTime} 後才可重新報名。`);
+        }
+      }
+
       const regData: ActivityRegistration = {
         id: regId,
         eventId: id,
@@ -641,13 +671,14 @@ export function useEVStore() {
         plateNumber: plate || '未知',
         qrCodeUsed: false,
         attended: false,
+        status: 'registered'
       };
 
       await Promise.all([
         updateDoc(doc(db, 'activities', id), {
           participants: arrayUnion(uid)
         }),
-        setDoc(doc(db, 'registrations', regId), regData)
+        setDoc(doc(db, 'registrations', regId), regData, { merge: true })
       ]);
 
       // Personal Success Notification
@@ -657,8 +688,72 @@ export function useEVStore() {
         message: `您已成功報名活動「${activity.title}」。請在活動中使用 QR Code 簽到。`,
         type: 'success'
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message.includes('LOCKOUT') || error.message.includes('ENDED')) throw error;
       handleFirestoreError(error, OperationType.UPDATE, 'activities');
+      throw error;
+    }
+  };
+
+  const cancelActivityRegistration = async (eventId: string, reason: string) => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const regId = `${eventId}_${uid}`;
+    const activity = activities.find(a => a.id === eventId);
+    
+    try {
+      const { arrayRemove } = await import('firebase/firestore');
+      const lockoutTime = Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+      
+      await Promise.all([
+        updateDoc(doc(db, 'registrations', regId), {
+          status: 'cancelled',
+          cancelReason: reason,
+          qrCodeUsed: true, // Invalidate QR code
+          lockoutUntil: lockoutTime
+        }),
+        updateDoc(doc(db, 'activities', eventId), {
+          participants: arrayRemove(uid)
+        }),
+        addNotification({
+          userId: uid,
+          title: '報名已取消 / REGISTRATION CANCELLED',
+          message: `您已取消活動「${activity?.title || '相關活動'}」的報名。系統冷卻鎖已啟動，24小時內無法再次報名。`,
+          type: 'alert'
+        })
+      ]);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'registrations');
+      throw error;
+    }
+  };
+
+  const adminRestoreRegistration = async (eventId: string, userId: string) => {
+    if (!isSubAdmin) return;
+    const regId = `${eventId}_${userId}`;
+    const activity = fleetData.activities.find(a => a.id === eventId);
+    
+    try {
+      await Promise.all([
+        updateDoc(doc(db, 'registrations', regId), {
+          status: 'registered',
+          qrCodeUsed: false,
+          lockoutUntil: null,
+          cancelReason: null
+        }),
+        updateDoc(doc(db, 'activities', eventId), {
+          participants: arrayUnion(userId)
+        }),
+        addNotification({
+          userId: userId,
+          title: '報名已恢復 / REGISTRATION RESTORED',
+          message: `管理員已手動恢復您在活動「${activity?.title || '相關活動'}」的報名。`,
+          type: 'success'
+        })
+      ]);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'registrations');
+      throw error;
     }
   };
 
@@ -973,6 +1068,8 @@ export function useEVStore() {
     updateActivity,
     deleteActivity,
     registerForActivity,
+    cancelActivityRegistration,
+    adminRestoreRegistration,
     updateRegistration,
     deleteRegistration,
     addParkingLot,

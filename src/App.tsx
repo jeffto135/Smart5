@@ -347,6 +347,7 @@ export default function App() {
         onClearActivities={evStore.clearAllActivities}
         onClearPolls={evStore.clearAllPolls}
         onUpdateRegistration={evStore.updateRegistration}
+        onAdminRestoreRegistration={evStore.adminRestoreRegistration}
         onAddParkingLot={evStore.addParkingLot}
         onUpdateParkingLot={evStore.updateParkingLot}
         onDeleteParkingLot={evStore.deleteParkingLot}
@@ -533,6 +534,8 @@ export default function App() {
                 isSubAdmin={evStore.isSubAdmin}
                 userId={user.uid}
                 onRegister={evStore.registerForActivity}
+                onCancelRegistration={evStore.cancelActivityRegistration}
+                onAdminRestoreRegistration={evStore.adminRestoreRegistration}
                 onDeleteRegistration={evStore.deleteRegistration}
                 onClose={() => setView('dashboard')}
               />

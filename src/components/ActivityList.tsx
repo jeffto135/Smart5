@@ -16,6 +16,8 @@ interface ActivityListProps {
   isSubAdmin?: boolean;
   userId: string;
   onRegister: (id: string, plate: string) => Promise<void>;
+  onCancelRegistration: (eventId: string, reason: string) => Promise<void>;
+  onAdminRestoreRegistration: (eventId: string, userId: string) => Promise<void>;
   onDeleteRegistration?: (regId: string, userId: string, eventId: string) => Promise<void>;
   onClose: () => void;
 }
@@ -29,6 +31,8 @@ export const ActivityList: React.FC<ActivityListProps> = ({
   isSubAdmin = false,
   userId, 
   onRegister, 
+  onCancelRegistration,
+  onAdminRestoreRegistration,
   onDeleteRegistration,
   onClose 
 }) => {
@@ -41,9 +45,16 @@ export const ActivityList: React.FC<ActivityListProps> = ({
     const pst: Activity[] = [];
 
     activities.forEach(activity => {
-      const activityDate = new Date(activity.date);
-      const finishDate = new Date(activityDate);
-      finishDate.setDate(finishDate.getDate() + 1);
+      let activityDate: Date;
+      if (activity.eventStartDate) {
+        activityDate = activity.eventStartDate.toDate();
+      } else {
+        activityDate = new Date(activity.date);
+      }
+      
+      const finishDate = activity.eventEndDate 
+        ? activity.eventEndDate.toDate() 
+        : new Date(new Date(activityDate).setDate(activityDate.getDate() + 1));
       
       if (now >= finishDate) {
         pst.push(activity);
@@ -52,8 +63,14 @@ export const ActivityList: React.FC<ActivityListProps> = ({
       }
     });
 
-    act.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    pst.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const compareDates = (a: Activity, b: Activity) => {
+      const dateA = a.eventStartDate ? a.eventStartDate.toMillis() : new Date(a.date).getTime();
+      const dateB = b.eventStartDate ? b.eventStartDate.toMillis() : new Date(b.date).getTime();
+      return dateA - dateB;
+    };
+
+    act.sort((a,b) => compareDates(a, b));
+    pst.sort((a,b) => compareDates(b, a));
     return { active: act, past: pst };
   }, [activities]);
 
@@ -87,8 +104,14 @@ export const ActivityList: React.FC<ActivityListProps> = ({
             const now = new Date();
             const isRegistered = activity.participants.includes(userId);
             const isFull = activity.participants.length >= activity.limit;
-            const isDeadlinePassed = activity.deadlineDate ? now > new Date(activity.deadlineDate + 'T23:59:59') : false;
-            const isClosed = activity.status === 'closed' || isDeadlinePassed;
+            const isRegistrationClosed = (() => {
+              if (activity.deadlineDate) {
+                return now > new Date(activity.deadlineDate + 'T23:59:59');
+              }
+              const regDeadline = activity.eventEndDate?.toDate() || new Date(activity.date + 'T23:59:59');
+              return now > regDeadline;
+            })();
+            const isClosed = activity.status === 'closed' || isRegistrationClosed;
 
             return (
               <motion.div
@@ -108,7 +131,7 @@ export const ActivityList: React.FC<ActivityListProps> = ({
                         isClosed ? 'border-red-500/50 text-red-500 bg-red-500/10' : 
                         isFull ? 'border-orange-500/50 text-orange-500 bg-orange-500/10' : 'border-cyber-green/50 text-cyber-green bg-cyber-green/10'
                       }`}>
-                        {isClosed ? (isDeadlinePassed ? '報名截止 / CLOSED' : '已停止 / STOPPED') : isFull ? '已滿額 / FULL' : '報名中 / OPEN'}
+                        {isClosed ? (isRegistrationClosed ? '報名截止 / CLOSED' : '已停止 / STOPPED') : isFull ? '已滿額 / FULL' : '報名中 / OPEN'}
                       </div>
                     </div>
                     {activity.deadlineDate && !isClosed && !isRegistered && (
@@ -120,7 +143,7 @@ export const ActivityList: React.FC<ActivityListProps> = ({
                     <div className="grid grid-cols-2 gap-4 py-2">
                       <div className="flex items-center gap-3 text-white/50 text-[11px] font-mono group-hover:text-white/80 transition-colors">
                         <Calendar size={14} className="text-cyber-green" />
-                        {activity.date}
+                        {activity.eventStartDate ? activity.eventStartDate.toDate().toLocaleDateString('zh-HK') : activity.date}
                       </div>
                       <div className="flex items-center gap-3 text-white/50 text-[11px] font-mono group-hover:text-white/80 transition-colors">
                         <MapPin size={14} className="text-cyber-green" />
@@ -212,10 +235,13 @@ export const ActivityList: React.FC<ActivityListProps> = ({
             isSubAdmin={isSubAdmin}
             userId={userId}
             onClose={() => setSelectedActivity(null)}
-            onRegister={(plate) => {
-              setConfirmingId(selectedActivity.id);
-              setSelectedActivity(null);
+            onRegister={async (plate) => {
+              if (selectedActivity) {
+                await onRegister(selectedActivity.id, plate);
+              }
             }}
+            onCancelRegistration={onCancelRegistration}
+            onAdminRestore={onAdminRestoreRegistration}
             onDeleteRegistration={onDeleteRegistration}
           />
         )}

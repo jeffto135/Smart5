@@ -54,9 +54,11 @@ export interface Activity {
   id: string;
   title: string;
   description?: string;
-  date: string;
-  eventEndDate?: string; // Format: YYYY-MM-DD
+  date: string; // Keep for backward compatibility/reference
+  eventStartDate?: Timestamp; 
+  eventEndDate?: Timestamp;
   location: string;
+  locationCoordinates?: string;
   limit: number;
   deadlineDate?: string;
   participants: string[]; // UID array
@@ -72,6 +74,9 @@ export interface ActivityRegistration {
   qrCodeUsed: boolean;
   attended: boolean;
   attendedAt?: Timestamp;
+  status: 'registered' | 'cancelled';
+  cancelReason?: string;
+  lockoutUntil?: Timestamp;
 }
 
 export interface ParkingLot {

@@ -73,6 +73,7 @@ interface AdminPanelProps {
   onClearActivities: () => Promise<void>;
   onClearPolls: () => Promise<void>;
   onUpdateRegistration: (regId: string, data: Partial<ActivityRegistration>) => Promise<void>;
+  onAdminRestoreRegistration: (eventId: string, userId: string) => Promise<void>;
   onAddParkingLot: (data: Partial<ParkingLot>) => Promise<any>;
   onUpdateParkingLot: (id: string, data: Partial<ParkingLot>) => Promise<void>;
   onDeleteParkingLot: (id: string) => Promise<void>;
@@ -105,6 +106,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onClearActivities,
   onClearPolls,
   onUpdateRegistration,
+  onAdminRestoreRegistration,
   onAddParkingLot,
   onUpdateParkingLot,
   onDeleteParkingLot,
@@ -154,8 +156,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [actTitle, setActTitle] = useState('');
   const [actDescription, setActDescription] = useState('');
   const [actDate, setActDate] = useState('');
+  const [actStartDate, setActStartDate] = useState('');
+  const [actEndDate, setActEndDate] = useState('');
   const [actDeadlineDate, setActDeadlineDate] = useState('');
   const [actLocation, setActLocation] = useState('');
+  const [actLocationCoordinates, setActLocationCoordinates] = useState('');
   const [actLimit, setActLimit] = useState(20);
 
   // States for new Notification
@@ -405,15 +410,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleCreateActivity = async () => {
-    if (!actTitle || !actDate) return;
+    if (!actTitle || !actStartDate) return;
     const finalLimit = Math.max(1, actLimit);
     try {
       await onAddActivity({
         title: actTitle,
         description: actDescription,
-        date: actDate,
+        date: actStartDate.split('T')[0], // For compatibility with older lists
+        eventStartDate: actStartDate ? Timestamp.fromDate(new Date(actStartDate)) : undefined,
+        eventEndDate: actEndDate ? Timestamp.fromDate(new Date(actEndDate)) : undefined,
         deadlineDate: actDeadlineDate,
         location: actLocation,
+        locationCoordinates: actLocationCoordinates,
         limit: finalLimit,
         status: 'open'
       });
@@ -427,8 +435,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setActTitle('');
         setActDescription('');
         setActDate('');
+        setActStartDate('');
+        setActEndDate('');
         setActDeadlineDate('');
         setActLocation('');
+        setActLocationCoordinates('');
         setActLimit(20);
         setShowAddActivity(false);
         setEditingId(null);
@@ -501,8 +512,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setEditingId(null);
             setActTitle('');
             setActDate('');
+            setActStartDate('');
+            setActEndDate('');
             setActDeadlineDate('');
             setActLocation('');
+            setActLocationCoordinates('');
             setActLimit(20);
             setShowAddActivity(false);
           }, 100);
@@ -578,8 +592,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setActTitle(activity.title);
     setActDescription(activity.description || '');
     setActDate(activity.date);
+    
+    // Convert Timestamps to datetime-local string format
+    const formatForInput = (ts?: any) => {
+      if (!ts) return '';
+      const date = ts.toDate ? ts.toDate() : new Date(ts);
+      return format(date, "yyyy-MM-dd'T'HH:mm");
+    };
+
+    setActStartDate(formatForInput(activity.eventStartDate));
+    setActEndDate(formatForInput(activity.eventEndDate));
     setActDeadlineDate(activity.deadlineDate || '');
     setActLocation(activity.location);
+    setActLocationCoordinates(activity.locationCoordinates || '');
     setActLimit(activity.limit);
     setEditingId(activity.id);
     setShowAddActivity(true);
@@ -684,6 +709,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     
     if (!registration) {
       return { success: false, message: '找不到相關報名記錄 / RECORD NOT FOUND' };
+    }
+
+    if (registration.status === 'cancelled') {
+      return { success: false, message: '此報名已取消 / REGISTRATION CANCELLED' };
     }
 
     if (registration.qrCodeUsed || registration.attended) {
@@ -954,16 +983,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50 transition-all min-h-[80px] resize-none"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <CyberInput label="日期" type="date" value={actDate} onChange={e => setActDate(e.target.value)} />
-                      <CyberInput label="名額上限" type="number" value={actLimit} onChange={e => setActLimit(Number(e.target.value))} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <CyberInput label="開始時間" type="datetime-local" value={actStartDate} onChange={e => setActStartDate(e.target.value)} />
+                      <CyberInput label="完結時間" type="datetime-local" value={actEndDate} onChange={e => setActEndDate(e.target.value)} />
                     </div>
-                    <CyberInput label="截止報名日期 (選填)" type="date" value={actDeadlineDate} onChange={e => setActDeadlineDate(e.target.value)} />
-                    <CyberInput label="地點" value={actLocation} onChange={e => setActLocation(e.target.value)} placeholder="例如: 科學園" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <CyberInput label="名額上限" type="number" value={actLimit} onChange={e => setActLimit(Number(e.target.value))} />
+                      <CyberInput label="截止報名日期 (選填)" type="date" value={actDeadlineDate} onChange={e => setActDeadlineDate(e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <CyberInput label="地點名稱" value={actLocation} onChange={e => setActLocation(e.target.value)} placeholder="例如: TKO Gateway" />
+                      <CyberInput label="地點經緯度 (導航用)" value={actLocationCoordinates} onChange={e => setActLocationCoordinates(e.target.value)} placeholder="例如: 22.3164,114.2694" />
+                    </div>
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => { setShowAddActivity(false); setEditingId(null); }} className="flex-1 py-2 rounded bg-white/5 text-xs font-mono">取消</button>
                       <CyberButton 
-                        onClick={() => editingId ? handleUpdateActivity(editingId, { title: actTitle, description: actDescription, date: actDate, deadlineDate: actDeadlineDate, location: actLocation, limit: actLimit }) : handleCreateActivity()} 
+                        onClick={() => editingId ? handleUpdateActivity(editingId, { 
+                          title: actTitle, 
+                          description: actDescription, 
+                          date: actStartDate.split('T')[0],
+                          eventStartDate: actStartDate ? Timestamp.fromDate(new Date(actStartDate)) : undefined,
+                          eventEndDate: actEndDate ? Timestamp.fromDate(new Date(actEndDate)) : undefined,
+                          deadlineDate: actDeadlineDate, 
+                          location: actLocation, 
+                          locationCoordinates: actLocationCoordinates,
+                          limit: actLimit 
+                        }) : handleCreateActivity()} 
                         className="flex-1 text-xs py-2"
                       >
                         {editingId ? '儲存更改' : '確認發佈'}
@@ -1685,30 +1730,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <span>報名名單 PARTICIPANTS</span>
                           <span>{selectedEntity.data.participants.length} / {selectedEntity.data.limit}</span>
                         </div>
-                        {getUserDetails(selectedEntity.data.participants).map(user => (
-                          <div key={user.uid} className="flex justify-between items-center p-3 rounded-lg bg-white/5 border border-white/5 group">
-                            <div>
-                              <div className="text-sm font-bold text-white">{user.name}</div>
-                              <div className="text-[10px] font-mono text-white/30">{user.email}</div>
-                              <div className="text-[9px] font-mono text-cyber-green mt-0.5">{user.plate} • {user.phone}</div>
-                            </div>
-                            <button 
-                              onClick={async () => {
-                                if (window.confirm('確定要移出此成員嗎？ REMOVE THIS PARTICIPANT?')) {
-                                  const updatedParticipants = selectedEntity.data.participants.filter((p: string) => p !== user.uid);
-                                  await onUpdateActivity(selectedEntity.data.id, { participants: updatedParticipants });
-                                  setSelectedEntity({ ...selectedEntity, data: { ...selectedEntity.data, participants: updatedParticipants } });
-                                }
-                              }}
-                              className="p-2 text-red-500/0 group-hover:text-red-500/60 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        ))}
-                        {selectedEntity.data.participants.length === 0 && (
-                          <div className="text-center py-10 opacity-20 text-xs font-mono lowercase">no participants yet</div>
-                        )}
+                        {(() => {
+                          const activityRegs = fleetData.registrations.filter(r => r.eventId === selectedEntity.data.id);
+                          if (activityRegs.length === 0) {
+                            return <div className="text-center py-10 opacity-20 text-xs font-mono lowercase">no registrations yet</div>;
+                          }
+                          return activityRegs.map(reg => {
+                            const user = getUserDetails([reg.userId])[0];
+                            const isCancelled = reg.status === 'cancelled';
+                            return (
+                              <div key={reg.id} className={`flex justify-between items-center p-3 rounded-lg bg-white/5 border border-white/5 group ${isCancelled ? 'opacity-50 grayscale' : ''}`}>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="text-sm font-bold text-white">{user.name}</div>
+                                    {isCancelled && <span className="text-[8px] bg-red-500/20 text-red-500 border border-red-500/30 px-1 rounded uppercase font-bold">已取消</span>}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-white/30">{user.email}</div>
+                                  <div className="text-[9px] font-mono text-cyber-green mt-0.5">
+                                    {user.plate} • {user.phone}
+                                    {isCancelled && reg.cancelReason && <span className="block text-red-400/60 mt-1 italic">原因: {reg.cancelReason}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {isCancelled ? (
+                                    <button 
+                                      onClick={async () => {
+                                        if (window.confirm('確定要手動恢復此成員的報名嗎？ RESTORE THIS PARTICIPANT?')) {
+                                          await onAdminRestoreRegistration(selectedEntity.data.id, reg.userId);
+                                          // Update local state is tricky here because data comes from props, 
+                                          // but fleetData should update via some parent trigger or listener.
+                                          // For now, we assume the prop update is enough or reload.
+                                        }
+                                      }}
+                                      className="px-2 py-1 bg-cyber-green/10 border border-cyber-green/30 text-[9px] font-mono text-cyber-green rounded hover:bg-cyber-green hover:text-black transition-all"
+                                    >
+                                      手動加回
+                                    </button>
+                                  ) : (
+                                    <button 
+                                      onClick={async () => {
+                                        if (window.confirm('確定要移出此成員嗎？ REMOVE THIS PARTICIPANT?')) {
+                                          const updatedParticipants = selectedEntity.data.participants.filter((p: string) => p !== user.uid);
+                                          await onUpdateActivity(selectedEntity.data.id, { participants: updatedParticipants });
+                                          // Also mark registration as cancelled via updateDoc if needed, 
+                                          // but for now we follow the existing pattern for removal.
+                                          // The user specifically asked for "手動加回" for "cancelled" users.
+                                        }
+                                      }}
+                                      className="p-2 text-red-500/0 group-hover:text-red-500/60 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
 
                       <div className="pt-4 border-t border-white/10 space-y-3">
