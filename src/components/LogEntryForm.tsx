@@ -150,7 +150,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const handleEntrySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 1. Pre-lock Validations
+    // 1. Initial Validations (Pre-lock)
     if (!validateODO(odometer) || odometer === "") {
       setSaveStatus({ 
         type: 'error', 
@@ -171,67 +171,66 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       return;
     }
 
-    // 2. Start Submitting & Global Try-Catch-Finally
+    // 2. Start Global Submission Lock
     setSubmitting(true);
     setSaveStatus({ type: null, message: '' });
 
     try {
-      // Cold Start Branch: If no history exists, skip merge and duplicate checks
+      // BRANCH A: COLD START (Isolated Early-Return Path)
       if (totalHistoryEmpty) {
-        const numOdo = Number(odometer);
-        const numBat = Number(battery);
+        console.log("[Cold Start Authority] No existing history found. Executing primary record creation.");
         
-        if (isNaN(numOdo) || numOdo <= 0) {
-          setSaveStatus({ type: 'error', message: '❌ 請輸入有效的初始里程' });
-          setSubmitting(false);
-          return;
-        }
-        if (isNaN(numBat) || numBat < 0 || numBat > 100) {
-          setSaveStatus({ type: 'error', message: '❌ 請輸入有效的初始電量 (0-100%)' });
-          setSubmitting(false);
-          return;
-        }
+        const now = new Date();
+        const selectedDate = new Date(timestamp);
+        selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-        await executeColdStartSave();
-      } else {
-        // Normal Branch: Perform merge and duplicate checks
-        if (prevRecordDetected && 
-            Number(odometer) === prevRecordDetected.odometer && 
-            Number(battery) === prevRecordDetected.batteryPercent &&
-            !showNoChangeWarning) {
-          setShowNoChangeWarning(true);
-          setSubmitting(false);
-          return;
-        }
+        const coldStartData: any = { 
+          timestamp: Timestamp.fromDate(selectedDate),
+          odometer: Number(odometer), 
+          batteryPercent: Number(battery), 
+          cost: Number(cost), 
+          location,
+          distance: 0, 
+          batteryDiff: 0, 
+          isCharging: false,
+          status: "DRIVING", // Initial state for new users
+          createdAt: Timestamp.now()
+        };
+
+        const result = await onSave(coldStartData);
+        handleOnSaveSuccess(result);
         
-        await proceedWithSave();
+        setSubmitting(false); // Immediate unlock for cold start
+        console.log("[Cold Start Authority] Primary record saved. Terminating submission pipeline.");
+        return; // FORCED EARLY RETURN - DO NOT PROCEED TO NORMAL CHECKS
       }
+
+      // BRANCH B: NORMAL USER (Merge and Duplicate Logic)
+      if (prevRecordDetected && 
+          Number(odometer) === prevRecordDetected.odometer && 
+          Number(battery) === prevRecordDetected.batteryPercent &&
+          !showNoChangeWarning) {
+        setShowNoChangeWarning(true);
+        setSubmitting(false);
+        return;
+      }
+      
+      await proceedWithSave();
+      
     } catch (err: any) {
+      // Explicit Alert as per hard requirement for transparency
+      const errorMsg = err.message || "Unknown internal error";
+      alert("系統錯誤: " + errorMsg + "\n如果問題持續，請截圖聯絡管理員。");
       handleSaveError(err);
     } finally {
-      // Hard requirement: Ensure UI is unlocked regardless of success/fail
+      // Global safety unlock
       setSubmitting(false);
     }
   };
 
   const executeColdStartSave = async () => {
-    const now = new Date();
-    const selectedDate = new Date(timestamp);
-    selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
-
-    const data: any = { 
-      timestamp: Timestamp.fromDate(selectedDate),
-      odometer: Number(odometer), 
-      batteryPercent: Number(battery), 
-      cost: Number(cost), 
-      location,
-      distance: 0, 
-      batteryDiff: 0, 
-      isCharging: false,
-    };
-
-    const result = await onSave(data);
-    handleOnSaveSuccess(result);
+    // This is now handled inline in handleEntrySubmit for strict isolation
+    // keeping it empty or removing it to avoid confusion during this turn
   };
 
   const proceedWithSave = async () => {
