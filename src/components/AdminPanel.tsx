@@ -793,6 +793,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
   };
 
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <div className="min-h-screen bg-cyber-bg text-white pb-20">
       {/* Admin Header */}
@@ -808,7 +815,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <p className="text-[10px] font-mono tracking-widest opacity-50">管理系統 v1.0</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-4 items-center">
           {isAdmin && (
             <button 
               onClick={handleExport}
@@ -817,8 +824,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <Download size={14} /> 匯出 CSV
             </button>
           )}
-          <div className="w-10 h-10 cyber-border flex items-center justify-center rounded-lg bg-cyber-green/10">
-            <Trophy className="text-cyber-green" size={20} />
+          
+          <div className="flex flex-col items-end font-mono">
+            <div className="text-[14px] font-bold text-cyber-green leading-none">
+              {format(currentTime, 'HH:mm')}
+            </div>
+            <div className="text-[8px] uppercase tracking-widest text-white/40 mt-1">
+              {format(currentTime, 'yyyy/MM/dd')} • 24°C
+            </div>
           </div>
         </div>
       </header>
