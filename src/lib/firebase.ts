@@ -3,35 +3,34 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
 import { getMessaging, isSupported } from "firebase/messaging";
 
+// 🟢 徹底換回你原本最核心的 smart5-nine 專案憑證
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  authDomain: "smart5-nine.firebaseapp.com",
+  projectId: "smart5-nine",
+  storageBucket: "smart5-nine.appspot.com",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// 診斷日誌：幫管理員在主控台看清變數狀況
-console.log("📡 [Firebase 診斷] 當前載入 Project ID:", firebaseConfig.projectId);
+console.log("📡 [Firebase 核心] 正在重新建立連線至原始專案:", firebaseConfig.projectId);
 
 // 初始化 App (防重複)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-const db = getFirestore(app);
+// 🟢 關鍵修正：撤除剛才亂掉的具名資料庫 ID，恢復使用預設的 (default) 資料庫
+const db = getFirestore(app); 
 const auth = getAuth(app);
 
-// 終極防護：將 messaging 設為非同步安全獲取，絕對不阻塞頂層載入！
+// 安全的通知獲取函式，絕不卡死主頁
 export const getSafeMessaging = async () => {
   if (typeof window !== "undefined" && "serviceWorker" in navigator) {
     try {
       const supported = await isSupported();
-      if (supported) {
-        return getMessaging(app);
-      }
+      if (supported) return getMessaging(app);
     } catch (err) {
-      console.warn("🔔 目前環境不支援 Web Push 通知:", err);
+      console.warn("🔔 當前瀏覽器環境不支援 Web Push 通知:", err);
     }
   }
   return null;
