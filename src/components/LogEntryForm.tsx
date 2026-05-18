@@ -195,6 +195,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         const coldStartData: any = { 
           timestamp: Timestamp.fromDate(selectedDate), // Will be replaced by serverTimestamp in store, but good for local
           userId: auth.currentUser?.uid,
+          plateNumber: vehicle.plate,
+          odo: Number(odometer),
+          soc: Number(battery),
           odometer: Number(odometer), 
           batteryPercent: Number(battery), 
           date: timestamp,
@@ -254,6 +257,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     const data: any = { 
       timestamp: Timestamp.fromDate(selectedDate),
       userId: auth.currentUser?.uid,
+      plateNumber: vehicle.plate,
+      odo: Number(odometer),
+      soc: Number(battery),
       odometer: Number(odometer), 
       batteryPercent: Number(battery), 
       date: timestamp,

@@ -436,6 +436,9 @@ export function useEVStore() {
         await updateDoc(doc(db, 'vehicleLogs', existingLog.id), {
           userId: auth.currentUser.uid,
           vehicleId: vehicle.id,
+          plateNumber: vehicle.plate,
+          odo: Number(mergedOdometer),
+          soc: Number(mergedBattery),
           odometer: Number(mergedOdometer),
           batteryPercent: Number(mergedBattery),
           date: data.date || dateStr,
@@ -445,7 +448,8 @@ export function useEVStore() {
           location: mergedLocation,
           distance: Math.max(0, distance),
           batteryDiff: Math.max(0, batteryDiff),
-          timestamp: serverTimestamp() 
+          timestamp: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
 
         const newestCheck = query(
@@ -496,6 +500,9 @@ export function useEVStore() {
       const logDoc = await addDoc(collection(db, 'vehicleLogs'), {
         userId: auth.currentUser.uid,
         vehicleId: vehicle.id,
+        plateNumber: vehicle.plate,
+        odo: Number(data.odometer),
+        soc: Number(data.batteryPercent),
         odometer: Number(data.odometer),
         batteryPercent: Number(data.batteryPercent),
         date: data.date || dateStr,
@@ -506,6 +513,7 @@ export function useEVStore() {
         batteryDiff: Math.max(0, batteryDiff),
         isCharging,
         timestamp: serverTimestamp(),
+        createdAt: serverTimestamp()
       });
       
       const logId = logDoc.id;
