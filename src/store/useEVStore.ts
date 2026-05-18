@@ -464,6 +464,7 @@ export function useEVStore() {
       if ('vibrate' in navigator) {
         navigator.vibrate(50);
       }
+      return logId;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'logs');
     }

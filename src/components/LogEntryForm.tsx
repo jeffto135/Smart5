@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Battery, MapPin, Gauge, CreditCard } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CyberInput } from './ui/CyberInput';
@@ -12,7 +12,7 @@ import { AnimatePresence } from 'motion/react';
 interface LogEntryFormProps {
   vehicle: Vehicle;
   logs: LogEntry[];
-  onSave: (data: any) => Promise<void>;
+  onSave: (data: any) => Promise<string | undefined>;
   onCancel: () => void;
 }
 
@@ -23,7 +23,29 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const [cost, setCost] = useState<number>(0);
   const [location, setLocation] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [syncStage, setSyncStage] = useState<'idle' | 'offline_saved' | 'syncing' | 'synced'>('idle');
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
+
+  // Network listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Sync transition when network returns
+  useEffect(() => {
+    if (isOnline && syncStage === 'offline_saved') {
+      setSyncStage('syncing');
+      setSaveStatus({ type: 'success', message: '⚡ 偵測到網絡，正在自動同步離線數據...' });
+    }
+  }, [isOnline, syncStage]);
 
   // SOC Validation
   const validateSOC = (value: number) => {
@@ -133,18 +155,37 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         data.efficiency = parseFloat(efficiency.toFixed(2));
       }
 
-      // Optimistic Feedback
-      setSaveStatus({ type: 'success', message: '✅ 記錄已成功儲存（已啟用離線防護）' });
-      
-      // We don't await onSave if we want true "optimistic" but onSave might throw
-      // The user wants it to pop up "立刻", so we show it before awaiting
-      
-      await onSave(data);
-      
-      // Wait a moment to show success before closing
-      setTimeout(() => {
-        onCancel();
-      }, 1500);
+      // 執行儲存
+      const logId = await onSave(data);
+
+      if (!isOnline) {
+        setSyncStage('offline_saved');
+        setSaveStatus({ 
+          type: 'success', 
+          message: '📡 網絡已斷開。但請放心！你的里程與電量記錄已安全儲存於手機本地。當你回到有 4G/5G 的地方，系統會自動在背景完成上載，你現在可以隨時關閉 App。' 
+        });
+      } else {
+        setSyncStage('synced');
+        setSaveStatus({ type: 'success', message: '✅ 記錄已成功儲存' });
+      }
+
+      // 如果有 logId，監聽同步狀態
+      if (logId) {
+        const { onSnapshot: onSnap, doc: fireDoc } = await import('firebase/firestore');
+        const unsub = onSnap(fireDoc(db, 'logs', logId), (snap) => {
+          if (snap.exists() && !snap.metadata.fromCache) {
+            setSyncStage('synced');
+            setSaveStatus({ type: 'success', message: '✅ 恭喜！離線記錄已成功補發上載至 Smart5 雲端庫！' });
+            unsub();
+            setTimeout(() => onCancel(), 3000);
+          }
+        });
+      }
+
+      // 如果是正常在線儲存且非補發，正常關閉
+      if (isOnline) {
+        setTimeout(() => onCancel(), 1500);
+      }
 
     } catch (err: any) {
       console.error("Save error:", err);
@@ -177,19 +218,28 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         )}
       </div>
 
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {saveStatus.type && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className={`p-3 rounded-lg border text-xs font-bold font-mono uppercase tracking-tight text-center mb-4 ${
-              saveStatus.type === 'success' 
-                ? 'bg-cyber-green/20 border-cyber-green text-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.2)]' 
+            key={syncStage}
+            initial={{ height: 0, opacity: 0, y: -10 }}
+            animate={{ height: 'auto', opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: 10 }}
+            className={`p-4 rounded-xl border text-xs font-bold font-mono leading-relaxed mb-4 shadow-lg ${
+              syncStage === 'offline_saved'
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                : syncStage === 'syncing'
+                ? 'bg-blue-500/20 border-blue-500/50 text-blue-200'
+                : saveStatus.type === 'success'
+                ? 'bg-cyber-green/20 border-cyber-green text-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.2)]'
                 : 'bg-red-500/20 border-red-500 text-red-100'
             }`}
           >
-            {saveStatus.message}
+            <div className="flex gap-3 items-center">
+              {syncStage === 'offline_saved' && <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.8)]" />}
+              {syncStage === 'syncing' && <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />}
+              <span className="flex-1">{saveStatus.message}</span>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
