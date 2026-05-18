@@ -3,9 +3,9 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
 import { getMessaging, isSupported } from "firebase/messaging";
 
-// 🟢 徹底換回你原本最核心的 smart5-nine 專案憑證
+// 全面鎖定 smart5-nine 專案憑證，並支援本地環境變數覆蓋
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY, 
   authDomain: "smart5-nine.firebaseapp.com",
   projectId: "smart5-nine",
   storageBucket: "smart5-nine.appspot.com",
@@ -14,12 +14,12 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-console.log("📡 [Firebase 核心] 正在重新建立連線至原始專案:", firebaseConfig.projectId);
+console.log("📡 [Firebase 核心] 正在重置並航向原始本陣:", firebaseConfig.projectId);
 
 // 初始化 App (防重複)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// 🟢 關鍵修正：撤除剛才亂掉的具名資料庫 ID，恢復使用預設的 (default) 資料庫
+// 恢復預設的 (default) 資料庫
 const db = getFirestore(app); 
 const auth = getAuth(app);
 
