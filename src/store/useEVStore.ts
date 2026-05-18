@@ -98,13 +98,17 @@ export function useEVStore() {
 
   // Sync Parking Lots
   useEffect(() => {
+    if (!auth.currentUser) {
+      setParkingLots([]);
+      return;
+    }
     const q = query(collection(db, 'parking_slots'), orderBy('name', 'asc'));
     return onSnapshot(q, (snap) => {
       setParkingLots(snap.docs.map(d => ({ id: d.id, ...d.data() } as ParkingLot)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'parking_slots');
     });
-  }, []);
+  }, [auth.currentUser]);
 
   // Fetch Fleet Data (Admins)
   useEffect(() => {

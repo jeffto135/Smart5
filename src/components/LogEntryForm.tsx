@@ -7,6 +7,7 @@ import { Vehicle, LogEntry } from '../types';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { format } from 'date-fns';
+import { AnimatePresence } from 'motion/react';
 
 interface LogEntryFormProps {
   vehicle: Vehicle;
@@ -22,8 +23,19 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const [cost, setCost] = useState<number>(0);
   const [location, setLocation] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
 
-  // Smart Detection State (Live)
+  // SOC Validation
+  const validateSOC = (value: number) => {
+    return value >= 0 && value <= 100;
+  };
+
+  // ODO Validation
+  const validateODO = (value: number) => {
+    if (value <= 0) return false;
+    if (prevRecordDetected && value < prevRecordDetected.odometer) return false;
+    return true;
+  };
   const [isCharging, setIsCharging] = useState(false);
   const [prevRecordDetected, setPrevRecordDetected] = useState<LogEntry | null>(null);
 
@@ -81,19 +93,31 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
   const handleEntrySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (odometer <= 0) {
-      alert('請輸入有效的總里程');
+    
+    // Strict Validation
+    if (!validateODO(odometer)) {
+      setSaveStatus({ 
+        type: 'error', 
+        message: prevRecordDetected && odometer < prevRecordDetected.odometer 
+          ? `❌ 里程不能小於前次記錄 (${prevRecordDetected.odometer} KM)` 
+          : '❌ 請輸入有效的總里程' 
+      });
+      return;
+    }
+
+    if (!validateSOC(battery)) {
+      setSaveStatus({ type: 'error', message: '❌ 電量必須在 0-100% 之間' });
       return;
     }
     
     setSubmitting(true);
+    setSaveStatus({ type: null, message: '' });
     
     try {
       const now = new Date();
       const selectedDate = new Date(timestamp);
       selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-      // Final logic verification before saving
       const data: any = { 
         timestamp: Timestamp.fromDate(selectedDate),
         odometer, 
@@ -109,14 +133,32 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         data.efficiency = parseFloat(efficiency.toFixed(2));
       }
 
+      // Optimistic Feedback
+      setSaveStatus({ type: 'success', message: '✅ 記錄已成功儲存（已啟用離線防護）' });
+      
+      // We don't await onSave if we want true "optimistic" but onSave might throw
+      // The user wants it to pop up "立刻", so we show it before awaiting
+      
       await onSave(data);
-      alert('記錄錄入成功 / LOGGED SUCCESSFUL');
-    } catch (error) {
-      console.error("Save error:", error);
-      alert('儲存失敗，請檢查輸入數據');
-    } finally {
+      
+      // Wait a moment to show success before closing
+      setTimeout(() => {
+        onCancel();
+      }, 1500);
+
+    } catch (err: any) {
+      console.error("Save error:", err);
+      let errorMsg = '❌ 儲存失敗，請檢查輸入數據';
+      
+      // Error Catching based on requirements
+      if (err.message && err.message.includes('permission-denied')) {
+        errorMsg = '❌ 權限錯誤，請嘗試重新登入帳戶。';
+      } else if (err.message && (err.message.includes('unavailable') || err.message.includes('network'))) {
+        errorMsg = '📡 網路連線不穩定，數據已暫存於手機，連線後將自動同步。';
+      }
+      
+      setSaveStatus({ type: 'error', message: errorMsg });
       setSubmitting(false);
-      onCancel();
     }
   };
 
@@ -124,7 +166,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     <form onSubmit={handleEntrySubmit} className="space-y-6">
       <div className="flex justify-between items-center mb-2">
         <label className="text-[10px] font-mono uppercase text-white/30 tracking-widest">輸入數據 / Entry Data</label>
-        {isCharging && (
+        {isCharging && !saveStatus.type && (
           <motion.div 
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -134,6 +176,23 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           </motion.div>
         )}
       </div>
+
+      <AnimatePresence>
+        {saveStatus.type && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className={`p-3 rounded-lg border text-xs font-bold font-mono uppercase tracking-tight text-center mb-4 ${
+              saveStatus.type === 'success' 
+                ? 'bg-cyber-green/20 border-cyber-green text-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.2)]' 
+                : 'bg-red-500/20 border-red-500 text-red-100'
+            }`}
+          >
+            {saveStatus.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="relative">
         <CyberInput
