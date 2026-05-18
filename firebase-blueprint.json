@@ -133,6 +133,17 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["question", "options"]
+    },
+    "FCMToken": {
+      "title": "FCMToken",
+      "description": "Device token for push notifications.",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string" },
+        "deviceType": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["token", "lastUpdated"]
     }
   },
   "firestore": {
@@ -151,6 +162,10 @@
     "userProfiles": {
       "schema": "UserProfile",
       "description": "Private user information."
+    },
+    "users/{userId}/tokens": {
+      "schema": "FCMToken",
+      "description": "User's FCM device tokens."
     },
     "activities": {
       "schema": "Activity",

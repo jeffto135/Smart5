@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut, indexedDBLocalPersistence, setPersistence } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getMessaging } from 'firebase/messaging';
 import firebaseConfigManual from '../../firebase-applet-config.json';
 
 // Use environment variables if available (for Vercel), otherwise fallback to the applet config
@@ -27,6 +28,7 @@ export const db = (databaseId && databaseId !== '(default)')
   : initializeFirestore(app, firestoreSettings);
 
 export const auth = getAuth(app);
+export const messaging = getMessaging(app);
 
 // Set persistence to indexedDB (local) to keep the user logged in across sessions
 setPersistence(auth, indexedDBLocalPersistence).catch(err => {

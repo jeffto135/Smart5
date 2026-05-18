@@ -12,6 +12,7 @@ import { ActivityList } from './components/ActivityList';
 import { PollList } from './components/PollList';
 import { MessageList } from './components/MessageList';
 import { UserProfileGate } from './components/UserProfileGate';
+import { NotificationInit } from './components/NotificationInit';
 import { ConfirmationModal } from './components/ui/ConfirmationModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
@@ -369,6 +370,7 @@ export default function App() {
         profileLoading={evStore.profileLoading}
         onUpdateProfile={evStore.updateUserProfile}
       >
+        <NotificationInit />
         {/* Background decorations */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-20">
         <div className="absolute -top-24 -left-24 w-64 h-64 bg-cyber-green/10 blur-[100px]" />

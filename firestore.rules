@@ -121,6 +121,15 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    // --- FCMToken Validation ---
+    function isValidFCMToken(data) {
+      return data.token is string &&
+             (data.deviceType is string || !data.keys().hasAll(['deviceType'])) &&
+             (data.platform is string || !data.keys().hasAll(['platform'])) &&
+             (data.userAgent is string || !data.keys().hasAll(['userAgent'])) &&
+             data.lastUpdated is timestamp;
+    }
+
     // --- Rules ---
     
     match /test/connection {
@@ -178,6 +187,11 @@ service cloud.firestore {
                       (isSubAdmin() ? true : incoming().role == existing().role) &&
                       (isAdmin() ? true : incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'updatedAt']));
       allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /users/{userId}/tokens/{tokenId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidFCMToken(incoming());
     }
 
     match /admins/{userId} {

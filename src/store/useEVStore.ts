@@ -611,7 +611,35 @@ export function useEVStore() {
 
   const updateActivity = async (id: string, data: Partial<Activity>) => {
     try {
+      const current = activities.find(a => a.id === id);
+      
+      // Detect changes in critical fields
+      const dateChanged = data.date !== undefined && current?.date !== data.date;
+      const locationChanged = data.location !== undefined && current?.location !== data.location;
+      
+      // Timestamp comparisons
+      const startChanged = data.eventStartDate !== undefined && 
+        (!current?.eventStartDate || current.eventStartDate.toMillis() !== data.eventStartDate.toMillis());
+      const endChanged = data.eventEndDate !== undefined && 
+        (!current?.eventEndDate || current.eventEndDate.toMillis() !== data.eventEndDate.toMillis());
+      
+      const shouldNotify = (dateChanged || locationChanged || startChanged || endChanged) && 
+                           current && current.participants && current.participants.length > 0;
+
       await updateDoc(doc(db, 'activities', id), data);
+
+      if (shouldNotify) {
+        await Promise.all(current.participants.map(uid => 
+          addNotification({
+            userId: uid,
+            title: '活動資訊更動 / ACTIVITY UPDATE',
+            message: `您報名的活動「${current.title}」之時間、日期或地點已更新，請進入活動詳情查看最新資訊。`,
+            type: 'alert',
+            relatedId: id,
+            relatedType: 'activity'
+          })
+        ));
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'activities');
     }
