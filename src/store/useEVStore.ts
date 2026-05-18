@@ -393,9 +393,76 @@ export function useEVStore() {
 
     try {
       const logTimestamp = data.timestamp || Timestamp.now();
-      const newTimeMillis = logTimestamp.toMillis ? logTimestamp.toMillis() : logTimestamp.getTime();
-      
-      // 1. Precise Query for Previous Record (closest to input date)
+      const dateStr = format(logTimestamp.toDate(), 'yyyy-MM-dd');
+      const startOfDay = new Date(dateStr + 'T00:00:00');
+      const endOfDay = new Date(dateStr + 'T23:59:59');
+
+      // Check for existing log on the same day
+      const existingQuery = query(
+        collection(db, 'logs'),
+        where('vehicleId', '==', vehicle.id),
+        where('timestamp', '>=', Timestamp.fromDate(startOfDay)),
+        where('timestamp', '<=', Timestamp.fromDate(endOfDay)),
+        limit(1)
+      );
+      const existingSnap = await getDocs(existingQuery);
+      const existingLog = existingSnap.docs.length > 0 ? { id: existingSnap.docs[0].id, ...existingSnap.docs[0].data() } as LogEntry : null;
+
+      if (existingLog) {
+        // MERGE MODE
+        const mergedOdometer = Math.max(existingLog.odometer, data.odometer);
+        const mergedBattery = data.batteryPercent; 
+        const mergedCost = (existingLog.cost || 0) + (data.cost || 0);
+        const mergedIsCharging = existingLog.isCharging || (data.isCharging ?? false);
+        const mergedLocation = [existingLog.location, data.location].filter(Boolean).join(', ');
+
+        // Find the record BEFORE this day to calculate distance/batteryDiff correctly
+        const prevOfExistingQuery = query(
+          collection(db, 'logs'),
+          where('vehicleId', '==', vehicle.id),
+          where('timestamp', '<', Timestamp.fromDate(startOfDay)),
+          orderBy('timestamp', 'desc'),
+          limit(1)
+        );
+        const prevOfExistingSnap = await getDocs(prevOfExistingQuery);
+        const prevOfExisting = prevOfExistingSnap.docs.length > 0 ? prevOfExistingSnap.docs[0].data() as LogEntry : null;
+
+        const distance = prevOfExisting ? mergedOdometer - prevOfExisting.odometer : 0;
+        const batteryDiff = prevOfExisting 
+          ? (mergedIsCharging ? mergedBattery - prevOfExisting.batteryPercent : prevOfExisting.batteryPercent - mergedBattery)
+          : 0;
+
+        await updateDoc(doc(db, 'logs', existingLog.id), {
+          odometer: mergedOdometer,
+          batteryPercent: mergedBattery,
+          cost: mergedCost,
+          isCharging: mergedIsCharging,
+          location: mergedLocation,
+          distance: Math.max(0, distance),
+          batteryDiff: Math.max(0, batteryDiff),
+          timestamp: logTimestamp // Update to latest time on that day
+        });
+
+        // Still need to update vehicle if this was latest
+        const newestCheck = query(
+          collection(db, 'logs'),
+          where('vehicleId', '==', vehicle.id),
+          orderBy('timestamp', 'desc'),
+          limit(1)
+        );
+        const newestSnap = await getDocs(newestCheck);
+        if (newestSnap.docs[0].id === existingLog.id) {
+          await updateDoc(doc(db, 'vehicles', vehicle.id), {
+            lastOdometer: mergedOdometer,
+            lastBatteryPercent: mergedBattery,
+          });
+        }
+
+        if ('vibrate' in navigator) navigator.vibrate(50);
+        return { logId: existingLog.id, isMerged: true };
+      }
+
+      // NEW LOG MODE (existing logic follows)
       const prevQuery = query(
         collection(db, 'logs'),
         where('vehicleId', '==', vehicle.id),
@@ -924,34 +991,34 @@ export function useEVStore() {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
     
-    // Rule 2 & 4: Strict Idempotency & Debounce
-    if (readMessagesRef.current.has(id) || isUpdatingRef.current.has(id)) return;
+    // Strict Idempotency Check
+    if (readMessagesRef.current.has(id)) return;
     
-    // Optimistic Logic (Frontend Authority)
+    // Optimistic Update (Frontend Authority)
     readMessagesRef.current.add(id);
     setNotifications(prev => prev.map(n => 
       n.id === id ? { ...n, readBy: [...(n.readBy || []), uid] } : n
     ));
     
-    // Rule 4: Debounce the Firestore write
-    if (debounceTimerRef.current[id]) clearTimeout(debounceTimerRef.current[id]);
-    
-    debounceTimerRef.current[id] = setTimeout(async () => {
-      isUpdatingRef.current.add(id);
-      try {
-        await updateDoc(doc(db, 'notifications', id), {
-          readBy: arrayUnion(uid)
-        });
-      } catch (error) {
-        console.error('Mark as read failed:', error);
-        // Rollback local cache only on critical failure or if re-read is needed
-        // but technical mandate says "Frontend Authority", so we stay read in UI
-        handleFirestoreError(error, OperationType.UPDATE, 'notifications');
-      } finally {
-        isUpdatingRef.current.delete(id);
-        delete debounceTimerRef.current[id];
-      }
-    }, 300); // 300ms debounce
+    try {
+      // Direct Cloud Write (No debounce for critical state sync)
+      const notifRef = doc(db, 'notifications', id);
+      await updateDoc(notifRef, {
+        readBy: arrayUnion(uid)
+      });
+      console.log(`[Message Authority] Message ${id} successfully marked as read in Cloud Firestore.`);
+    } catch (error: any) {
+      console.error('[CRITICAL] Mark as read failed in Cloud:', error);
+      
+      // Rollback local state if sync failed to prevent false "read" promise
+      readMessagesRef.current.delete(id);
+      
+      // Explicit Alert for tracking according to user request
+      const errorMsg = error.message || 'Unknown error';
+      alert(`[同步失敗] 無法更新訊息狀態至雲端: ${errorMsg}\n請檢查網路連線或權限設置。`);
+      
+      handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+    }
   };
 
   const markAllNotificationsAsRead = async () => {
@@ -961,7 +1028,8 @@ export function useEVStore() {
     
     if (unread.length === 0) return;
 
-    // 1. Local State Lock & Optimistic Update
+    // 1. Optimistic Update
+    const originalReadIds = new Set(readMessagesRef.current);
     unread.forEach(n => readMessagesRef.current.add(n.id));
     setNotifications(prev => prev.map(n => {
       const isUnread = unread.some(u => u.id === n.id);
@@ -969,14 +1037,22 @@ export function useEVStore() {
     }));
     
     try {
+      // Use Batch or multiple writes
       await Promise.all(unread.map(n => 
         updateDoc(doc(db, 'notifications', n.id), {
           readBy: arrayUnion(uid)
         })
       ));
-    } catch (error) {
-      console.error('Mark all as read failed:', error);
-      unread.forEach(n => readMessagesRef.current.delete(n.id));
+      console.log('[Message Authority] All unread messages synchronized to Cloud.');
+    } catch (error: any) {
+      console.error('[CRITICAL] Bulk mark as read failed:', error);
+      
+      // Rollback
+      readMessagesRef.current = originalReadIds;
+      
+      const errorMsg = error.message || 'Unknown error';
+      alert(`[批量同步失敗] 無法將訊息標記為已讀: ${errorMsg}`);
+      
       handleFirestoreError(error, OperationType.UPDATE, 'notifications');
     }
   };

@@ -169,11 +169,14 @@ service cloud.firestore {
       allow create: if isSignedIn(); 
       allow update: if isSignedIn() && (
         isSubAdmin() || (
-          (resource.data.userId == request.auth.uid || resource.data.userId == 'all') &&
+          // Allow marking as read or dismissed if the message was intended for the user or everyone
+          (existing().userId == request.auth.uid || existing().userId == 'all') &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['readBy', 'dismissedBy']) &&
+          // Verify the user is adding their own UID to one of the arrays
+          (request.auth.uid in incoming().get('readBy', []) || request.auth.uid in incoming().get('dismissedBy', [])) &&
+          // Ensure they are not removing others (simple check for arrayUnion behavior)
           incoming().get('readBy', []).hasAll(existing().get('readBy', [])) &&
-          incoming().get('dismissedBy', []).hasAll(existing().get('dismissedBy', [])) &&
-          request.auth.uid in (incoming().get('readBy', []) + incoming().get('dismissedBy', [])) &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['readBy', 'dismissedBy'])
+          incoming().get('dismissedBy', []).hasAll(existing().get('dismissedBy', []))
         )
       );
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
