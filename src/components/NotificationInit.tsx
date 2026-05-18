@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getToken, onMessage } from 'firebase/messaging';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db, messaging } from '../lib/firebase';
+import { auth, db, getSafeMessaging } from '../lib/firebase';
 import { Bell, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -35,11 +35,23 @@ export const NotificationInit: React.FC = () => {
 
   useEffect(() => {
     // 監聽前景訊息
-    const unsubscribe = onMessage(messaging, (payload) => {
-      console.log('收到前景訊息:', payload);
-      // 您可以在此處實作自定義的在線彈窗 UI
-    });
-    return () => unsubscribe();
+    let unsubscribe: (() => void) | undefined;
+    
+    const setupListener = async () => {
+      try {
+        const messaging = await getSafeMessaging();
+        if (messaging) {
+          unsubscribe = onMessage(messaging, (payload) => {
+            console.log('收到前景訊息:', payload);
+          });
+        }
+      } catch (err) {
+        console.error('前景訊息監聽設定失敗:', err);
+      }
+    };
+
+    setupListener();
+    return () => unsubscribe?.();
   }, []);
 
   const getPlatform = () => {
@@ -54,6 +66,13 @@ export const NotificationInit: React.FC = () => {
 
     try {
       setIsProcessing(true);
+      
+      const messaging = await getSafeMessaging();
+      if (!messaging) {
+        console.log("環境不支援推播，跳過 Token 申請");
+        return;
+      }
+
       // 確保 Service Worker 已就緒
       const registration = await navigator.serviceWorker.ready;
       
