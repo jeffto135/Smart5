@@ -1,47 +1,53 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut, indexedDBLocalPersistence, setPersistence } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getMessaging } from 'firebase/messaging';
-import firebaseConfigManual from '../../firebase-applet-config.json';
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
+import { getMessaging } from "firebase/messaging";
 
-// Use environment variables if available (for Vercel), otherwise fallback to the applet config
-const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigManual.apiKey,
-  authDomain: 'woven-environs-439611-t6.firebaseapp.com', // Fixed as requested
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigManual.projectId,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigManual.storageBucket,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigManual.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigManual.appId,
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-const databaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigManual.firestoreDatabaseId;
+const databaseId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
 
-const app = initializeApp(config);
+console.log("📡 [Firebase 診斷] Project ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+if (!import.meta.env.VITE_FIREBASE_PROJECT_ID) {
+  console.error("❌ 嚴重警告：Vite 未能讀取到環境變數！請檢查 .env.local 或 Vercel 設定。");
+}
 
-// persistentLocalCache ensures data is available instantly from local storage
-const firestoreSettings = {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-};
+// 防止 Next.js 或 Vite HMR 導致的重複初始化 Bug
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-export const db = (databaseId && databaseId !== '(default)') 
-  ? initializeFirestore(app, firestoreSettings, databaseId)
-  : initializeFirestore(app, firestoreSettings);
+// Set up Firestore with persistence settings if possible
+const db = (databaseId && databaseId !== '(default)')
+  ? initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    }, databaseId)
+  : initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
 
-export const auth = getAuth(app);
-export const messaging = getMessaging(app);
+const auth = getAuth(app);
 
-// Set persistence to indexedDB (local) to keep the user logged in across sessions
-setPersistence(auth, indexedDBLocalPersistence).catch(err => {
-  console.warn("Persistence setting failed:", err);
-});
+
+// 初始化 Web Push 通知
+let messaging = null;
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  try {
+    messaging = getMessaging(app);
+  } catch (e) {
+    console.warn("Messaging failed to initialize:", e);
+  }
+}
+
 export const googleProvider = new GoogleAuthProvider();
-
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 export const handleRedirectResult = () => getRedirectResult(auth);
 export const logout = () => signOut(auth);
 
-// Removed testConnection to avoid confusion during startup
-// It will be replaced by actual data fetching in the store
- 
-// Removed testFirestoreConnection as it can be unreliable in some environments
-// Connectivity will be monitored by actual stream status if needed
+export { app, db, auth, messaging };
