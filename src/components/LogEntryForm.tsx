@@ -150,7 +150,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const handleEntrySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Strict Validation
+    // 1. Pre-lock Validations
     if (!validateODO(odometer) || odometer === "") {
       setSaveStatus({ 
         type: 'error', 
@@ -171,84 +171,67 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       return;
     }
 
-    // Cold Start Branch: If no history exists, skip merge and duplicate checks
-    if (totalHistoryEmpty) {
-      // Basic validation still needed
-      const numOdo = Number(odometer);
-      const numBat = Number(battery);
-      
-      if (isNaN(numOdo) || numOdo <= 0) {
-        setSaveStatus({ type: 'error', message: '❌ 請輸入有效的初始里程' });
-        return;
-      }
-      if (isNaN(numBat) || numBat < 0 || numBat > 100) {
-        setSaveStatus({ type: 'error', message: '❌ 請輸入有效的初始電量 (0-100%)' });
-        return;
-      }
-
-      setSubmitting(true);
-      await executeColdStartSave();
-      return;
-    }
-
-    // Normal Branch: Perform merge and duplicate checks
-    if (!validateODO(odometer) || odometer === "") {
-      setSaveStatus({ 
-        type: 'error', 
-        message: prevRecordDetected && Number(odometer) < prevRecordDetected.odometer 
-          ? `❌ 里程不能小於前次記錄 (${prevRecordDetected.odometer} KM)` 
-          : '❌ 請輸入有效的總里程' 
-      });
-      return;
-    }
-
-    if (!validateSOC(battery) || battery === "") {
-      setSaveStatus({ type: 'error', message: '❌ 電量必須在 0-100% 之間' });
-      return;
-    }
-
-    // No Change Check
-    if (prevRecordDetected && 
-        Number(odometer) === prevRecordDetected.odometer && 
-        Number(battery) === prevRecordDetected.batteryPercent &&
-        !showNoChangeWarning) {
-      setShowNoChangeWarning(true);
-      return;
-    }
-    
+    // 2. Start Submitting & Global Try-Catch-Finally
     setSubmitting(true);
     setSaveStatus({ type: null, message: '' });
-    
+
     try {
-      await proceedWithSave();
+      // Cold Start Branch: If no history exists, skip merge and duplicate checks
+      if (totalHistoryEmpty) {
+        const numOdo = Number(odometer);
+        const numBat = Number(battery);
+        
+        if (isNaN(numOdo) || numOdo <= 0) {
+          setSaveStatus({ type: 'error', message: '❌ 請輸入有效的初始里程' });
+          setSubmitting(false);
+          return;
+        }
+        if (isNaN(numBat) || numBat < 0 || numBat > 100) {
+          setSaveStatus({ type: 'error', message: '❌ 請輸入有效的初始電量 (0-100%)' });
+          setSubmitting(false);
+          return;
+        }
+
+        await executeColdStartSave();
+      } else {
+        // Normal Branch: Perform merge and duplicate checks
+        if (prevRecordDetected && 
+            Number(odometer) === prevRecordDetected.odometer && 
+            Number(battery) === prevRecordDetected.batteryPercent &&
+            !showNoChangeWarning) {
+          setShowNoChangeWarning(true);
+          setSubmitting(false);
+          return;
+        }
+        
+        await proceedWithSave();
+      }
     } catch (err: any) {
       handleSaveError(err);
+    } finally {
+      // Hard requirement: Ensure UI is unlocked regardless of success/fail
+      setSubmitting(false);
     }
   };
 
   const executeColdStartSave = async () => {
-    setSaveStatus({ type: null, message: '' });
-    try {
-      const now = new Date();
-      const selectedDate = new Date(timestamp);
-      selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+    const now = new Date();
+    const selectedDate = new Date(timestamp);
+    selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-      const data: any = { 
-        timestamp: Timestamp.fromDate(selectedDate),
-        odometer: Number(odometer), 
-        batteryPercent: Number(battery), 
-        cost: Number(cost), 
-        location,
-        distance: 0, // First log distance is 0
-        batteryDiff: 0, // First log battery diff is 0
-        isCharging: false,
-      };
+    const data: any = { 
+      timestamp: Timestamp.fromDate(selectedDate),
+      odometer: Number(odometer), 
+      batteryPercent: Number(battery), 
+      cost: Number(cost), 
+      location,
+      distance: 0, 
+      batteryDiff: 0, 
+      isCharging: false,
+    };
 
-      const result = await onSave(data);
-      handleOnSaveSuccess(result);
-    } catch (err) {
-      handleSaveError(err);
-    }
+    const result = await onSave(data);
+    handleOnSaveSuccess(result);
   };
 
   const proceedWithSave = async () => {
