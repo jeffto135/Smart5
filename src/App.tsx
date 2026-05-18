@@ -14,6 +14,7 @@ import { MessageList } from './components/MessageList';
 import { UserProfileGate } from './components/UserProfileGate';
 import { NotificationInit } from './components/NotificationInit';
 import { OfflineBanner } from './components/OfflineBanner';
+import { CatchUpPrompt } from './components/CatchUpPrompt';
 import { ConfirmationModal } from './components/ui/ConfirmationModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
@@ -34,6 +35,7 @@ export default function App() {
   const [showVehicleSelector, setShowVehicleSelector] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showUserAgreement, setShowUserAgreement] = useState(false);
+  const [catchUpData, setCatchUpData] = useState<any>(null);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -222,6 +224,18 @@ export default function App() {
       console.error('Delete log error:', error);
       throw error;
     }
+  };
+
+  const handleSaveLog = async (data: any) => {
+    const result = await evStore.addLog(data);
+    if (result && result.catchUpInfo) {
+      // Small delay to allow the form's success message to be seen
+      setTimeout(() => {
+        setCatchUpData(result.catchUpInfo);
+        setView('dashboard'); // Close the entry form
+      }, 1500);
+    }
+    return result;
   };
 
   const handleLogoutAttempt = () => {
@@ -517,7 +531,7 @@ export default function App() {
                 <LogEntryForm 
                   vehicle={evStore.vehicle} 
                   logs={evStore.logs}
-                  onSave={evStore.addLog} 
+                  onSave={handleSaveLog} 
                   onCancel={() => setView('dashboard')}
                 />
               )}
@@ -656,6 +670,23 @@ export default function App() {
       <UserAgreementModal 
         isOpen={showUserAgreement}
         onClose={() => setShowUserAgreement(false)}
+      />
+
+      <CatchUpPrompt 
+        isOpen={!!catchUpData}
+        data={catchUpData}
+        onConfirm={() => {
+          const logToEdit = evStore.logs.find(l => l.id === catchUpData.id);
+          if (logToEdit) {
+            setEditingLog(logToEdit);
+          } else {
+            // If not in standard logs (maybe it was very old?), try fleet logs
+            const fleetLog = evStore.fleetData.logs.find(l => l.id === catchUpData.id);
+            if (fleetLog) setEditingLog(fleetLog);
+          }
+          setCatchUpData(null);
+        }}
+        onClose={() => setCatchUpData(null)}
       />
 
       {/* Bottom Navigation */}

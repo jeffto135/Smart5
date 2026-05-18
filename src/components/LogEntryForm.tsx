@@ -12,7 +12,7 @@ import { AnimatePresence } from 'motion/react';
 interface LogEntryFormProps {
   vehicle: Vehicle;
   logs: LogEntry[];
-  onSave: (data: any) => Promise<string | undefined>;
+  onSave: (data: any) => Promise<any>;
   onCancel: () => void;
 }
 
@@ -171,7 +171,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       }
 
       // 執行儲存
-      const logId = await onSave(data);
+      const result = await onSave(data);
+      const logId = typeof result === 'object' ? result.logId : result;
+      const catchUpInfo = typeof result === 'object' ? result.catchUpInfo : null;
 
       if (!isOnline) {
         setSyncStage('offline_saved');
@@ -192,14 +194,23 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
             setSyncStage('synced');
             setSaveStatus({ type: 'success', message: '✅ 恭喜！離線記錄已成功補發上載至 Smart5 雲端庫！' });
             unsub();
-            setTimeout(() => onCancel(), 3000);
+            if (!catchUpInfo) {
+              setTimeout(() => onCancel(), 3000);
+            }
           }
         });
       }
 
-      // 如果是正常在線儲存且非補發，正常關閉
-      if (isOnline) {
+      // 如果是正常在線儲存且非補發，且沒有追溯信息，正常關閉
+      if (isOnline && !catchUpInfo) {
         setTimeout(() => onCancel(), 1500);
+      } else if (catchUpInfo) {
+        // If there is catchUpInfo, the parent will show the prompt
+        // We delay slightly to let the success message be seen
+        setTimeout(() => {
+          // No-op here, parent will trigger based on the returned promise usually
+          // but we might need to call onCancel and then show prompt if onCancel is purely "close form"
+        }, 1500);
       }
 
     } catch (err: any) {

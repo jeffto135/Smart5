@@ -439,13 +439,24 @@ export function useEVStore() {
       });
 
       // 4. Update the newer record if it exists (recalculate its stats relative to new log)
+      let catchUpInfo = null;
       if (nextLog) {
         const nextDistance = nextLog.odometer - data.odometer;
         const nextIsCharging = nextLog.batteryPercent > data.batteryPercent;
         const nextBatteryDiff = nextIsCharging 
           ? nextLog.batteryPercent - data.batteryPercent 
           : data.batteryPercent - nextLog.batteryPercent;
-          
+        
+        // Audit: If a future record found and it was a charge, but lacks cost, prepare catch-up info
+        if (nextIsCharging && (!nextLog.cost || nextLog.cost === 0)) {
+          catchUpInfo = {
+            id: nextLog.id,
+            date: format(nextLog.timestamp.toDate(), 'yyyy-MM-dd'),
+            prevBattery: data.batteryPercent,
+            nextBattery: nextLog.batteryPercent
+          };
+        }
+
         await updateDoc(doc(db, 'logs', nextLog.id), {
           distance: Math.max(0, nextDistance),
           batteryDiff: Math.max(0, nextBatteryDiff),
@@ -464,7 +475,7 @@ export function useEVStore() {
       if ('vibrate' in navigator) {
         navigator.vibrate(50);
       }
-      return logId;
+      return { logId, catchUpInfo };
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'logs');
     }
