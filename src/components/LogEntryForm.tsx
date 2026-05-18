@@ -18,9 +18,9 @@ interface LogEntryFormProps {
 
 export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSave, onCancel }) => {
   const [timestamp, setTimestamp] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [odometer, setOdometer] = useState(vehicle.lastOdometer || 0);
-  const [battery, setBattery] = useState(vehicle.lastBatteryPercent || 100);
-  const [cost, setCost] = useState<number>(0);
+  const [odometer, setOdometer] = useState<number | string>(vehicle.lastOdometer || 0);
+  const [battery, setBattery] = useState<number | string>(vehicle.lastBatteryPercent || 100);
+  const [cost, setCost] = useState<number | string>(0);
   const [location, setLocation] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -48,14 +48,16 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   }, [isOnline, syncStage]);
 
   // SOC Validation
-  const validateSOC = (value: number) => {
-    return value >= 0 && value <= 100;
+  const validateSOC = (value: number | string) => {
+    const n = Number(value);
+    return n >= 0 && n <= 100;
   };
 
   // ODO Validation
-  const validateODO = (value: number) => {
-    if (value <= 0) return false;
-    if (prevRecordDetected && value < prevRecordDetected.odometer) return false;
+  const validateODO = (value: number | string) => {
+    const n = Number(value);
+    if (n <= 0 && value !== "") return false;
+    if (prevRecordDetected && n < prevRecordDetected.odometer) return false;
     return true;
   };
   const [isCharging, setIsCharging] = useState(false);
@@ -103,8 +105,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     checkPrevData();
   }, [timestamp, battery, vehicle.id]);
 
-  const distance = prevRecordDetected ? odometer - prevRecordDetected.odometer : 0;
-  const batteryDiff = prevRecordDetected ? (isCharging ? battery - prevRecordDetected.batteryPercent : prevRecordDetected.batteryPercent - battery) : 0;
+  const distance = prevRecordDetected ? Number(odometer) - prevRecordDetected.odometer : 0;
+  const batteryDiff = prevRecordDetected ? (isCharging ? Number(battery) - prevRecordDetected.batteryPercent : prevRecordDetected.batteryPercent - Number(battery)) : 0;
   
   // Efficiency Calculation
   let efficiency: number | undefined;
@@ -113,21 +115,34 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     efficiency = (consumedKwh / distance) * 100;
   }
 
+  // Handle Numeric Focus/Blur
+  const handleNumericFocus = (currentVal: number | string, setter: (v: number | string) => void) => {
+    if (currentVal === 0 || currentVal === "0") {
+      setter("");
+    }
+  };
+
+  const handleNumericBlur = (currentVal: number | string, setter: (v: number | string) => void, defaultVal: number = 0) => {
+    if (currentVal === "" || currentVal === null || currentVal === undefined) {
+      setter(defaultVal);
+    }
+  };
+
   const handleEntrySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Strict Validation
-    if (!validateODO(odometer)) {
+    if (!validateODO(odometer) || odometer === "") {
       setSaveStatus({ 
         type: 'error', 
-        message: prevRecordDetected && odometer < prevRecordDetected.odometer 
+        message: prevRecordDetected && Number(odometer) < prevRecordDetected.odometer 
           ? `❌ 里程不能小於前次記錄 (${prevRecordDetected.odometer} KM)` 
           : '❌ 請輸入有效的總里程' 
       });
       return;
     }
 
-    if (!validateSOC(battery)) {
+    if (!validateSOC(battery) || battery === "") {
       setSaveStatus({ type: 'error', message: '❌ 電量必須在 0-100% 之間' });
       return;
     }
@@ -142,12 +157,12 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
       const data: any = { 
         timestamp: Timestamp.fromDate(selectedDate),
-        odometer, 
-        batteryPercent: battery, 
-        cost, 
+        odometer: Number(odometer), 
+        batteryPercent: Number(battery), 
+        cost: Number(cost), 
         location,
         distance: Math.max(0, distance),
-        batteryDiff: isCharging ? (battery - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
+        batteryDiff: isCharging ? (Number(battery) - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
         isCharging,
       };
 
@@ -269,7 +284,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           label="當前總里程 (KM)"
           type="number"
           value={odometer}
-          onChange={(e) => setOdometer(Number(e.target.value))}
+          onChange={(e) => setOdometer(e.target.value)}
+          onFocus={() => handleNumericFocus(odometer, setOdometer)}
+          onBlur={() => handleNumericBlur(odometer, setOdometer)}
           prefix="ODO"
           required
         />
@@ -291,7 +308,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
                   min="0"
                   max="100"
                   value={battery}
-                  onChange={(e) => setBattery(Math.min(100, Math.max(0, Number(e.target.value))))}
+                  onChange={(e) => setBattery(e.target.value === "" ? "" : Math.min(100, Math.max(0, Number(e.target.value))))}
+                  onFocus={() => handleNumericFocus(battery, setBattery)}
+                  onBlur={() => handleNumericBlur(battery, setBattery)}
                   className={`w-14 bg-transparent border-b border-white/20 text-center font-mono text-xl font-bold focus:outline-none focus:border-cyber-green transition-colors ${isCharging ? 'text-cyber-green' : 'text-white'}`}
                 />
                 <span className={`absolute -right-3 top-1/2 -translate-y-1/2 text-xs font-mono opacity-50 ${isCharging ? 'text-cyber-green' : 'text-white'}`}>%</span>
@@ -302,7 +321,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
             type="range"
             min="0"
             max="100"
-            value={battery}
+            value={Number(battery) || 0}
             onChange={(e) => setBattery(Number(e.target.value))}
             className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyber-green"
           />
@@ -327,7 +346,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         </div>
       </div>
 
-      {(isCharging || cost > 0) && (
+      {(isCharging || Number(cost) > 0) && (
         <motion.div
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
@@ -336,7 +355,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
             label="充電開支 (HKD)"
             type="number"
             value={cost}
-            onChange={(e) => setCost(Number(e.target.value))}
+            onChange={(e) => setCost(e.target.value)}
+            onFocus={() => handleNumericFocus(cost, setCost)}
+            onBlur={() => handleNumericBlur(cost, setCost)}
             prefix="HKD"
             required={isCharging}
           />
