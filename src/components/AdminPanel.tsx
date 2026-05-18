@@ -1169,6 +1169,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             >
               <AdminCheckIn 
                 activities={fleetData.activities.filter(a => a.status === 'open')} 
+                registrations={fleetData.registrations}
                 onCheckIn={handleAdminCheckIn}
               />
             </motion.div>
