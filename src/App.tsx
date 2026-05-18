@@ -10,7 +10,7 @@ import { LogEditModal } from './components/LogEditModal';
 import { AdminPanel } from './components/AdminPanel';
 import { ActivityList } from './components/ActivityList';
 import { PollList } from './components/PollList';
-import { NotificationList } from './components/NotificationList';
+import { MessageList } from './components/MessageList';
 import { UserProfileGate } from './components/UserProfileGate';
 import { ConfirmationModal } from './components/ui/ConfirmationModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
@@ -571,7 +571,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <NotificationList 
+              <MessageList 
                 notifications={evStore.notifications} 
                 onMarkAsRead={evStore.markNotificationAsRead}
                 onMarkAllRead={evStore.markAllNotificationsAsRead}

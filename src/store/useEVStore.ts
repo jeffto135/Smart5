@@ -42,8 +42,10 @@ export function useEVStore() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   
-  // Local state lock for unread status bounce fix
+  // Local state lock for unread status bounce fix and frontend authority
   const readMessagesRef = useRef<Set<string>>(new Set());
+  const isUpdatingRef = useRef<Set<string>>(new Set());
+  const debounceTimerRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   // Derive permissions
   const isRevoked = auth.currentUser?.email === 'apadrama30@gmail.com';
@@ -211,13 +213,13 @@ export function useEVStore() {
       orderBy('createdAt', 'desc')
     );
 
-    return onSnapshot(q, (snap) => {
+    const unsub = onSnapshot(q, { includeMetadataChanges: false }, (snap) => {
+      // 1. Snapshot Validation: Only handle real data from server
+      if (snap.metadata.hasPendingWrites) return;
+
       const allNotifs = snap.docs.map(d => ({ id: d.id, ...d.data() } as EVNotification));
       
-      // Filter & Optimistic State Application:
-      // 1. If it's a broadcast ('all'), it must be created after user joined
-      // 2. It must not be dismissed by the current user
-      // 3. Apply state lock for read status
+      // 2. Filter & Union State Logic (Frontend Authority)
       const filtered = allNotifs.filter(n => {
         const isDismissed = n.dismissedBy && n.dismissedBy.includes(uid);
         if (isDismissed) return false;
@@ -229,13 +231,20 @@ export function useEVStore() {
         }
         return true;
       }).map(n => {
-        // Apply state lock: if it's in the pending read set, force it to be read
-        if (readMessagesRef.current.has(n.id)) {
-          const readBy = n.readBy || [];
-          if (!readBy.includes(uid)) {
-            return { ...n, readBy: [...readBy, uid] };
-          }
+        // Rule 3: Absolute Frontend Authority (Union State)
+        // If local cache says it's read, FORCE it to be read regardless of Firestore data
+        const isLocallyRead = readMessagesRef.current.has(n.id);
+        const readBy = n.readBy || [];
+        
+        if (isLocallyRead && !readBy.includes(uid)) {
+          return { ...n, readBy: [...readBy, uid] };
         }
+        
+        // Also update local cache if Firestore says it's read
+        if (readBy.includes(uid)) {
+          readMessagesRef.current.add(n.id);
+        }
+        
         return n;
       });
 
@@ -243,6 +252,8 @@ export function useEVStore() {
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'notifications');
     });
+
+    return () => unsub();
   }, [auth.currentUser, userProfile?.joinedAt]);
 
   // Activity Reminders
@@ -773,28 +784,35 @@ export function useEVStore() {
   const markNotificationAsRead = async (id: string) => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
-    const notif = notifications.find(n => n.id === id);
     
-    // Check if already read (locally or confirmed)
-    if (!notif || (notif.readBy && notif.readBy.includes(uid)) || readMessagesRef.current.has(id)) return;
+    // Rule 2 & 4: Strict Idempotency & Debounce
+    if (readMessagesRef.current.has(id) || isUpdatingRef.current.has(id)) return;
     
-    // 1. Local State Lock & Optimistic Update
+    // Optimistic Logic (Frontend Authority)
     readMessagesRef.current.add(id);
     setNotifications(prev => prev.map(n => 
       n.id === id ? { ...n, readBy: [...(n.readBy || []), uid] } : n
     ));
     
-    try {
-      // 2. Only update the specific field using arrayUnion
-      await updateDoc(doc(db, 'notifications', id), {
-        readBy: arrayUnion(uid)
-      });
-    } catch (error) {
-      console.error('Mark as read failed:', error);
-      // Remove from lock on error so it can be retried
-      readMessagesRef.current.delete(id);
-      handleFirestoreError(error, OperationType.UPDATE, 'notifications');
-    }
+    // Rule 4: Debounce the Firestore write
+    if (debounceTimerRef.current[id]) clearTimeout(debounceTimerRef.current[id]);
+    
+    debounceTimerRef.current[id] = setTimeout(async () => {
+      isUpdatingRef.current.add(id);
+      try {
+        await updateDoc(doc(db, 'notifications', id), {
+          readBy: arrayUnion(uid)
+        });
+      } catch (error) {
+        console.error('Mark as read failed:', error);
+        // Rollback local cache only on critical failure or if re-read is needed
+        // but technical mandate says "Frontend Authority", so we stay read in UI
+        handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+      } finally {
+        isUpdatingRef.current.delete(id);
+        delete debounceTimerRef.current[id];
+      }
+    }, 300); // 300ms debounce
   };
 
   const markAllNotificationsAsRead = async () => {
