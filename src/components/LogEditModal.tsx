@@ -6,6 +6,7 @@ import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
 import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
+import { auth } from '../lib/firebase';
 import { ConfirmationModal } from './ui/ConfirmationModal';
 
 interface LogEditModalProps {
@@ -55,6 +56,7 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
       const newDate = new Date(timestamp);
       await onSave({ 
         timestamp: Timestamp.fromDate(newDate),
+        userId: auth.currentUser?.uid,
         odometer, 
         batteryPercent: battery, 
         cost, 

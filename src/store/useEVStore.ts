@@ -397,7 +397,7 @@ export function useEVStore() {
       const startOfDay = new Date(dateStr + 'T00:00:00');
       const endOfDay = new Date(dateStr + 'T23:59:59');
 
-      // Check for existing log on the same day
+      // Check for existing log on the same day for merge logic
       const existingQuery = query(
         collection(db, 'logs'),
         where('vehicleId', '==', vehicle.id),
@@ -416,7 +416,6 @@ export function useEVStore() {
         const mergedIsCharging = existingLog.isCharging || (data.isCharging ?? false);
         const mergedLocation = [existingLog.location, data.location].filter(Boolean).join(', ');
 
-        // Find the record BEFORE this day to calculate distance/batteryDiff correctly
         const prevOfExistingQuery = query(
           collection(db, 'logs'),
           where('vehicleId', '==', vehicle.id),
@@ -440,10 +439,9 @@ export function useEVStore() {
           location: mergedLocation,
           distance: Math.max(0, distance),
           batteryDiff: Math.max(0, batteryDiff),
-          timestamp: logTimestamp // Update to latest time on that day
+          timestamp: logTimestamp 
         });
 
-        // Still need to update vehicle if this was latest
         const newestCheck = query(
           collection(db, 'logs'),
           where('vehicleId', '==', vehicle.id),
@@ -462,7 +460,7 @@ export function useEVStore() {
         return { logId: existingLog.id, isMerged: true };
       }
 
-      // NEW LOG MODE (existing logic follows)
+      // NEW LOG MODE - Using addDoc as requested for automatic ID
       const prevQuery = query(
         collection(db, 'logs'),
         where('vehicleId', '==', vehicle.id),
@@ -473,7 +471,6 @@ export function useEVStore() {
       const prevSnap = await getDocs(prevQuery);
       const prevLog = prevSnap.docs.length > 0 ? prevSnap.docs[0].data() as LogEntry : null;
 
-      // 2. Precise Query for Next Record (closest future record)
       const nextQuery = query(
         collection(db, 'logs'),
         where('vehicleId', '==', vehicle.id),
@@ -484,19 +481,14 @@ export function useEVStore() {
       const nextSnap = await getDocs(nextQuery);
       const nextLog = nextSnap.docs.length > 0 ? { id: nextSnap.docs[0].id, ...nextSnap.docs[0].data() } as LogEntry : null;
 
-      // 3. Logic based on prev records (if not provided by form)
       const isCharging = data.isCharging !== undefined ? data.isCharging : (prevLog ? data.batteryPercent > prevLog.batteryPercent : false);
       const distance = data.distance !== undefined ? data.distance : (prevLog ? data.odometer - prevLog.odometer : 0);
       const batteryDiff = data.batteryDiff !== undefined ? data.batteryDiff : (prevLog 
         ? (isCharging ? data.batteryPercent - prevLog.batteryPercent : prevLog.batteryPercent - data.batteryPercent)
         : 0);
 
-      const logRef = doc(collection(db, 'logs'));
-      const logId = logRef.id;
-
-      await setDoc(logRef, {
+      const logDoc = await addDoc(collection(db, 'logs'), {
         ...data,
-        id: logId,
         vehicleId: vehicle.id,
         userId: auth.currentUser.uid,
         distance: Math.max(0, distance),
@@ -504,8 +496,11 @@ export function useEVStore() {
         isCharging,
         timestamp: logTimestamp,
       });
+      
+      const logId = logDoc.id;
+      // Update with its own ID (optional, but keep for consistency with existing types if needed locally)
+      await updateDoc(logDoc, { id: logId });
 
-      // 4. Update the newer record if it exists (recalculate its stats relative to new log)
       let catchUpInfo = null;
       if (nextLog) {
         const nextDistance = nextLog.odometer - data.odometer;
@@ -514,7 +509,6 @@ export function useEVStore() {
           ? nextLog.batteryPercent - data.batteryPercent 
           : data.batteryPercent - nextLog.batteryPercent;
         
-        // Audit: If a future record found and it was a charge, but lacks cost, prepare catch-up info
         if (nextIsCharging && (!nextLog.cost || nextLog.cost === 0)) {
           catchUpInfo = {
             id: nextLog.id,
@@ -531,7 +525,6 @@ export function useEVStore() {
         });
       }
 
-      // 5. Update vehicle if this is the newest overall
       if (!nextLog) {
         await updateDoc(doc(db, 'vehicles', vehicle.id), {
           lastOdometer: data.odometer,
@@ -539,9 +532,7 @@ export function useEVStore() {
         });
       }
       
-      if ('vibrate' in navigator) {
-        navigator.vibrate(50);
-      }
+      if ('vibrate' in navigator) navigator.vibrate(50);
       return { logId, catchUpInfo };
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'logs');
@@ -820,7 +811,7 @@ export function useEVStore() {
         updateDoc(doc(db, 'registrations', regId), {
           status: 'cancelled',
           cancelReason: reason,
-          qrCodeUsed: true, // Invalidate QR code
+          qrCodeUsed: true, 
           lockoutUntil: lockoutTime
         }),
         updateDoc(doc(db, 'activities', eventId), {

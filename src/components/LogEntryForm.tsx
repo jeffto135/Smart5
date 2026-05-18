@@ -5,7 +5,7 @@ import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
 import { Vehicle, LogEntry } from '../types';
 import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { format } from 'date-fns';
 import { AnimatePresence } from 'motion/react';
 
@@ -194,6 +194,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
         const coldStartData: any = { 
           timestamp: Timestamp.fromDate(selectedDate),
+          userId: auth.currentUser?.uid,
           odometer: Number(odometer), 
           batteryPercent: Number(battery), 
           cost: Number(cost), 
@@ -201,7 +202,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           distance: 0, 
           batteryDiff: 0, 
           isCharging: false,
-          status: "DRIVING", // Initial state for new users
+          status: "DRIVING", 
           createdAt: Timestamp.now()
         };
 
@@ -251,6 +252,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
     const data: any = { 
       timestamp: Timestamp.fromDate(selectedDate),
+      userId: auth.currentUser?.uid,
       odometer: Number(odometer), 
       batteryPercent: Number(battery), 
       cost: Number(cost), 
