@@ -4,8 +4,9 @@ import { motion } from 'motion/react';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
 import { Vehicle, LogEntry } from '../types';
+import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { format } from 'date-fns';
-import { Timestamp } from 'firebase/firestore';
 
 interface LogEntryFormProps {
   vehicle: Vehicle;
@@ -22,6 +23,10 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const [location, setLocation] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Smart Detection State (Live)
+  const [isCharging, setIsCharging] = useState(false);
+  const [prevRecordDetected, setPrevRecordDetected] = useState<LogEntry | null>(null);
+
   // Duplicate Check
   const existingLogOnDate = logs.find(log => {
     const logDate = log.timestamp.toDate();
@@ -29,10 +34,43 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   });
   const isDuplicate = !!existingLogOnDate;
 
-  // Smart Detection Logic
-  const isCharging = battery > (vehicle.lastBatteryPercent || 0);
-  const distance = odometer - (vehicle.lastOdometer || 0);
-  const batteryDiff = (vehicle.lastBatteryPercent || 0) - battery;
+  // Live Check Logic when date/odometer/battery changes
+  React.useEffect(() => {
+    const checkPrevData = async () => {
+      const selectedDate = new Date(timestamp);
+      // We use the end of that day/current time for comparison
+      const now = new Date();
+      selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+      const selectedTs = Timestamp.fromDate(selectedDate);
+
+      try {
+        // Query for the closest previous record
+        const q = query(
+          collection(db, 'logs'),
+          where('vehicleId', '==', vehicle.id),
+          where('timestamp', '<', selectedTs),
+          orderBy('timestamp', 'desc'),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        if (snap.docs.length > 0) {
+          const prev = snap.docs[0].data() as LogEntry;
+          setPrevRecordDetected(prev);
+          setIsCharging(battery > prev.batteryPercent);
+        } else {
+          setPrevRecordDetected(null);
+          setIsCharging(false); 
+        }
+      } catch (e) {
+        console.warn("Prev check failed:", e);
+      }
+    };
+    
+    checkPrevData();
+  }, [timestamp, battery, vehicle.id]);
+
+  const distance = prevRecordDetected ? odometer - prevRecordDetected.odometer : 0;
+  const batteryDiff = prevRecordDetected ? (isCharging ? battery - prevRecordDetected.batteryPercent : prevRecordDetected.batteryPercent - battery) : 0;
   
   // Efficiency Calculation
   let efficiency: number | undefined;
@@ -41,8 +79,13 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     efficiency = (consumedKwh / distance) * 100;
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleEntrySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (odometer <= 0) {
+      alert('請輸入有效的總里程');
+      return;
+    }
+    
     setSubmitting(true);
     
     try {
@@ -50,6 +93,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       const selectedDate = new Date(timestamp);
       selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
+      // Final logic verification before saving
       const data: any = { 
         timestamp: Timestamp.fromDate(selectedDate),
         odometer, 
@@ -57,7 +101,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         cost, 
         location,
         distance: Math.max(0, distance),
-        batteryDiff: isCharging ? (battery - (vehicle.lastBatteryPercent || 0)) : Math.max(0, batteryDiff),
+        batteryDiff: isCharging ? (battery - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
         isCharging,
       };
 
@@ -71,15 +115,13 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       console.error("Save error:", error);
       alert('儲存失敗，請檢查輸入數據');
     } finally {
-      setTimeout(() => {
-        setSubmitting(false);
-        onCancel();
-      }, 100);
+      setSubmitting(false);
+      onCancel();
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleEntrySubmit} className="space-y-6">
       <div className="flex justify-between items-center mb-2">
         <label className="text-[10px] font-mono uppercase text-white/30 tracking-widest">輸入數據 / Entry Data</label>
         {isCharging && (

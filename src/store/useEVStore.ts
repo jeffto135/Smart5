@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   collection, 
   query, 
@@ -13,7 +13,8 @@ import {
   setDoc,
   deleteDoc,
   Timestamp,
-  getDocs
+  getDocs,
+  arrayUnion
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
@@ -38,6 +39,9 @@ export function useEVStore() {
   }>({ vehicles: [], logs: [], activities: [], polls: [] });
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  
+  // Local state lock for unread status bounce fix
+  const readMessagesRef = useRef<Set<string>>(new Set());
 
   // Derive permissions
   const isRevoked = auth.currentUser?.email === 'apadrama30@gmail.com';
@@ -184,9 +188,10 @@ export function useEVStore() {
     return onSnapshot(q, (snap) => {
       const allNotifs = snap.docs.map(d => ({ id: d.id, ...d.data() } as EVNotification));
       
-      // Filter:
+      // Filter & Optimistic State Application:
       // 1. If it's a broadcast ('all'), it must be created after user joined
       // 2. It must not be dismissed by the current user
+      // 3. Apply state lock for read status
       const filtered = allNotifs.filter(n => {
         const isDismissed = n.dismissedBy && n.dismissedBy.includes(uid);
         if (isDismissed) return false;
@@ -197,6 +202,15 @@ export function useEVStore() {
           return createdAt >= joinDate;
         }
         return true;
+      }).map(n => {
+        // Apply state lock: if it's in the pending read set, force it to be read
+        if (readMessagesRef.current.has(n.id)) {
+          const readBy = n.readBy || [];
+          if (!readBy.includes(uid)) {
+            return { ...n, readBy: [...readBy, uid] };
+          }
+        }
+        return n;
       });
 
       setNotifications(filtered);
@@ -324,31 +338,50 @@ export function useEVStore() {
     }
   };
 
-  const addLog = async (data: { odometer: number; batteryPercent: number; cost?: number; location?: string; timestamp?: any }) => {
+  const addLog = async (data: { 
+    odometer: number; 
+    batteryPercent: number; 
+    cost?: number; 
+    location?: string; 
+    timestamp?: any;
+    isCharging?: boolean;
+    distance?: number;
+    batteryDiff?: number;
+  }) => {
     if (!vehicle || !auth.currentUser) return;
 
     try {
       const logTimestamp = data.timestamp || Timestamp.now();
-      const newDateStr = format(logTimestamp.toDate ? logTimestamp.toDate() : new Date(logTimestamp), 'yyyy-MM-dd');
-      
-      // Check for same day record
-      const hasRecordToday = logs.some(l => 
-        format(l.timestamp.toDate(), 'yyyy-MM-dd') === newDateStr
-      );
-
-      if (hasRecordToday) {
-        throw new Error('今日已具備行車紀錄，無法重複新增。');
-      }
-
       const newTimeMillis = logTimestamp.toMillis ? logTimestamp.toMillis() : logTimestamp.getTime();
       
-      // Find neighbors in current logs state (sorted desc)
-      const sortedLogs = [...logs].sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-      const prevLog = sortedLogs.find(l => l.timestamp.toMillis() <= newTimeMillis);
-      const nextLog = [...sortedLogs].reverse().find(l => l.timestamp.toMillis() > newTimeMillis);
+      // 1. Precise Query for Previous Record (closest to input date)
+      const prevQuery = query(
+        collection(db, 'logs'),
+        where('vehicleId', '==', vehicle.id),
+        where('timestamp', '<', logTimestamp),
+        orderBy('timestamp', 'desc'),
+        limit(1)
+      );
+      const prevSnap = await getDocs(prevQuery);
+      const prevLog = prevSnap.docs.length > 0 ? prevSnap.docs[0].data() as LogEntry : null;
 
-      const distance = prevLog ? data.odometer - prevLog.odometer : 0;
-      const batteryDiff = prevLog ? prevLog.batteryPercent - data.batteryPercent : 0;
+      // 2. Precise Query for Next Record (closest future record)
+      const nextQuery = query(
+        collection(db, 'logs'),
+        where('vehicleId', '==', vehicle.id),
+        where('timestamp', '>', logTimestamp),
+        orderBy('timestamp', 'asc'),
+        limit(1)
+      );
+      const nextSnap = await getDocs(nextQuery);
+      const nextLog = nextSnap.docs.length > 0 ? { id: nextSnap.docs[0].id, ...nextSnap.docs[0].data() } as LogEntry : null;
+
+      // 3. Logic based on prev records (if not provided by form)
+      const isCharging = data.isCharging !== undefined ? data.isCharging : (prevLog ? data.batteryPercent > prevLog.batteryPercent : false);
+      const distance = data.distance !== undefined ? data.distance : (prevLog ? data.odometer - prevLog.odometer : 0);
+      const batteryDiff = data.batteryDiff !== undefined ? data.batteryDiff : (prevLog 
+        ? (isCharging ? data.batteryPercent - prevLog.batteryPercent : prevLog.batteryPercent - data.batteryPercent)
+        : 0);
 
       const logRef = doc(collection(db, 'logs'));
       const logId = logRef.id;
@@ -358,24 +391,29 @@ export function useEVStore() {
         id: logId,
         vehicleId: vehicle.id,
         userId: auth.currentUser.uid,
-        distance,
-        batteryDiff,
+        distance: Math.max(0, distance),
+        batteryDiff: Math.max(0, batteryDiff),
+        isCharging,
         timestamp: logTimestamp,
       });
 
-      // Update the newer record if it exists
+      // 4. Update the newer record if it exists (recalculate its stats relative to new log)
       if (nextLog) {
         const nextDistance = nextLog.odometer - data.odometer;
-        const nextBatteryDiff = data.batteryPercent - nextLog.batteryPercent;
+        const nextIsCharging = nextLog.batteryPercent > data.batteryPercent;
+        const nextBatteryDiff = nextIsCharging 
+          ? nextLog.batteryPercent - data.batteryPercent 
+          : data.batteryPercent - nextLog.batteryPercent;
+          
         await updateDoc(doc(db, 'logs', nextLog.id), {
-          distance: nextDistance,
-          batteryDiff: nextBatteryDiff
+          distance: Math.max(0, nextDistance),
+          batteryDiff: Math.max(0, nextBatteryDiff),
+          isCharging: nextIsCharging
         });
       }
 
-      // Update vehicle if this is the newest overall
-      const isNewest = !nextLog;
-      if (isNewest) {
+      // 5. Update vehicle if this is the newest overall
+      if (!nextLog) {
         await updateDoc(doc(db, 'vehicles', vehicle.id), {
           lastOdometer: data.odometer,
           lastBatteryPercent: data.batteryPercent,
@@ -636,14 +674,27 @@ export function useEVStore() {
 
   const markNotificationAsRead = async (id: string) => {
     if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
     const notif = notifications.find(n => n.id === id);
-    if (!notif || (notif.readBy && notif.readBy.includes(auth.currentUser.uid))) return;
+    
+    // Check if already read (locally or confirmed)
+    if (!notif || (notif.readBy && notif.readBy.includes(uid)) || readMessagesRef.current.has(id)) return;
+    
+    // 1. Local State Lock & Optimistic Update
+    readMessagesRef.current.add(id);
+    setNotifications(prev => prev.map(n => 
+      n.id === id ? { ...n, readBy: [...(n.readBy || []), uid] } : n
+    ));
     
     try {
+      // 2. Only update the specific field using arrayUnion
       await updateDoc(doc(db, 'notifications', id), {
-        readBy: [...(notif.readBy || []), auth.currentUser.uid]
+        readBy: arrayUnion(uid)
       });
     } catch (error) {
+      console.error('Mark as read failed:', error);
+      // Remove from lock on error so it can be retried
+      readMessagesRef.current.delete(id);
       handleFirestoreError(error, OperationType.UPDATE, 'notifications');
     }
   };
@@ -651,15 +702,26 @@ export function useEVStore() {
   const markAllNotificationsAsRead = async () => {
     if (!auth.currentUser || notifications.length === 0) return;
     const uid = auth.currentUser.uid;
-    const unread = notifications.filter(n => !(n.readBy || []).includes(uid));
+    const unread = notifications.filter(n => !(n.readBy || []).includes(uid) && !readMessagesRef.current.has(n.id));
+    
+    if (unread.length === 0) return;
+
+    // 1. Local State Lock & Optimistic Update
+    unread.forEach(n => readMessagesRef.current.add(n.id));
+    setNotifications(prev => prev.map(n => {
+      const isUnread = unread.some(u => u.id === n.id);
+      return isUnread ? { ...n, readBy: [...(n.readBy || []), uid] } : n;
+    }));
     
     try {
       await Promise.all(unread.map(n => 
         updateDoc(doc(db, 'notifications', n.id), {
-          readBy: [...(n.readBy || []), uid]
+          readBy: arrayUnion(uid)
         })
       ));
     } catch (error) {
+      console.error('Mark all as read failed:', error);
+      unread.forEach(n => readMessagesRef.current.delete(n.id));
       handleFirestoreError(error, OperationType.UPDATE, 'notifications');
     }
   };

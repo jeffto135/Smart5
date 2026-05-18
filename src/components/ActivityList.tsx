@@ -15,8 +15,10 @@ interface ActivityListProps {
 
 export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, onRegister, onClose }) => {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
 
-  const handleRegisterClick = (id: string) => {
+  const handleRegisterClick = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     setConfirmingId(id);
   };
 
@@ -51,8 +53,9 @@ export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="group"
+              onClick={() => setSelectedActivity(activity)}
             >
-              <CyberCard className={`overflow-hidden border-2 transition-all duration-300 ${isRegistered ? 'border-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.15)] bg-cyber-green/5' : 'border-cyber-green/20'}`}>
+              <CyberCard className={`overflow-hidden border-2 transition-all duration-300 cursor-pointer hover:border-cyber-green/50 ${isRegistered ? 'border-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.15)] bg-cyber-green/5' : 'border-cyber-green/20'}`}>
                 <div className="space-y-4">
                   <div className="flex justify-between items-start">
                     <h3 className={`text-lg font-mono font-bold tracking-tight uppercase ${isRegistered ? 'text-cyber-green cyber-text-glow' : 'text-white'}`}>
@@ -98,9 +101,9 @@ export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, 
                       </div>
                     ) : (
                       <CyberButton 
-                        onClick={() => handleRegisterClick(activity.id)}
+                        onClick={(e) => handleRegisterClick(e, activity.id)}
                         disabled={isClosed || isFull}
-                        className="py-2 px-8 text-[11px] h-10 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
+                        className="py-2 px-8 text-[11px] h-10 shadow-[0_0_20px_rgba(204,255,0,0.2)] relative z-10"
                       >
                         {isClosed ? '截止' : isFull ? '額滿' : '立即報名'}
                       </CyberButton>
@@ -112,6 +115,93 @@ export const ActivityList: React.FC<ActivityListProps> = ({ activities, userId, 
           );
         })
       )}
+
+      {/* Activity Details Modal */}
+      <AnimatePresence>
+        {selectedActivity && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedActivity(null)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg"
+            >
+              <CyberCard className="pt-12 p-8 border-cyber-green/30">
+                <button 
+                  onClick={() => setSelectedActivity(null)}
+                  className="absolute top-6 right-6 p-2 text-white/40 hover:text-white transition-colors"
+                >
+                  <ChevronLeft size={24} className="rotate-180" />
+                </button>
+
+                <div className="space-y-6">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-2">
+                       <h3 className="text-2xl font-mono font-bold uppercase tracking-tight text-cyber-green cyber-text-glow">
+                        {selectedActivity.title}
+                      </h3>
+                      <div className="flex items-center gap-4 text-[11px] font-mono text-white/40 uppercase tracking-[0.2em]">
+                        <span className="flex items-center gap-1"><Calendar size={12} className="text-cyber-green"/> {selectedActivity.date}</span>
+                        <span className="flex items-center gap-1"><MapPin size={12} className="text-cyber-green"/> {selectedActivity.location}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedActivity.description && (
+                    <div className="py-6 border-y border-cyber-green/10">
+                      <p className="text-sm text-white/80 leading-relaxed font-sans whitespace-pre-wrap">
+                        {selectedActivity.description}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center text-[11px] font-mono uppercase tracking-[0.2em]">
+                      <span className="text-white/40">報名進度</span>
+                      <span className="text-cyber-green">{selectedActivity.participants.length} / {selectedActivity.limit}</span>
+                    </div>
+                    <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(selectedActivity.participants.length / selectedActivity.limit) * 100}%` }}
+                        className="h-full bg-cyber-green shadow-[0_0_10px_rgba(204,255,0,0.5)]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-4">
+                    {selectedActivity.participants.includes(userId) ? (
+                      <div className="w-full py-4 rounded-xl bg-cyber-green/10 border-2 border-cyber-green flex items-center justify-center gap-3 text-cyber-green font-mono font-black uppercase shadow-[0_0_20px_rgba(204,255,0,0.2)]">
+                        <CheckCircle2 size={20} />
+                        您已成功報名 SUCCESSFUL
+                      </div>
+                    ) : (
+                      <CyberButton 
+                        className="w-full py-4 text-sm"
+                        disabled={selectedActivity.status === 'closed' || selectedActivity.participants.length >= selectedActivity.limit}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRegisterClick(e, selectedActivity.id);
+                          setSelectedActivity(null);
+                        }}
+                      >
+                        {selectedActivity.status === 'closed' ? '報名已截止' : selectedActivity.participants.length >= selectedActivity.limit ? '名額已滿' : '立即報名 / JOIN NOW'}
+                      </CyberButton>
+                    )}
+                  </div>
+                </div>
+              </CyberCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <ConfirmationModal
         isOpen={!!confirmingId}

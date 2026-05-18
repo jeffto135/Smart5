@@ -133,6 +133,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   }, [availableTabs, activeTab]);
   const [actTitle, setActTitle] = useState('');
+  const [actDescription, setActDescription] = useState('');
   const [actDate, setActDate] = useState('');
   const [actLocation, setActLocation] = useState('');
   const [actLimit, setActLimit] = useState(20);
@@ -365,6 +366,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       await onAddActivity({
         title: actTitle,
+        description: actDescription,
         date: actDate,
         location: actLocation,
         limit: finalLimit,
@@ -378,6 +380,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       // Force UI reset with delay
       setTimeout(() => {
         setActTitle('');
+        setActDescription('');
         setActDate('');
         setActLocation('');
         setActLimit(20);
@@ -526,6 +529,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const startEditActivity = (activity: Activity) => {
     setActTitle(activity.title);
+    setActDescription(activity.description || '');
     setActDate(activity.date);
     setActLocation(activity.location);
     setActLimit(activity.limit);
@@ -857,6 +861,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <CyberCard title={editingId ? "編輯活動" : "發佈新活動"} className="border-cyber-green/30">
                   <div className="space-y-4">
                     <CyberInput label="活動名稱" value={actTitle} onChange={e => setActTitle(e.target.value)} placeholder="例如: 電動車交流聚會" />
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest ml-1">活動簡介 / DESCRIPTION</label>
+                      <textarea 
+                        value={actDescription}
+                        onChange={e => setActDescription(e.target.value)}
+                        placeholder="請輸入活動詳情..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50 transition-all min-h-[80px] resize-none"
+                      />
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                       <CyberInput label="日期" type="date" value={actDate} onChange={e => setActDate(e.target.value)} />
                       <CyberInput label="名額上限" type="number" value={actLimit} onChange={e => setActLimit(Number(e.target.value))} />
@@ -865,7 +878,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => { setShowAddActivity(false); setEditingId(null); }} className="flex-1 py-2 rounded bg-white/5 text-xs font-mono">取消</button>
                       <CyberButton 
-                        onClick={() => editingId ? handleUpdateActivity(editingId, { title: actTitle, date: actDate, location: actLocation, limit: actLimit }) : handleCreateActivity()} 
+                        onClick={() => editingId ? handleUpdateActivity(editingId, { title: actTitle, description: actDescription, date: actDate, location: actLocation, limit: actLimit }) : handleCreateActivity()} 
                         className="flex-1 text-xs py-2"
                       >
                         {editingId ? '儲存更改' : '確認發佈'}
