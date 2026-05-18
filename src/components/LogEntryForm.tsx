@@ -22,7 +22,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const [battery, setBattery] = useState<number | string>(vehicle.lastBatteryPercent || 100);
   const [cost, setCost] = useState<number | string>(0);
   const [location, setLocation] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncStage, setSyncStage] = useState<'idle' | 'offline_saved' | 'syncing' | 'synced'>('idle');
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
@@ -81,6 +82,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
       const selectedTs = Timestamp.fromDate(selectedDate);
 
+      setLoadingMessage("正在驗證數據狀態...");
       try {
         // Query for ANY record before to determine if this is a cold start
         const anyBeforeQ = query(
@@ -91,11 +93,11 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         const anyBeforeSnap = await getDocs(anyBeforeQ);
         const isEmpty = anyBeforeSnap.empty;
         setTotalHistoryEmpty(isEmpty);
-        setHistoryChecked(true);
-
+        
         if (isEmpty) {
           setPrevRecordDetected(null);
           setIsCharging(false);
+          setHistoryChecked(true); 
           return;
         }
 
@@ -116,8 +118,13 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           setPrevRecordDetected(null);
           setIsCharging(false); 
         }
-      } catch (e) {
-        console.warn("Prev check failed:", e);
+      } catch (e: any) {
+        console.error("[CRITICAL] checkPrevData failed:", e);
+        // Expose error directly as requested
+        alert("Firestore 數據驗證錯誤: " + (e.message || "未知錯誤") + "\n\n如果是索引錯誤，請點擊上方生成的 Firebase 連結。");
+      } finally {
+        setHistoryChecked(true);
+        setLoadingMessage("");
       }
     };
     
@@ -172,7 +179,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     }
 
     // 2. Start Global Submission Lock
-    setSubmitting(true);
+    setIsLoading(true);
+    setLoadingMessage("正在儲存日誌...");
     setSaveStatus({ type: null, message: '' });
 
     try {
@@ -200,7 +208,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         const result = await onSave(coldStartData);
         handleOnSaveSuccess(result);
         
-        setSubmitting(false); // Immediate unlock for cold start
+        setIsLoading(false); // Immediate unlock for cold start
+        setLoadingMessage("");
         console.log("[Cold Start Authority] Primary record saved. Terminating submission pipeline.");
         return; // FORCED EARLY RETURN - DO NOT PROCEED TO NORMAL CHECKS
       }
@@ -211,20 +220,22 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           Number(battery) === prevRecordDetected.batteryPercent &&
           !showNoChangeWarning) {
         setShowNoChangeWarning(true);
-        setSubmitting(false);
+        setIsLoading(false);
+        setLoadingMessage("");
         return;
       }
       
       await proceedWithSave();
       
     } catch (err: any) {
-      // Explicit Alert as per hard requirement for transparency
+      // Expose error as requested
       const errorMsg = err.message || "Unknown internal error";
-      alert("系統錯誤: " + errorMsg + "\n如果問題持續，請截圖聯絡管理員。");
+      alert("Firestore 報錯: " + errorMsg + "\n如果問題持續，請截圖聯絡管理員。");
       handleSaveError(err);
     } finally {
-      // Global safety unlock
-      setSubmitting(false);
+      // Ultimate Global Unlock
+      setIsLoading(false);
+      setLoadingMessage("");
     }
   };
 
@@ -312,7 +323,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     }
     
     setSaveStatus({ type: 'error', message: errorMsg });
-    setSubmitting(false);
+    setIsLoading(false);
   };
 
   return (
@@ -481,9 +492,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         <CyberButton 
           type="submit" 
           className="flex-1"
-          disabled={submitting}
+          disabled={isLoading}
         >
-          {submitting ? '儲存中...' : isDuplicate ? '合併今日記錄' : '確認錄入'}
+          {isLoading ? (loadingMessage || '儲存中...') : isDuplicate ? '合併今日記錄' : '確認錄入'}
         </CyberButton>
       </div>
 
