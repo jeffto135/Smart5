@@ -7,9 +7,9 @@ importScripts('https://www.gstatic.com/firebasejs/11.1.0/firebase-messaging-comp
 // These values are extracted from firebase-applet-config.json
 firebase.initializeApp({
   apiKey: "AIzaSyCAM2sX_OVXioieZYZG5Jyyk3gB_tLxddU",
-  authDomain: "smart5-nine.firebaseapp.com",
-  projectId: "smart5-nine",
-  storageBucket: "smart5-nine.appspot.com",
+  authDomain: "woven-environs-439611-t6.firebaseapp.com",
+  projectId: "woven-environs-439611-t6",
+  storageBucket: "woven-environs-439611-t6.firebasestorage.app",
   messagingSenderId: "592243449709",
   appId: "1:592243449709:web:e10c4ce39444c462fe0464"
 });

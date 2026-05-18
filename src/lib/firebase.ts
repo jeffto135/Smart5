@@ -3,40 +3,39 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
 import { getMessaging, isSupported } from "firebase/messaging";
 
-// 🚨 粗暴重置：完全不用 import.meta.env，直接把 smart5-nine 的真實憑證寫死在裡面！
+// 🟢 鎖定 woven-environs 新基地憑證 (硬編碼確保絕對連線成功)
 const firebaseConfig = {
-  apiKey: "AIzaSyCAM2sX_OVXioieZYZG5Jyyk3gB_tLxddU", 
-  authDomain: "smart5-nine.firebaseapp.com",
-  projectId: "smart5-nine",
-  storageBucket: "smart5-nine.appspot.com",
-  messagingSenderId: "592243449709", 
+  apiKey: "AIzaSyCAM2sX_OVXioieZYZG5Jyyk3gB_tLxddU",
+  authDomain: "woven-environs-439611-t6.firebaseapp.com",
+  projectId: "woven-environs-439611-t6",
+  storageBucket: "woven-environs-439611-t6.firebasestorage.app",
+  messagingSenderId: "592243449709",
   appId: "1:592243449709:web:e10c4ce39444c462fe0464",
   measurementId: "G-ZF1ERRJQSP"
 };
 
-// 🌟 終極診斷：直接把目前連線的 Project ID 彈成 Alert，讓我們在手機/網頁上一開機就能看到！
-if (typeof window !== "undefined") {
-  alert("📡 【目前專案無所遁形】正在強制連線至: " + firebaseConfig.projectId);
-}
+console.log("📡 [基地確認] 系統已進駐現役新專案:", firebaseConfig.projectId);
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// 確保括號內完全空白，絕對不連去那個 ai-studio 具名資料庫！
-const db = getFirestore(app); 
+// 🟢 核心鎖定：使用具名資料庫 ID
+const db = getFirestore(app, "ai-studio-fe9cab21-2eab-4d27-9a68-02891525e6a8");
 const auth = getAuth(app);
 
+// 安全的通知獲取函式
 export const getSafeMessaging = async () => {
   if (typeof window !== "undefined" && "serviceWorker" in navigator) {
     try {
       const supported = await isSupported();
       if (supported) return getMessaging(app);
     } catch (err) {
-      console.warn("🔔 當前瀏覽器環境不支援 Web Push 通知:", err);
+      console.warn("🔔 目前環境不支援 Web Push 通知:", err);
     }
   }
   return null;
 };
 
+// Auth 常用導出
 export const googleProvider = new GoogleAuthProvider();
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 export const handleRedirectResult = () => getRedirectResult(auth);
