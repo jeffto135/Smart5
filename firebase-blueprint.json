@@ -72,13 +72,46 @@
       "properties": {
         "title": { "type": "string" },
         "date": { "type": "string" },
+        "eventEndDate": { "type": "string", "description": "Optional end date." },
         "location": { "type": "string" },
         "limit": { "type": "number" },
+        "deadlineDate": { "type": "string" },
         "participants": { "type": "array", "items": { "type": "string" } },
         "status": { "type": "string", "enum": ["open", "closed"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "date", "status"]
+    },
+    "ActivityRegistration": {
+      "title": "ActivityRegistration",
+      "description": "User registration for an activity.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "eventId_userId" },
+        "eventId": { "type": "string" },
+        "userId": { "type": "string" },
+        "plateNumber": { "type": "string" },
+        "qrCodeUsed": { "type": "boolean" },
+        "attended": { "type": "boolean" },
+        "attendedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["eventId", "userId", "plateNumber", "qrCodeUsed", "attended"]
+    },
+    "ParkingLot": {
+      "title": "ParkingLot",
+      "description": "Parking lot difficulty and guide information.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "region": { "type": "string", "enum": ["港島", "九龍", "新界"] },
+        "address": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "difficultyTag": { "type": "string", "enum": ["輕易", "中等", "地獄", "不可能的任務"] },
+        "adminNotes": { "type": "string" },
+        "videoGuide": { "type": "string" }
+      },
+      "required": ["name", "region", "lat", "lng", "difficultyTag"]
     },
     "Poll": {
       "title": "Poll",
@@ -130,6 +163,14 @@
     "notifications": {
       "schema": "Notification",
       "description": "List of system notifications."
+    },
+    "parking_slots": {
+      "schema": "ParkingLot",
+      "description": "Parking lot guides."
+    },
+    "registrations": {
+      "schema": "ActivityRegistration",
+      "description": "Activity registrations."
     }
   }
 }

@@ -82,11 +82,35 @@ service cloud.firestore {
     function isValidActivity(data) {
       return data.title is string && data.title.size() <= 200 &&
              data.date is string &&
+             (data.eventEndDate is string || !data.keys().hasAll(['eventEndDate'])) &&
              data.location is string &&
              data.limit is number && data.limit >= 1 &&
+             (data.deadlineDate is string || !data.keys().hasAll(['deadlineDate'])) &&
              data.participants is list &&
              data.status in ['open', 'closed'] &&
              data.createdAt is timestamp;
+    }
+
+    // --- Parking Lot Validation ---
+    function isValidParkingLot(data) {
+      return data.name is string &&
+             data.region in ['港島', '九龍', '新界'] &&
+             (data.address is string || !data.keys().hasAll(['address'])) &&
+             data.lat is number &&
+             data.lng is number &&
+             data.difficultyTag in ['輕易', '中等', '地獄', '不可能的任務'] &&
+             (data.adminNotes is string || !data.keys().hasAll(['adminNotes'])) &&
+             (data.videoGuide is string || !data.keys().hasAll(['videoGuide']));
+    }
+
+    // --- Registration Validation ---
+    function isValidRegistration(data) {
+      return data.eventId is string &&
+             data.userId is string &&
+             data.plateNumber is string &&
+             data.qrCodeUsed is bool &&
+             data.attended is bool &&
+             (data.attendedAt is timestamp || !data.keys().hasAll(['attendedAt']));
     }
 
     // --- Poll Validation ---
@@ -194,6 +218,18 @@ service cloud.firestore {
                       incoming().diff(existing()).affectedKeys().hasOnly(['odometer', 'batteryPercent', 'cost', 'location', 'distance', 'batteryDiff', 'timestamp', 'userId', 'vehicleId']);
       
       allow delete: if isOwner(existing().userId) || isSubAdmin();
+    }
+
+    match /parking_slots/{lotId} {
+      allow read: if isSignedIn();
+      allow write: if isSubAdmin() && isValidParkingLot(incoming());
+    }
+
+    match /registrations/{regId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSubAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidRegistration(incoming());
+      allow update: if isSubAdmin() && isValidRegistration(incoming());
+      allow delete: if isSubAdmin();
     }
   }
 }

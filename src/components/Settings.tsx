@@ -5,16 +5,18 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
 import { CyberCard } from './ui/CyberCard';
-import { Vehicle, UserProfile } from '../types';
+import { Vehicle, UserProfile, ParkingLot } from '../types';
 import { HK_EV_MODELS } from '../constants';
 import { DisclaimerModal } from './DisclaimerModal';
 import { UserAgreementModal } from './UserAgreementModal';
 import { AdminConductModal } from './AdminConductModal';
+import { ParkingLeafletMap } from './ParkingLeafletMap';
 
 interface SettingsPageProps {
   user: User | null;
   userProfile: UserProfile | null;
   vehicles: Vehicle[];
+  parkingLots: ParkingLot[];
   onUpdate: (id: string, data: Partial<Vehicle>) => Promise<void>;
   onAdd: (name: string) => Promise<string | undefined>;
   onDelete: (id: string) => Promise<void>;
@@ -25,7 +27,7 @@ interface SettingsPageProps {
   onClose: () => void;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, vehicles, onUpdate, onAdd, onDelete, onDeleteAccount, isAdmin, onOpenAdmin, onLogout, onClose }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, vehicles, parkingLots, onUpdate, onAdd, onDelete, onDeleteAccount, isAdmin, onOpenAdmin, onLogout, onClose }) => {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [showAccountDetails, setShowAccountDetails] = useState(false);
@@ -35,6 +37,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
   const [showUserAgreementModal, setShowUserAgreementModal] = useState(false);
   const [showAdminConductModal, setShowAdminConductModal] = useState(false);
+  const [showParkingMap, setShowParkingMap] = useState(false);
   
   // Modal states for form
   const [name, setName] = useState('');
@@ -222,6 +225,26 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
           </div>
           
           <div className="grid grid-cols-1 gap-3">
+            <button 
+              onClick={() => setShowParkingMap(true)} 
+              className="group block w-full text-left"
+            >
+              <CyberCard className="bg-cyber-green/[0.05] border-cyber-green/30 hover:border-cyber-green/50 transition-colors py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-cyber-green/20 border border-cyber-green/30 flex items-center justify-center">
+                      <MapPin className="text-cyber-green" size={20} />
+                    </div>
+                    <div>
+                      <span className="text-sm font-bold text-white block">停車場難度地圖</span>
+                      <span className="text-[10px] text-cyber-green/60 font-mono uppercase tracking-widest">Parking Difficulty Map</span>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-cyber-green transition-transform group-hover:translate-x-1" />
+                </div>
+              </CyberCard>
+            </button>
+
             <a 
               href="https://effortless.com.hk/smart5/smart5-%E6%96%B0%E7%95%8C%E5%81%9C%E8%BB%8A%E5%A0%B4/" 
               target="_blank" 
@@ -754,6 +777,35 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
         isOpen={showAdminConductModal}
         onClose={() => setShowAdminConductModal(false)}
       />
+
+      {/* Parking Map Sub-page */}
+      <AnimatePresence>
+        {showParkingMap && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed inset-0 z-[120] bg-[#0a0a0a] flex flex-col"
+          >
+            <div className="px-4 py-3 sm:p-4 border-b border-white/5 flex items-center gap-4 bg-black/50 backdrop-blur-md shrink-0">
+              <button 
+                onClick={() => setShowParkingMap(false)}
+                className="p-2 hover:bg-white/5 rounded-full text-white/50 hover:text-white transition-colors"
+              >
+                <ArrowLeft size={24} />
+              </button>
+              <div>
+                <h3 className="text-base sm:text-lg font-mono font-bold text-white uppercase tracking-tight">停車場難度地圖</h3>
+                <p className="text-[9px] sm:text-[10px] font-mono text-white/30 uppercase tracking-widest">Parking Difficulty Guide</p>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden p-3 sm:p-4">
+              <ParkingLeafletMap parkingLots={parkingLots} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

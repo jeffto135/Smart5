@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
-import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification } from '../types';
+import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration } from '../types';
 import { format } from 'date-fns';
 import { OperationType, handleFirestoreError } from '../lib/utils';
 
@@ -29,14 +29,16 @@ export function useEVStore() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [notifications, setNotifications] = useState<EVNotification[]>([]);
+  const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [loading, setLoading] = useState(true);
   const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [fleetData, setFleetData] = useState<{ 
     vehicles: Vehicle[], 
     logs: LogEntry[], 
     activities: Activity[], 
-    polls: Poll[] 
-  }>({ vehicles: [], logs: [], activities: [], polls: [] });
+    polls: Poll[],
+    registrations: ActivityRegistration[]
+  }>({ vehicles: [], logs: [], activities: [], polls: [], registrations: [] });
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   
@@ -92,10 +94,20 @@ export function useEVStore() {
     });
   }, [isSubAdmin, auth.currentUser]);
 
+  // Sync Parking Lots
+  useEffect(() => {
+    const q = query(collection(db, 'parking_slots'), orderBy('name', 'asc'));
+    return onSnapshot(q, (snap) => {
+      setParkingLots(snap.docs.map(d => ({ id: d.id, ...d.data() } as ParkingLot)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'parking_slots');
+    });
+  }, []);
+
   // Fetch Fleet Data (Admins)
   useEffect(() => {
     if (!isSubAdmin || !auth.currentUser) {
-      setFleetData({ vehicles: [], logs: [], activities: [], polls: [] });
+      setFleetData({ vehicles: [], logs: [], activities: [], polls: [], registrations: [] });
       return;
     }
 
@@ -128,14 +140,30 @@ export function useEVStore() {
       }
     );
 
+    const unsubRegs = onSnapshot(
+      query(collection(db, 'registrations')),
+      (snap) => {
+        setFleetData(prev => ({ ...prev, registrations: snap.docs.map(d => ({ id: d.id, ...d.data() } as ActivityRegistration)) }));
+      }
+    );
+
     return () => {
       unsubActivities();
       unsubPolls();
       unsubVehicles();
       unsubLogs();
+      unsubRegs();
     };
   }, [isSubAdmin, auth.currentUser]);
 
+  const vehicle = vehicles.find(v => v.id === selectedVehicleId) || vehicles[0] || null;
+
+  // Sync current vehicle plate to user profile
+  useEffect(() => {
+    if (auth.currentUser && vehicle && vehicle.plate !== userProfile?.plate) {
+      updateUserProfile({ plate: vehicle.plate });
+    }
+  }, [vehicle?.plate, userProfile?.plate, auth.currentUser?.uid]);
   const updateSelectedVehicle = async (id: string | null) => {
     setSelectedVehicleId(id);
     if (auth.currentUser) {
@@ -148,8 +176,6 @@ export function useEVStore() {
       }
     }
   };
-
-  const vehicle = vehicles.find(v => v.id === selectedVehicleId) || vehicles[0] || null;
 
   // Sync Activities
   useEffect(() => {
@@ -588,25 +614,97 @@ export function useEVStore() {
     }
   };
 
-  const registerForActivity = async (id: string) => {
+  const registerForActivity = async (id: string, plate?: string) => {
     if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
     const activity = activities.find(a => a.id === id);
-    if (!activity || activity.participants.includes(auth.currentUser.uid)) return;
+    if (!activity || activity.participants.includes(uid)) return;
     if (activity.participants.length >= activity.limit) return;
     
     try {
-      await updateDoc(doc(db, 'activities', id), {
-        participants: [...activity.participants, auth.currentUser.uid]
-      });
+      const regId = `${id}_${uid}`;
+      const regData: ActivityRegistration = {
+        id: regId,
+        eventId: id,
+        userId: uid,
+        plateNumber: plate || '未知',
+        qrCodeUsed: false,
+        attended: false,
+      };
+
+      await Promise.all([
+        updateDoc(doc(db, 'activities', id), {
+          participants: arrayUnion(uid)
+        }),
+        setDoc(doc(db, 'registrations', regId), regData)
+      ]);
+
       // Personal Success Notification
       await addNotification({
         userId: auth.currentUser.uid,
         title: '成功報名 / REGISTRATION SUCCESS',
-        message: `您已成功報名活動「${activity.title}」。`,
+        message: `您已成功報名活動「${activity.title}」。請在活動中使用 QR Code 簽到。`,
         type: 'success'
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'activities');
+    }
+  };
+
+  const deleteRegistration = async (regId: string, userId: string, eventId: string) => {
+    try {
+      const { arrayRemove } = await import('firebase/firestore');
+      const activity = activities.find(a => a.id === eventId) || fleetData.activities.find(a => a.id === eventId);
+      
+      await Promise.all([
+        deleteDoc(doc(db, 'registrations', regId)),
+        updateDoc(doc(db, 'activities', eventId), {
+          participants: arrayRemove(userId)
+        }),
+        // Notify the user their registration was removed
+        addNotification({
+          userId: userId,
+          title: '活動報名變動 / REGISTRATION UPDATE',
+          message: `管理員已移除您在活動「${activity?.title || '相關活動'}」的報名。如有疑問請聯絡管理員。`,
+          type: 'info'
+        })
+      ]);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'registrations');
+      throw error; // Re-throw to handle in UI
+    }
+  };
+
+  const updateRegistration = async (regId: string, data: Partial<ActivityRegistration>) => {
+    try {
+      await updateDoc(doc(db, 'registrations', regId), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'registrations');
+    }
+  };
+
+  const addParkingLot = async (data: Partial<ParkingLot>) => {
+    try {
+      const docRef = await addDoc(collection(db, 'parking_slots'), data);
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'parking_slots');
+    }
+  };
+
+  const updateParkingLot = async (id: string, data: Partial<ParkingLot>) => {
+    try {
+      await updateDoc(doc(db, 'parking_slots', id), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'parking_slots');
+    }
+  };
+
+  const deleteParkingLot = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'parking_slots', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'parking_slots');
     }
   };
 
@@ -857,6 +955,12 @@ export function useEVStore() {
     updateActivity,
     deleteActivity,
     registerForActivity,
+    updateRegistration,
+    deleteRegistration,
+    addParkingLot,
+    updateParkingLot,
+    deleteParkingLot,
+    parkingLots,
     addPoll,
     updatePoll,
     deletePoll,

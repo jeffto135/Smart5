@@ -44,6 +44,7 @@ export interface UserProfile {
   email?: string;
   photoURL?: string;
   displayName?: string;
+  plate?: string;
   selectedVehicleId?: string | null;
   joinedAt?: Timestamp;
   updatedAt: Timestamp;
@@ -54,11 +55,35 @@ export interface Activity {
   title: string;
   description?: string;
   date: string;
+  eventEndDate?: string; // Format: YYYY-MM-DD
   location: string;
   limit: number;
+  deadlineDate?: string;
   participants: string[]; // UID array
   status: 'open' | 'closed';
   createdAt: Timestamp;
+}
+
+export interface ActivityRegistration {
+  id: string; // eventId_userId
+  eventId: string;
+  userId: string;
+  plateNumber: string;
+  qrCodeUsed: boolean;
+  attended: boolean;
+  attendedAt?: Timestamp;
+}
+
+export interface ParkingLot {
+  id: string;
+  name: string;
+  region: '港島' | '九龍' | '新界';
+  address?: string;
+  lat: number;
+  lng: number;
+  difficultyTag: '輕易' | '中等' | '地獄' | '不可能的任務';
+  adminNotes?: string;
+  videoGuide?: string;
 }
 
 export interface PollOption {

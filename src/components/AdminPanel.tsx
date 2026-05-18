@@ -16,7 +16,10 @@ import {
   X,
   CheckCircle2,
   User,
-  MessageSquare
+  MessageSquare,
+  ShieldCheck,
+  MapPin,
+  Youtube
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -38,8 +41,12 @@ import { CyberButton } from './ui/CyberButton';
 import { CyberInput } from './ui/CyberInput';
 import { ConfirmationModal } from './ui/ConfirmationModal';
 import { DisclaimerModal } from './DisclaimerModal';
-import { Vehicle, LogEntry, Activity, Poll, UserProfile } from '../types';
+import { AdminCheckIn } from './AdminCheckIn';
+import { AdminParkingManager } from './AdminParkingManager';
+import { ParkingLeafletMap } from './ParkingLeafletMap';
+import { Vehicle, LogEntry, Activity, Poll, UserProfile, ParkingLot, ActivityRegistration } from '../types';
 import { format } from 'date-fns';
+import { Timestamp } from 'firebase/firestore';
 
 const COLORS = ['#CCFF00', '#00F0FF', '#FF00F0', '#FFFF00', '#00FF00'];
 
@@ -48,8 +55,10 @@ interface AdminPanelProps {
     vehicles: Vehicle[], 
     logs: LogEntry[],
     activities: Activity[],
-    polls: Poll[]
+    polls: Poll[],
+    registrations: ActivityRegistration[]
   };
+  parkingLots: ParkingLot[];
   allProfiles: UserProfile[];
   onUpdateLog: (id: string, data: Partial<LogEntry>) => Promise<void>;
   onDeleteLog: (id: string) => Promise<void>;
@@ -63,6 +72,10 @@ interface AdminPanelProps {
   onDeleteMember: (userId: string) => Promise<void>;
   onClearActivities: () => Promise<void>;
   onClearPolls: () => Promise<void>;
+  onUpdateRegistration: (regId: string, data: Partial<ActivityRegistration>) => Promise<void>;
+  onAddParkingLot: (data: Partial<ParkingLot>) => Promise<any>;
+  onUpdateParkingLot: (id: string, data: Partial<ParkingLot>) => Promise<void>;
+  onDeleteParkingLot: (id: string) => Promise<void>;
   userProfile: UserProfile | null;
   onUpdateProfile: (data: Partial<UserProfile>) => Promise<void>;
   onDeleteVehicle: (id: string) => Promise<void>;
@@ -75,6 +88,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
   fleetData, 
+  parkingLots,
   allProfiles,
   isAdmin,
   isSubAdmin,
@@ -90,6 +104,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onDeleteMember,
   onClearActivities,
   onClearPolls,
+  onUpdateRegistration,
+  onAddParkingLot,
+  onUpdateParkingLot,
+  onDeleteParkingLot,
   userProfile,
   onUpdateProfile,
   onDeleteVehicle,
@@ -97,7 +115,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onClearSystemNotifications,
   onClose 
 }) => {
-  const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account'>('fleet');
+  const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account' | 'checkin' | 'parking'>('fleet');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showAddPoll, setShowAddPoll] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'activity' | 'poll', data: any } | null>(null);
@@ -110,6 +128,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       { id: 'logs', label: '紀錄', icon: FileText },
       { id: 'vehicles', label: '車輛', icon: Car },
       { id: 'activities', label: '活動', icon: Calendar },
+      { id: 'checkin', label: '簽到', icon: ShieldCheck },
+      { id: 'parking', label: '泊車', icon: MapPin },
       { id: 'polls', label: '投票', icon: Vote },
       { id: 'notifications', label: '訊息', icon: MessageSquare },
       { id: 'members', label: '成員', icon: Users },
@@ -119,9 +139,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (isAdmin) return tabs;
 
     if (isSubAdmin) {
-      // Sub-admins can see fleet summary (limited), vehicles, activities, polls, notifications and account
-      // They ONLY see total counts in fleet, and cannot manage members or view system logs
-      return tabs.filter(t => ['fleet', 'vehicles', 'activities', 'polls', 'notifications', 'account'].includes(t.id));
+      // Sub-admins can see fleet summary (limited), vehicles, activities, polls, notifications, account, plus checkin and parking
+      return tabs.filter(t => ['fleet', 'vehicles', 'activities', 'polls', 'notifications', 'account', 'checkin', 'parking'].includes(t.id));
     }
     
     return [{ id: 'account', label: '帳戶', icon: User }];
@@ -135,6 +154,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [actTitle, setActTitle] = useState('');
   const [actDescription, setActDescription] = useState('');
   const [actDate, setActDate] = useState('');
+  const [actDeadlineDate, setActDeadlineDate] = useState('');
   const [actLocation, setActLocation] = useState('');
   const [actLimit, setActLimit] = useState(20);
 
@@ -235,6 +255,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       chartData: Object.values(dailyStats)
     };
   }, [fleetData, allProfiles]);
+
+  const adminActivities = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    const sorted = [...fleetData.activities].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    const active: Activity[] = [];
+    const past: Activity[] = [];
+    
+    sorted.forEach(act => {
+      const actDate = new Date(act.date);
+      const finishDate = new Date(actDate);
+      finishDate.setDate(finishDate.getDate() + 1);
+      
+      if (now >= finishDate) {
+        past.push(act);
+      } else {
+        active.push(act);
+      }
+    });
+
+    return [...active, ...past];
+  }, [fleetData.activities]);
 
   const [expandedPlate, setExpandedPlate] = useState<string | null>(null);
 
@@ -368,6 +412,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         title: actTitle,
         description: actDescription,
         date: actDate,
+        deadlineDate: actDeadlineDate,
         location: actLocation,
         limit: finalLimit,
         status: 'open'
@@ -382,6 +427,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setActTitle('');
         setActDescription('');
         setActDate('');
+        setActDeadlineDate('');
         setActLocation('');
         setActLimit(20);
         setShowAddActivity(false);
@@ -455,6 +501,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setEditingId(null);
             setActTitle('');
             setActDate('');
+            setActDeadlineDate('');
             setActLocation('');
             setActLimit(20);
             setShowAddActivity(false);
@@ -531,6 +578,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setActTitle(activity.title);
     setActDescription(activity.description || '');
     setActDate(activity.date);
+    setActDeadlineDate(activity.deadlineDate || '');
     setActLocation(activity.location);
     setActLimit(activity.limit);
     setEditingId(activity.id);
@@ -627,6 +675,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
       }
     });
+  };
+
+  const handleAdminCheckIn = async (eventId: string, userId: string) => {
+    const regId = `${eventId}_${userId}`;
+    const registration = fleetData.registrations.find(r => r.id === regId);
+    const activity = fleetData.activities.find(a => a.id === eventId);
+    
+    if (!registration) {
+      return { success: false, message: '找不到相關報名記錄 / RECORD NOT FOUND' };
+    }
+
+    if (registration.qrCodeUsed || registration.attended) {
+      return { success: false, message: '此條碼已被使用 / ALREADY USED' };
+    }
+
+    // Expiration check: 24h after event date
+    const targetDate = activity?.eventEndDate || activity?.date || '';
+    if (targetDate) {
+      const endDateTime = new Date(targetDate + 'T23:59:59').getTime();
+      const now = new Date().getTime();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+      if (now > (endDateTime + twentyFourHours)) {
+        return { success: false, message: '活動簽到已截止 / EVENT EXPIRED' };
+      }
+    }
+
+    try {
+      await onUpdateRegistration(regId, {
+        qrCodeUsed: true,
+        attended: true,
+        attendedAt: Timestamp.now()
+      });
+      return { success: true, message: `簽到成功！車牌: ${registration.plateNumber}` };
+    } catch (e) {
+      return { success: false, message: '系統更新失敗 / SYSTEM ERROR' };
+    }
   };
 
   const handleUpdateMyProfile = async () => {
@@ -874,11 +958,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <CyberInput label="日期" type="date" value={actDate} onChange={e => setActDate(e.target.value)} />
                       <CyberInput label="名額上限" type="number" value={actLimit} onChange={e => setActLimit(Number(e.target.value))} />
                     </div>
+                    <CyberInput label="截止報名日期 (選填)" type="date" value={actDeadlineDate} onChange={e => setActDeadlineDate(e.target.value)} />
                     <CyberInput label="地點" value={actLocation} onChange={e => setActLocation(e.target.value)} placeholder="例如: 科學園" />
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => { setShowAddActivity(false); setEditingId(null); }} className="flex-1 py-2 rounded bg-white/5 text-xs font-mono">取消</button>
                       <CyberButton 
-                        onClick={() => editingId ? handleUpdateActivity(editingId, { title: actTitle, description: actDescription, date: actDate, location: actLocation, limit: actLimit }) : handleCreateActivity()} 
+                        onClick={() => editingId ? handleUpdateActivity(editingId, { title: actTitle, description: actDescription, date: actDate, deadlineDate: actDeadlineDate, location: actLocation, limit: actLimit }) : handleCreateActivity()} 
                         className="flex-1 text-xs py-2"
                       >
                         {editingId ? '儲存更改' : '確認發佈'}
@@ -889,51 +974,61 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               )}
 
               <div className="space-y-4">
-                {fleetData.activities.map(activity => (
-                  <CyberCard key={activity.id} className="bg-white/[0.02]">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-white">{activity.title}</h4>
-                        <div className="flex items-center gap-3 text-[10px] font-mono text-white/40 uppercase">
-                          <span>{activity.date}</span>
-                          <span>{activity.location}</span>
+                {adminActivities.map(activity => {
+                  const actDate = new Date(activity.date);
+                  const finishDate = new Date(actDate);
+                  finishDate.setDate(finishDate.getDate() + 1);
+                  const isPast = new Date() >= finishDate;
+
+                  return (
+                    <CyberCard key={activity.id} className={`bg-white/[0.02] ${isPast ? 'opacity-50 grayscale' : ''}`}>
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-white flex items-center gap-2">
+                            {activity.title}
+                            {isPast && <span className="text-[8px] px-1 bg-white/10 text-white/40 border border-white/20 rounded uppercase">過去 / PAST</span>}
+                          </h4>
+                          <div className="flex items-center gap-3 text-[10px] font-mono text-white/40 uppercase">
+                            <span>{activity.date}</span>
+                            <span>{activity.location}</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setSelectedEntity({ type: 'activity', data: activity })}
+                            className="px-3 py-1 bg-white/5 rounded border border-white/10 text-[10px] font-mono hover:bg-cyber-green hover:text-black transition-all"
+                          >
+                            管理名單
+                          </button>
+                          <button 
+                            onClick={() => startEditActivity(activity)}
+                            className="p-2 text-white/30 hover:text-cyber-green"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteActivityAction(activity.id)} 
+                            className="p-2 text-red-500/30 hover:text-red-500"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => setSelectedEntity({ type: 'activity', data: activity })}
-                          className="px-3 py-1 bg-white/5 rounded border border-white/10 text-[10px] font-mono hover:bg-cyber-green hover:text-black transition-all"
-                        >
-                          查看詳情
-                        </button>
-                        <button 
-                          onClick={() => startEditActivity(activity)}
-                          className="p-2 text-white/30 hover:text-cyber-green"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteActivityAction(activity.id)} 
-                          className="p-2 text-red-500/30 hover:text-red-500"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-4 p-3 bg-black/20 rounded border border-white/5">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest">報名名單 ({activity.participants.length}/{activity.limit})</div>
-                        <div className="h-1.5 w-24 bg-white/5 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-cyber-green shadow-[0_0_8px_#CCFF00]" 
-                            style={{ width: `${(activity.participants.length / activity.limit) * 100}%` }}
-                          />
+                      
+                      <div className="mt-4 p-3 bg-black/20 rounded border border-white/5">
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest">報名名單 ({activity.participants.length}/{activity.limit})</div>
+                          <div className="h-1.5 w-24 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-cyber-green shadow-[0_0_8px_#CCFF00]" 
+                              style={{ width: `${(activity.participants.length / activity.limit) * 100}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </CyberCard>
-                ))}
+                    </CyberCard>
+                  );
+                })}
               </div>
             </motion.div>
           )}
@@ -1061,6 +1156,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   </CyberCard>
                 ))}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'checkin' && (
+            <motion.div
+              key="checkin"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              <AdminCheckIn 
+                activities={fleetData.activities.filter(a => a.status === 'open')} 
+                onCheckIn={handleAdminCheckIn}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === 'parking' && (
+            <motion.div
+              key="parking"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              <AdminParkingManager 
+                parkingLots={parkingLots}
+                addParkingLot={onAddParkingLot}
+                updateParkingLot={onUpdateParkingLot}
+                deleteParkingLot={onDeleteParkingLot}
+              />
+
+              <div className="pt-8 border-t border-white/5 space-y-4">
+                <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-white/30">地圖預覽 PREVIEW</h3>
+                <div className="h-[600px] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+                  <ParkingLeafletMap parkingLots={parkingLots} />
+                </div>
               </div>
             </motion.div>
           )}
@@ -1460,6 +1592,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   />
                   
                   <div className="space-y-1">
+                    <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest ml-1">車牌號碼 (根據車輛管理)</label>
+                    <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm font-mono text-cyber-green flex items-center gap-2">
+                      <Car size={14} />
+                      {userProfile.plate || '未設定車輛'}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
                     <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest ml-1">電子郵件 (唯讀)</label>
                     <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm font-mono text-white/40">
                       {userProfile.email || '未設定'}
@@ -1538,22 +1678,70 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-6">
                   {selectedEntity.type === 'activity' ? (
-                    <div className="space-y-3">
-                      {getUserDetails(selectedEntity.data.participants).map(user => (
-                        <div key={user.uid} className="flex justify-between items-center p-3 rounded-lg bg-white/5 border border-white/5">
-                          <div>
-                            <div className="text-sm font-bold text-white">{user.name}</div>
-                            <div className="text-[10px] font-mono text-white/30">{user.email}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs font-mono font-bold text-cyber-green">{user.plate}</div>
-                            <div className="text-[10px] font-mono text-white/30">{user.phone}</div>
-                          </div>
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-2 flex justify-between items-center">
+                          <span>報名名單 PARTICIPANTS</span>
+                          <span>{selectedEntity.data.participants.length} / {selectedEntity.data.limit}</span>
                         </div>
-                      ))}
-                      {selectedEntity.data.participants.length === 0 && (
-                        <div className="text-center py-10 opacity-20 text-xs font-mono lowercase">no participants yet</div>
-                      )}
+                        {getUserDetails(selectedEntity.data.participants).map(user => (
+                          <div key={user.uid} className="flex justify-between items-center p-3 rounded-lg bg-white/5 border border-white/5 group">
+                            <div>
+                              <div className="text-sm font-bold text-white">{user.name}</div>
+                              <div className="text-[10px] font-mono text-white/30">{user.email}</div>
+                              <div className="text-[9px] font-mono text-cyber-green mt-0.5">{user.plate} • {user.phone}</div>
+                            </div>
+                            <button 
+                              onClick={async () => {
+                                if (window.confirm('確定要移出此成員嗎？ REMOVE THIS PARTICIPANT?')) {
+                                  const updatedParticipants = selectedEntity.data.participants.filter((p: string) => p !== user.uid);
+                                  await onUpdateActivity(selectedEntity.data.id, { participants: updatedParticipants });
+                                  setSelectedEntity({ ...selectedEntity, data: { ...selectedEntity.data, participants: updatedParticipants } });
+                                }
+                              }}
+                              className="p-2 text-red-500/0 group-hover:text-red-500/60 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                        {selectedEntity.data.participants.length === 0 && (
+                          <div className="text-center py-10 opacity-20 text-xs font-mono lowercase">no participants yet</div>
+                        )}
+                      </div>
+
+                      <div className="pt-4 border-t border-white/10 space-y-3">
+                        <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest">手動增加成員 ADD PARTICIPANT</div>
+                        <div className="space-y-2">
+                          <select 
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50"
+                            onChange={async (e) => {
+                              const uid = e.target.value;
+                              if (!uid) return;
+                              if (selectedEntity.data.participants.includes(uid)) {
+                                alert('該成員已在名單中 ALREADY IN LIST');
+                                return;
+                              }
+                              const updatedParticipants = [...selectedEntity.data.participants, uid];
+                              await onUpdateActivity(selectedEntity.data.id, { participants: updatedParticipants });
+                              setSelectedEntity({ ...selectedEntity, data: { ...selectedEntity.data, participants: updatedParticipants } });
+                              e.target.value = '';
+                            }}
+                          >
+                            <option value="" className="bg-[#121212]">選擇成員...</option>
+                            {allProfiles
+                              .filter(p => !selectedEntity.data.participants.includes(p.id))
+                              .sort((a,b) => (a.displayName || '').localeCompare(b.displayName || ''))
+                              .map(p => (
+                                <option key={p.id} value={p.id} className="bg-[#121212]">
+                                  {p.displayName || p.phoneNumber} ({p.phoneNumber})
+                                </option>
+                              ))
+                            }
+                          </select>
+                          <p className="text-[9px] font-mono text-white/20 italic text-center">管理員可無視截止日期與名額限制手動加人。</p>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-6">

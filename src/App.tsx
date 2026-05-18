@@ -330,6 +330,7 @@ export default function App() {
     return (
       <AdminPanel 
         fleetData={evStore.fleetData}
+        parkingLots={evStore.parkingLots}
         allProfiles={evStore.allProfiles}
         isAdmin={evStore.isAdmin}
         isSubAdmin={evStore.isSubAdmin}
@@ -345,6 +346,10 @@ export default function App() {
         onDeleteMember={evStore.deleteMember}
         onClearActivities={evStore.clearAllActivities}
         onClearPolls={evStore.clearAllPolls}
+        onUpdateRegistration={evStore.updateRegistration}
+        onAddParkingLot={evStore.addParkingLot}
+        onUpdateParkingLot={evStore.updateParkingLot}
+        onDeleteParkingLot={evStore.deleteParkingLot}
         userProfile={evStore.userProfile}
         onUpdateProfile={evStore.updateUserProfile}
         onDeleteVehicle={evStore.deleteVehicle}
@@ -370,7 +375,7 @@ export default function App() {
       </div>
 
       {/* Header */}
-      <header className="p-8 flex justify-between items-center relative z-20">
+      <header className="p-8 flex justify-between items-center relative">
         <div className="flex items-center gap-4 flex-1">
           <div className="w-10 h-10 cyber-border flex items-center justify-center rounded-lg bg-cyber-green/5 overflow-hidden p-1">
             <img 
@@ -452,7 +457,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 px-6 pb-24 relative z-10 overflow-y-auto">
+      <main className="flex-1 px-6 pb-24 relative overflow-y-auto">
         <AnimatePresence mode="wait">
           {!evStore.vehicle && !evStore.loading && view !== 'settings' ? (
             <motion.div
@@ -521,8 +526,14 @@ export default function App() {
             >
               <ActivityList 
                 activities={evStore.activities}
+                registrations={evStore.fleetData.registrations}
+                userProfile={evStore.userProfile}
+                allProfiles={evStore.allProfiles}
+                isAdmin={evStore.isAdmin}
+                isSubAdmin={evStore.isSubAdmin}
                 userId={user.uid}
                 onRegister={evStore.registerForActivity}
+                onDeleteRegistration={evStore.deleteRegistration}
                 onClose={() => setView('dashboard')}
               />
             </motion.div>
@@ -583,6 +594,7 @@ export default function App() {
                 user={user}
                 userProfile={evStore.userProfile}
                 vehicles={evStore.vehicles}
+                parkingLots={evStore.parkingLots}
                 onUpdate={evStore.updateVehicle}
                 onAdd={evStore.addVehicle}
                 onDelete={evStore.deleteVehicle}
