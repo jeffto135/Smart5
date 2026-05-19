@@ -168,9 +168,9 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg max-h-[90vh] flex flex-col"
+              className="relative w-full max-w-lg max-h-[85vh] flex flex-col overflow-y-auto overscroll-contain custom-scrollbar"
             >
-              <CyberCard className="overflow-hidden border-cyber-green/30 flex flex-col h-full p-0">
+              <CyberCard className="border-cyber-green/30 flex flex-col h-auto p-0">
                 <div className="flex items-center justify-between p-4 sm:p-6 border-b border-white/5 bg-white/[0.02] shrink-0">
                   <h3 className="text-lg font-mono font-bold text-white uppercase tracking-tight">
                     {editingLot.id ? '編輯停車場' : '新增停車場'}
@@ -180,8 +180,8 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
                   </button>
                 </div>
 
-                <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-hidden">
-                  <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 custom-scrollbar">
+                <form onSubmit={handleSave} className="flex flex-col">
+                  <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <label className="text-[10px] font-mono text-white/30 uppercase ml-1">名稱 NAME</label>

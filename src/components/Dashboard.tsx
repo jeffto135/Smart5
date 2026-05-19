@@ -349,7 +349,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               )}
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="text-sm font-mono group-hover:text-cyber-green transition-colors">{format(log.timestamp.toDate(), 'yyyy-MM-dd')}</div>
+                  <div className="text-sm font-mono group-hover:text-cyber-green transition-colors">
+                    {log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd')}
+                  </div>
                   {log.isCharging && (
                     <span className="text-[8px] bg-cyber-green font-mono font-bold text-black px-1 rounded">⚡️ CHARGED</span>
                   )}

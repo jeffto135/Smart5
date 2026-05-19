@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
 import { getMessaging, isSupported } from "firebase/messaging";
 
@@ -20,6 +20,18 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // 🟢 核心鎖定：使用具名資料庫 ID
 const db = getFirestore(app, "ai-studio-fe9cab21-2eab-4d27-9a68-02891525e6a8");
+
+// 🚀 啟動 Firestore 離線快取 (Optimistic UI 關鍵)
+if (typeof window !== "undefined") {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn("Firestore Persistence failed: Multiple tabs open.");
+    } else if (err.code === 'unimplemented') {
+      console.warn("Firestore Persistence failed: Browser not supported.");
+    }
+  });
+}
+
 const auth = getAuth(app);
 
 // 安全的通知獲取函式

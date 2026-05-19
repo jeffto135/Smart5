@@ -52,7 +52,10 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, onLogClick, onCl
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-2 text-cyber-green/60 text-xs font-mono uppercase">
                   <Calendar size={14} />
-                  {format(log.timestamp.toDate(), 'yyyy-MM-dd HH:mm')}
+                  {log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd')}
+                  <span className="opacity-40">
+                    {format(log.timestamp.toDate(), 'HH:mm')}
+                  </span>
                   {log.isCharging && (
                     <span className="text-[8px] bg-cyber-green text-black px-1 rounded font-bold">⚡️ 補能</span>
                   )}

@@ -118,7 +118,7 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="glass-card w-full max-w-sm p-6 relative z-10 border-cyber-green/30 overflow-hidden"
+        className="glass-card w-full max-w-sm p-6 relative z-10 border-cyber-green/30 max-h-[85vh] overflow-y-auto overscroll-contain custom-scrollbar"
       >
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-mono font-bold uppercase text-cyber-green">編輯紀錄</h3>

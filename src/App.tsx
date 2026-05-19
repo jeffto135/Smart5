@@ -18,6 +18,7 @@ import { CatchUpPrompt } from './components/CatchUpPrompt';
 import { ConfirmationModal } from './components/ui/ConfirmationModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
+import { HKWeather } from './components/HKWeather';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
 import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun } from 'lucide-react';
@@ -458,10 +459,7 @@ export default function App() {
         
         <div className="flex items-center gap-3">
           <div className="flex flex-col items-end">
-            <div className="flex items-center gap-2 text-cyber-green text-[10px] font-mono font-bold leading-none">
-              <Sun size={12} className="cyber-text-glow" />
-              <span>28°C SUNNY</span>
-            </div>
+            <HKWeather />
             <div className="flex items-center gap-1.5 mt-1">
               <span className="text-[14px] font-mono font-black text-white leading-none tracking-tighter">
                 {currentTime.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' })}

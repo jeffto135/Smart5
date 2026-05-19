@@ -244,7 +244,8 @@ service cloud.firestore {
 
     match /parking_slots/{lotId} {
       allow read: if isSignedIn();
-      allow write: if isSubAdmin() && isValidParkingLot(incoming());
+      allow create, update: if isSubAdmin() && isValidParkingLot(incoming());
+      allow delete: if isSubAdmin();
     }
 
     match /registrations/{regId} {

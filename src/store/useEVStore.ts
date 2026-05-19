@@ -55,6 +55,39 @@ export function useEVStore() {
   // Unified loading state
   const isDataLoading = loading || profileLoading;
 
+  // 🚀 [PERFORMANCE] 極速進場：非同步並行載入 (Promise.all)
+  // 在偵聽器啟動的同時，先嘗試一次性抓取分頁關鍵數據，利用離線快取達到秒開
+  useEffect(() => {
+    if (!auth.currentUser) {
+      setLoading(false);
+      return;
+    }
+
+    const warmUpData = async () => {
+      try {
+        const uid = auth.currentUser!.uid;
+        // 並行請求：車輛、關鍵通知、近期活動、投票
+        await Promise.all([
+          getDocs(query(collection(db, 'vehicles'), where('userId', '==', uid), limit(10))),
+          getDocs(query(collection(db, 'notifications'), where('userId', '==', uid), limit(10))),
+          getDocs(query(collection(db, 'activities'), limit(10))),
+          getDocs(query(collection(db, 'polls'), limit(5)))
+        ]);
+        // 抓完後不一定要在這裡 setState，因為 onSnapshot 會緊接著利用快取觸發
+        // 但完成 Promise.all 代表快取已熱，載入狀態可以提早解除
+        console.log("⚡️ [效能優化] 數據預熱完成");
+      } catch (err) {
+        console.warn("[效能優化] 預熱失敗:", err);
+      } finally {
+        // 解鎖加載狀態
+        // Note: Individual snapshots will still keep data fresh
+        setLoading(false);
+      }
+    };
+
+    warmUpData();
+  }, [auth.currentUser?.uid]);
+
   // Sync User Profile
   useEffect(() => {
     if (!auth.currentUser) {
@@ -468,25 +501,25 @@ export function useEVStore() {
         return { logId: existingLog.id, isMerged: true };
       }
 
-      // NEW LOG MODE - Using addDoc as requested for automatic ID
-      const prevQuery = query(
-        collection(db, 'vehicleLogs'),
-        where('plateNumber', '==', vehicle.plate),
-        where('date', '<', dateStr),
-        orderBy('date', 'desc'),
-        limit(1)
-      );
-      const prevSnap = await getDocs(prevQuery);
-      const prevLog = prevSnap.docs.length > 0 ? prevSnap.docs[0].data() as LogEntry : null;
+      // NEW LOG MODE - Concurrent pre-fetch for optimization (Promise.all)
+      const [prevSnap, nextSnap] = await Promise.all([
+        getDocs(query(
+          collection(db, 'vehicleLogs'),
+          where('plateNumber', '==', vehicle.plate),
+          where('date', '<', dateStr),
+          orderBy('date', 'desc'),
+          limit(1)
+        )),
+        getDocs(query(
+          collection(db, 'vehicleLogs'),
+          where('plateNumber', '==', vehicle.plate),
+          where('date', '>', dateStr),
+          orderBy('date', 'asc'),
+          limit(1)
+        ))
+      ]);
 
-      const nextQuery = query(
-        collection(db, 'vehicleLogs'),
-        where('plateNumber', '==', vehicle.plate),
-        where('date', '>', dateStr),
-        orderBy('date', 'asc'),
-        limit(1)
-      );
-      const nextSnap = await getDocs(nextQuery);
+      const prevLog = prevSnap.docs.length > 0 ? prevSnap.docs[0].data() as LogEntry : null;
       const nextLog = nextSnap.docs.length > 0 ? { id: nextSnap.docs[0].id, ...nextSnap.docs[0].data() } as LogEntry : null;
 
       const isCharging = data.isCharging !== undefined ? data.isCharging : (prevLog ? Number(data.batteryPercent) > prevLog.batteryPercent : false);
@@ -560,9 +593,13 @@ export function useEVStore() {
 
   const updateLog = async (logId: string, data: Partial<LogEntry>) => {
     try {
+      const updateData: any = { ...data };
+      if (data.odometer !== undefined) updateData.odo = Number(data.odometer);
+      if (data.batteryPercent !== undefined) updateData.soc = Number(data.batteryPercent);
+      
       await updateDoc(doc(db, 'vehicleLogs', logId), {
-        ...data,
-        timestamp: serverTimestamp()
+        ...updateData,
+        updatedAt: serverTimestamp()
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'vehicleLogs');
@@ -621,21 +658,23 @@ export function useEVStore() {
     setLoading(true);
     try {
       const { writeBatch } = await import('firebase/firestore');
+      
+      // 🚀 Performance Optimization: Parallel Snapshot Queries
+      const [logsSnap, vehiclesSnap, notifsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'vehicleLogs'), where('userId', '==', uid))),
+        getDocs(query(collection(db, 'vehicles'), where('userId', '==', uid))),
+        getDocs(query(collection(db, 'notifications'), where('userId', '==', uid)))
+      ]);
+
       const batch = writeBatch(db);
 
       // 1. Collect all logs
-      const logsQuery = query(collection(db, 'vehicleLogs'), where('userId', '==', uid));
-      const logsSnap = await getDocs(logsQuery);
       logsSnap.forEach(doc => batch.delete(doc.ref));
 
       // 2. Collect all vehicles
-      const vehiclesQuery = query(collection(db, 'vehicles'), where('userId', '==', uid));
-      const vehiclesSnap = await getDocs(vehiclesQuery);
       vehiclesSnap.forEach(doc => batch.delete(doc.ref));
 
       // 3. Collect notifications
-      const notifsQuery = query(collection(db, 'notifications'), where('userId', '==', uid));
-      const notifsSnap = await getDocs(notifsQuery);
       notifsSnap.forEach(doc => batch.delete(doc.ref));
 
       // 4. User profile

@@ -410,7 +410,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleCreateActivity = async () => {
-    if (!actTitle || !actStartDate) return;
     const finalLimit = Math.max(1, actLimit);
     try {
       await onAddActivity({
@@ -988,9 +987,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {showAddActivity && (
                 <CyberCard title={editingId ? "編輯活動" : "發佈新活動"} className="border-cyber-green/30">
                   <div className="space-y-4">
-                    <CyberInput label="活動名稱" value={actTitle} onChange={e => setActTitle(e.target.value)} placeholder="例如: 電動車交流聚會" />
+                    <CyberInput label="活動名稱 (必填)" value={actTitle} onChange={e => setActTitle(e.target.value)} placeholder="例如: 電動車交流聚會" />
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest ml-1">活動簡介 / DESCRIPTION</label>
+                      <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest ml-1">活動簡介 / DESCRIPTION (必填)</label>
                       <textarea 
                         value={actDescription}
                         onChange={e => setActDescription(e.target.value)}
@@ -999,31 +998,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <CyberInput label="開始時間" type="datetime-local" value={actStartDate} onChange={e => setActStartDate(e.target.value)} />
-                      <CyberInput label="完結時間" type="datetime-local" value={actEndDate} onChange={e => setActEndDate(e.target.value)} />
+                      <CyberInput label="開始時間 (必填)" type="datetime-local" value={actStartDate} onChange={e => setActStartDate(e.target.value)} />
+                      <CyberInput label="完結時間 (必填)" type="datetime-local" value={actEndDate} onChange={e => setActEndDate(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <CyberInput label="名額上限" type="number" value={actLimit} onChange={e => setActLimit(Number(e.target.value))} />
+                      <CyberInput label="名額上限 (必填)" type="number" value={actLimit} onChange={e => setActLimit(Number(e.target.value))} />
                       <CyberInput label="截止報名日期 (選填)" type="date" value={actDeadlineDate} onChange={e => setActDeadlineDate(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <CyberInput label="地點名稱" value={actLocation} onChange={e => setActLocation(e.target.value)} placeholder="例如: TKO Gateway" />
-                      <CyberInput label="地點經緯度 (導航用)" value={actLocationCoordinates} onChange={e => setActLocationCoordinates(e.target.value)} placeholder="例如: 22.3164,114.2694" />
+                      <CyberInput label="地點名稱 (必填)" value={actLocation} onChange={e => setActLocation(e.target.value)} placeholder="例如: TKO Gateway" />
+                      <CyberInput label="地點經緯度 (導航用 - 選填)" value={actLocationCoordinates} onChange={e => setActLocationCoordinates(e.target.value)} placeholder="例如: 22.3164,114.2694" />
                     </div>
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => { setShowAddActivity(false); setEditingId(null); }} className="flex-1 py-2 rounded bg-white/5 text-xs font-mono">取消</button>
                       <CyberButton 
-                        onClick={() => editingId ? handleUpdateActivity(editingId, { 
-                          title: actTitle, 
-                          description: actDescription, 
-                          date: actStartDate.split('T')[0],
-                          eventStartDate: actStartDate ? Timestamp.fromDate(new Date(actStartDate)) : undefined,
-                          eventEndDate: actEndDate ? Timestamp.fromDate(new Date(actEndDate)) : undefined,
-                          deadlineDate: actDeadlineDate, 
-                          location: actLocation, 
-                          locationCoordinates: actLocationCoordinates,
-                          limit: actLimit 
-                        }) : handleCreateActivity()} 
+                        onClick={() => {
+                          if (!actTitle || !actStartDate || !actEndDate || !actLocation || !actDescription) {
+                            alert('請填寫所有必填項目 / PLEASE FILL ALL REQUIRED FIELDS');
+                            return;
+                          }
+                          editingId ? handleUpdateActivity(editingId, { 
+                            title: actTitle, 
+                            description: actDescription, 
+                            date: actStartDate.split('T')[0],
+                            eventStartDate: actStartDate ? Timestamp.fromDate(new Date(actStartDate)) : undefined,
+                            eventEndDate: actEndDate ? Timestamp.fromDate(new Date(actEndDate)) : undefined,
+                            deadlineDate: actDeadlineDate, 
+                            location: actLocation, 
+                            locationCoordinates: actLocationCoordinates,
+                            limit: actLimit 
+                          }) : handleCreateActivity();
+                        }} 
                         className="flex-1 text-xs py-2"
                       >
                         {editingId ? '儲存更改' : '確認發佈'}
@@ -1286,7 +1291,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <div className="text-left">
                         <div className="text-sm font-bold text-white">{plate}</div>
                         <div className="text-[9px] font-mono text-white/30 uppercase tracking-widest">
-                          最後紀錄: {format(logs[0].timestamp.toDate(), 'yyyy-MM-dd')}
+                          最後紀錄: {logs[0].date || format(logs[0].timestamp.toDate(), 'yyyy-MM-dd')}
                         </div>
                       </div>
                     </div>
@@ -1310,7 +1315,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <CyberCard key={log.id} className="p-3 bg-white/[0.01]">
                               <div className="flex justify-between items-start mb-2">
                                 <div className="text-[9px] font-mono text-white/30 uppercase">
-                                  {format(log.timestamp.toDate(), 'MM-dd HH:mm')}
+                                  {log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd')} {format(log.timestamp.toDate(), 'HH:mm')}
                                 </div>
                                 <div className="flex gap-1">
                                   {isEditing ? (

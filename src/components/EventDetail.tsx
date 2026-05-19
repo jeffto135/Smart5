@@ -68,6 +68,15 @@ export const EventDetail: React.FC<EventDetailProps> = ({
     return now > regDeadline;
   }, [activity.deadlineDate, activity.eventEndDate, activity.date]);
 
+  // Check if the event itself has ended
+  const isEventEnded = React.useMemo(() => {
+    const now = new Date();
+    const finishDate = activity.eventEndDate 
+      ? activity.eventEndDate.toDate() 
+      : new Date(new Date(activity.eventStartDate?.toDate() || activity.date).setDate(new Date(activity.eventStartDate?.toDate() || activity.date).getDate() + 1));
+    return now > finishDate;
+  }, [activity]);
+
   // Expiration check: 24h after event end date for QR code visibility
   const isExpired = React.useMemo(() => {
     const now = new Date().getTime();
@@ -175,9 +184,10 @@ export const EventDetail: React.FC<EventDetailProps> = ({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className={`px-2 py-0.5 rounded-[4px] text-[9px] font-mono font-bold uppercase tracking-widest ${
-                  activity.status === 'open' ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/30' : 'bg-red-500/20 text-red-500 border border-red-500/30'
+                  isEventEnded ? 'bg-white/10 text-white/40 border border-white/20' :
+                  activity.status === 'open' && !isRegistrationClosed ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/30' : 'bg-red-500/20 text-red-500 border border-red-500/30'
                 }`}>
-                  {activity.status === 'open' ? '報名中 OPEN' : '已截止 CLOSED'}
+                  {isEventEnded ? '活動已結束 ENDED' : activity.status === 'open' && !isRegistrationClosed ? '報名中 OPEN' : '已截止 CLOSED'}
                 </span>
                 {isRegistered && (
                   <span className="px-2 py-0.5 rounded-[4px] text-[9px] font-mono font-bold uppercase tracking-widest bg-blue-500/20 text-blue-400 border border-blue-500/30">
@@ -433,10 +443,10 @@ export const EventDetail: React.FC<EventDetailProps> = ({
 
                   <CyberButton 
                     className="w-full py-5 text-sm"
-                    disabled={activity.status === 'closed' || isFull || isRegistrationClosed || !userProfile?.plate || isLockedOut || isActionLoading}
+                    disabled={activity.status === 'closed' || isFull || isRegistrationClosed || !userProfile?.plate || isLockedOut || isActionLoading || isEventEnded}
                     onClick={() => setShowJoinConfirm(true)}
                   >
-                    {isRegistrationClosed ? '報名已截止' : isLockedOut ? '鎖定中 LOCKOUT' : activity.status === 'closed' ? '報名已截止' : isFull ? '名額已滿 FULL' : '立即報名 / JOIN NOW'}
+                    {isEventEnded ? '本活動已結束 / ENDED' : isRegistrationClosed ? '報名已截止 / CLOSED' : isLockedOut ? '鎖定中 LOCKOUT' : activity.status === 'closed' ? '報名已截止' : isFull ? '名額已滿 FULL' : '立即報名 / JOIN NOW'}
                   </CyberButton>
                 </div>
               )}
