@@ -311,10 +311,10 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       setupLogSync(logId, catchUpInfo);
     }
 
-    // 使用 setTimeout 給予 React 100 毫秒的緩衝時間來刷新狀態，防止黑屏死鎖
+    // 使用 setTimeout 給予 React 100 毫秒的緩衝時間來刷新狀態
+    // 並強制使用原生瀏覽器重定向回到首頁，徹底解決卡死問題
     setTimeout(() => {
-      // For this specific app, we use onCancel to go back to dashboard as we don't have navigate
-      onCancel();
+      window.location.href = "/";
     }, 100);
   };
 
