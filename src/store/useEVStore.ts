@@ -140,7 +140,7 @@ export function useEVStore() {
     );
 
     const unsubLogs = onSnapshot(
-      query(collection(db, 'vehicleLogs'), orderBy('timestamp', 'desc'), limit(500)),
+      query(collection(db, 'vehicleLogs'), orderBy('date', 'desc'), limit(500)),
       (snap) => {
         setFleetData(prev => ({ ...prev, logs: snap.docs.map(d => ({ id: d.id, ...d.data() } as LogEntry)) }));
       }
@@ -333,9 +333,8 @@ export function useEVStore() {
 
     const q = query(
       collection(db, 'vehicleLogs'),
-      where('userId', '==', auth.currentUser.uid),
-      where('vehicleId', '==', vehicle.id),
-      orderBy('timestamp', 'desc'),
+      where('plateNumber', '==', vehicle.plate),
+      orderBy('date', 'desc'),
       limit(50)
     );
 
@@ -348,7 +347,7 @@ export function useEVStore() {
     });
 
     return () => unsubscribe();
-  }, [vehicle?.id, auth.currentUser?.uid]);
+  }, [vehicle?.plate, auth.currentUser?.uid]);
 
   const addVehicle = async (data: Partial<Vehicle>) => {
     if (!auth.currentUser) return;
@@ -402,9 +401,8 @@ export function useEVStore() {
       // Check for existing log on the same day for merge logic
       const existingQuery = query(
         collection(db, 'vehicleLogs'),
-        where('vehicleId', '==', vehicle.id),
-        where('timestamp', '>=', Timestamp.fromDate(startOfDay)),
-        where('timestamp', '<=', Timestamp.fromDate(endOfDay)),
+        where('plateNumber', '==', vehicle.plate),
+        where('date', '==', dateStr),
         limit(1)
       );
       const existingSnap = await getDocs(existingQuery);
@@ -420,9 +418,9 @@ export function useEVStore() {
 
         const prevOfExistingQuery = query(
           collection(db, 'vehicleLogs'),
-          where('vehicleId', '==', vehicle.id),
-          where('timestamp', '<', Timestamp.fromDate(startOfDay)),
-          orderBy('timestamp', 'desc'),
+          where('plateNumber', '==', vehicle.plate),
+          where('date', '<', dateStr),
+          orderBy('date', 'desc'),
           limit(1)
         );
         const prevOfExistingSnap = await getDocs(prevOfExistingQuery);
@@ -454,8 +452,8 @@ export function useEVStore() {
 
         const newestCheck = query(
           collection(db, 'vehicleLogs'),
-          where('vehicleId', '==', vehicle.id),
-          orderBy('timestamp', 'desc'),
+          where('plateNumber', '==', vehicle.plate),
+          orderBy('date', 'desc'),
           limit(1)
         );
         const newestSnap = await getDocs(newestCheck);
@@ -473,9 +471,9 @@ export function useEVStore() {
       // NEW LOG MODE - Using addDoc as requested for automatic ID
       const prevQuery = query(
         collection(db, 'vehicleLogs'),
-        where('vehicleId', '==', vehicle.id),
-        where('timestamp', '<', logTimestamp),
-        orderBy('timestamp', 'desc'),
+        where('plateNumber', '==', vehicle.plate),
+        where('date', '<', dateStr),
+        orderBy('date', 'desc'),
         limit(1)
       );
       const prevSnap = await getDocs(prevQuery);
@@ -483,9 +481,9 @@ export function useEVStore() {
 
       const nextQuery = query(
         collection(db, 'vehicleLogs'),
-        where('vehicleId', '==', vehicle.id),
-        where('timestamp', '>', logTimestamp),
-        orderBy('timestamp', 'asc'),
+        where('plateNumber', '==', vehicle.plate),
+        where('date', '>', dateStr),
+        orderBy('date', 'asc'),
         limit(1)
       );
       const nextSnap = await getDocs(nextQuery);

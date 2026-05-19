@@ -87,7 +87,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         // Query for ANY record before to determine if this is a cold start
         const anyBeforeQ = query(
           collection(db, 'vehicleLogs'),
-          where('vehicleId', '==', vehicle.id),
+          where('plateNumber', '==', vehicle.plate),
           limit(1)
         );
         const anyBeforeSnap = await getDocs(anyBeforeQ);
@@ -104,9 +104,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         // Query for the closest previous record
         const q = query(
           collection(db, 'vehicleLogs'),
-          where('vehicleId', '==', vehicle.id),
-          where('timestamp', '<', selectedTs),
-          orderBy('timestamp', 'desc'),
+          where('plateNumber', '==', vehicle.plate),
+          where('date', '<', timestamp),
+          orderBy('date', 'desc'),
           limit(1)
         );
         const snap = await getDocs(q);
@@ -193,7 +193,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
         const coldStartData: any = { 
-          timestamp: Timestamp.fromDate(selectedDate), // Will be replaced by serverTimestamp in store, but good for local
+          timestamp: Timestamp.fromDate(selectedDate),
           userId: auth.currentUser?.uid,
           plateNumber: vehicle.plate,
           odo: Number(odometer),
@@ -211,12 +211,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         };
 
         const result = await onSave(coldStartData);
-        handleOnSaveSuccess(result);
-        
-        setIsLoading(false); // Immediate unlock for cold start
-        setLoadingMessage("");
-        console.log("[Cold Start Authority] Primary record saved. Terminating submission pipeline.");
-        return; // FORCED EARLY RETURN - DO NOT PROCEED TO NORMAL CHECKS
+        await handleOnSaveSuccess(result);
+        return; // Success Path returns early
       }
 
       // BRANCH B: NORMAL USER (Merge and Duplicate Logic)
@@ -233,12 +229,12 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       await proceedWithSave();
       
     } catch (err: any) {
-      // Expose error as requested
+      console.error("[CRITICAL] handleEntrySubmit crash prevention:", err);
       const errorMsg = err.message || "Unknown internal error";
-      alert("Firestore 報錯: " + errorMsg + "\n如果問題持續，請截圖聯絡管理員。");
+      alert("❌ 儲存失敗 / Firestore Error: " + errorMsg + "\n\n請檢查網絡或聯絡管理員。");
       handleSaveError(err);
     } finally {
-      // Ultimate Global Unlock
+      // Force unlock in all cases
       setIsLoading(false);
       setLoadingMessage("");
     }
@@ -250,52 +246,63 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   };
 
   const proceedWithSave = async () => {
-    const now = new Date();
-    const selectedDate = new Date(timestamp);
-    selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+    try {
+      const now = new Date();
+      const selectedDate = new Date(timestamp);
+      selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-    const data: any = { 
-      timestamp: Timestamp.fromDate(selectedDate),
-      userId: auth.currentUser?.uid,
-      plateNumber: vehicle.plate,
-      odo: Number(odometer),
-      soc: Number(battery),
-      odometer: Number(odometer), 
-      batteryPercent: Number(battery), 
-      date: timestamp,
-      status: isCharging ? "CHARGED" : "DRIVING",
-      cost: Number(cost), 
-      location,
-      distance: Math.max(0, distance),
-      batteryDiff: isCharging ? (Number(battery) - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
-      isCharging,
-    };
+      const data: any = { 
+        timestamp: Timestamp.fromDate(selectedDate),
+        userId: auth.currentUser?.uid,
+        plateNumber: vehicle.plate,
+        odo: Number(odometer),
+        soc: Number(battery),
+        odometer: Number(odometer), 
+        batteryPercent: Number(battery), 
+        date: timestamp,
+        status: isCharging ? "CHARGED" : "DRIVING",
+        cost: Number(cost), 
+        location,
+        distance: Math.max(0, distance),
+        batteryDiff: isCharging ? (Number(battery) - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
+        isCharging,
+      };
 
-    if (efficiency && !isNaN(efficiency)) {
-      data.efficiency = parseFloat(efficiency.toFixed(2));
+      if (efficiency && !isNaN(efficiency)) {
+        data.efficiency = parseFloat(efficiency.toFixed(2));
+      }
+
+      const result = await onSave(data);
+      await handleOnSaveSuccess(result);
+    } catch (error) {
+      throw error; // Re-throw to be caught by handleEntrySubmit
     }
-
-    const result = await onSave(data);
-    handleOnSaveSuccess(result);
   };
 
-  const handleOnSaveSuccess = (result: any) => {
+  const handleOnSaveSuccess = async (result: any) => {
     const logId = typeof result === 'object' ? result.logId : result;
     const catchUpInfo = typeof result === 'object' ? result.catchUpInfo : null;
     const isMerged = typeof result === 'object' ? result.isMerged : false;
+
+    // 🟢 正確且安全的結束時序 (Safe Navigation Defrost)
+    alert("🟢 里程記錄已成功同步雲端！");
+
+    // 先安全地解除 Loading 遮罩
+    setIsLoading(false);
+    setLoadingMessage("");
 
     if (!isOnline) {
       setSyncStage('offline_saved');
       setSaveStatus({ 
         type: 'success', 
-        message: '📡 網絡已斷開。但請放心！你的里程與電量記錄已安全儲存於手機本地。當你回到有 4G/5G 的地方，系統會自動在背景完成上載，你現在可以隨時關閉 App。' 
+        message: '📡 網絡已斷開。數據已暫存手機，連線後將自動同步。' 
       });
     } else {
       setSyncStage('synced');
       setSaveStatus({ 
         type: 'success', 
         message: isMerged 
-          ? '✅ 合併成功：已自動將新數據與您今日中午的記錄熔接，成功保持數據乾淨！' 
+          ? '✅ 合併成功：已與今日記錄熔接。' 
           : '✅ 記錄已成功儲存' 
       });
     }
@@ -304,9 +311,11 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       setupLogSync(logId, catchUpInfo);
     }
 
-    if (isOnline && !catchUpInfo) {
-      setTimeout(() => onCancel(), 1500);
-    }
+    // 使用 setTimeout 給予 React 100 毫秒的緩衝時間來刷新狀態，防止黑屏死鎖
+    setTimeout(() => {
+      // For this specific app, we use onCancel to go back to dashboard as we don't have navigate
+      onCancel();
+    }, 100);
   };
 
   const setupLogSync = async (logId: string, catchUpInfo: any) => {

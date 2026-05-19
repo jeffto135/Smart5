@@ -17,6 +17,10 @@ export interface LogEntry {
   id: string;
   vehicleId: string;
   userId: string;
+  plateNumber?: string;
+  date?: string;
+  odo?: number;
+  soc?: number;
   odometer: number;
   batteryPercent: number;
   cost: number;
