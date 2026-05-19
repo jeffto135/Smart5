@@ -626,14 +626,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onConfirm: async () => {
         try {
           await onDeleteLog(id);
-          alert('紀錄已刪除 / LOG DELETED');
+          alert('🟢 紀錄已從系統中移除！');
+          
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 100);
         } catch (error) {
           alert('刪除失敗');
         } finally {
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
-          setTimeout(() => {
-            setEditingLogId(null);
-          }, 100);
         }
       }
     });
@@ -648,14 +649,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       onConfirm: async () => {
         try {
           await onUpdateLog(id, data);
-          alert('紀錄已更新 / LOG UPDATED');
+          alert('🟢 紀錄已成功同步更新！');
+          
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 100);
         } catch (error) {
           alert('更新失敗');
         } finally {
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
-          setTimeout(() => {
-            setEditingLogId(null);
-          }, 100);
         }
       }
     });

@@ -95,20 +95,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     try {
       if (isAdding) {
         await onAdd(data as any);
-        alert('車輛已成功新增 / VEHICLE ADDED');
+        alert('🟢 車輛已成功新增並同步雲端！');
+        setSaving(false);
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 100);
       } else if (editingVehicle) {
         await onUpdate(editingVehicle.id, data);
-        alert('更新成功 / UPDATE SUCCESSFUL');
+        alert('🟢 更新成功，資料已同步！');
+        setSaving(false);
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 100);
       }
     } catch (error) {
       console.error("Save error:", error);
       alert('儲存失敗，請檢查網路連線');
-    } finally {
-      // Force UI reset with delay to ensure React state cycle
-      setTimeout(() => {
-        setSaving(false);
-        resetForm();
-      }, 100);
+      setSaving(false);
     }
   };
 
