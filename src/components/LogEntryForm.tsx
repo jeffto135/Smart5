@@ -87,6 +87,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         // Query for ANY record before to determine if this is a cold start
         const anyBeforeQ = query(
           collection(db, 'vehicleLogs'),
+          where('userId', '==', vehicle.userId),
           where('plateNumber', '==', vehicle.plate),
           limit(1)
         );
@@ -104,6 +105,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         // Query for the closest previous record
         const q = query(
           collection(db, 'vehicleLogs'),
+          where('userId', '==', vehicle.userId),
           where('plateNumber', '==', vehicle.plate),
           where('date', '<', timestamp),
           orderBy('date', 'desc'),

@@ -366,6 +366,7 @@ export function useEVStore() {
 
     const q = query(
       collection(db, 'vehicleLogs'),
+      where('userId', '==', vehicle.userId),
       where('plateNumber', '==', vehicle.plate),
       orderBy('date', 'desc'),
       limit(50)
@@ -434,6 +435,7 @@ export function useEVStore() {
       // Check for existing log on the same day for merge logic
       const existingQuery = query(
         collection(db, 'vehicleLogs'),
+        where('userId', '==', vehicle.userId),
         where('plateNumber', '==', vehicle.plate),
         where('date', '==', dateStr),
         limit(1)
@@ -451,6 +453,7 @@ export function useEVStore() {
 
         const prevOfExistingQuery = query(
           collection(db, 'vehicleLogs'),
+          where('userId', '==', vehicle.userId),
           where('plateNumber', '==', vehicle.plate),
           where('date', '<', dateStr),
           orderBy('date', 'desc'),
@@ -485,6 +488,7 @@ export function useEVStore() {
 
         const newestCheck = query(
           collection(db, 'vehicleLogs'),
+          where('userId', '==', vehicle.userId),
           where('plateNumber', '==', vehicle.plate),
           orderBy('date', 'desc'),
           limit(1)
@@ -505,6 +509,7 @@ export function useEVStore() {
       const [prevSnap, nextSnap] = await Promise.all([
         getDocs(query(
           collection(db, 'vehicleLogs'),
+          where('userId', '==', vehicle.userId),
           where('plateNumber', '==', vehicle.plate),
           where('date', '<', dateStr),
           orderBy('date', 'desc'),
@@ -512,6 +517,7 @@ export function useEVStore() {
         )),
         getDocs(query(
           collection(db, 'vehicleLogs'),
+          where('userId', '==', vehicle.userId),
           where('plateNumber', '==', vehicle.plate),
           where('date', '>', dateStr),
           orderBy('date', 'asc'),
