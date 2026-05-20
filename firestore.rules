@@ -55,18 +55,11 @@ service cloud.firestore {
 
     // --- Log Validation ---
     function isValidLog(data) {
-      return data.vehicleId is string && isValidId(data.vehicleId) &&
+      return data.vehicleId is string &&
              data.userId == request.auth.uid &&
              data.odometer is number && data.odometer >= 0 &&
              data.batteryPercent is number && data.batteryPercent >= 0 && data.batteryPercent <= 100 &&
-             (data.cost is number || !data.keys().hasAll(['cost'])) &&
-             (data.location is string || !data.keys().hasAll(['location'])) &&
-             (data.distance is number || !data.keys().hasAll(['distance'])) &&
-             (data.batteryDiff is number || !data.keys().hasAll(['batteryDiff'])) &&
-             (data.id is string || !data.keys().hasAll(['id'])) &&
-             (data.date is string || !data.keys().hasAll(['date'])) &&
-             (data.status is string || !data.keys().hasAll(['status'])) &&
-             data.timestamp is timestamp;
+             (data.timestamp is timestamp || !data.keys().hasAll(['timestamp']));
     }
 
     // --- UserProfile Validation ---
@@ -208,7 +201,7 @@ service cloud.firestore {
     }
 
     match /vehicles/{vehicleId} {
-      allow create: if isSignedIn() && isValidId(vehicleId) && 
+      allow create: if isSignedIn() && 
                       isValidVehicle(incoming()) &&
                       incoming().createdAt == request.time;
       
@@ -219,14 +212,13 @@ service cloud.firestore {
                       isValidVehicle(incoming()) &&
                       // isSubAdmin can change userId if needed, but owners cannot
                       (isSubAdmin() ? true : incoming().userId == existing().userId) &&
-                      incoming().createdAt == existing().createdAt &&
-                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'plate', 'brand', 'model', 'batteryCapacity', 'lastOdometer', 'lastBatteryPercent', 'userId']);
+                      incoming().createdAt == existing().createdAt;
       
       allow delete: if isOwner(existing().userId) || isSubAdmin();
     }
 
     match /vehicleLogs/{logId} {
-      allow create: if isSignedIn() && isValidId(logId) &&
+      allow create: if isSignedIn() &&
                       isValidLog(incoming()) &&
                       // Ensure vehicle belongs to user (or sub-admin can create for anyone)
                       (isSubAdmin() || get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.userId == request.auth.uid);
@@ -236,8 +228,7 @@ service cloud.firestore {
 
       allow update: if (isOwner(existing().userId) || isSubAdmin()) &&
                       isValidLog(incoming()) &&
-                      (isSubAdmin() ? true : (incoming().userId == existing().userId && incoming().vehicleId == existing().vehicleId)) &&
-                      incoming().diff(existing()).affectedKeys().hasOnly(['odometer', 'batteryPercent', 'cost', 'location', 'distance', 'batteryDiff', 'timestamp', 'userId', 'vehicleId']);
+                      (isSubAdmin() ? true : (incoming().userId == existing().userId && incoming().vehicleId == existing().vehicleId));
       
       allow delete: if isOwner(existing().userId) || isSubAdmin();
     }
