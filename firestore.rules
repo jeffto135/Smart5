@@ -221,7 +221,9 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
                       isValidLog(incoming()) &&
                       // Ensure vehicle belongs to user (or sub-admin can create for anyone)
-                      (isSubAdmin() || get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.userId == request.auth.uid);
+                      (isSubAdmin() || 
+                       !exists(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)) ||
+                       get(/databases/$(database)/documents/vehicles/$(incoming().vehicleId)).data.userId == request.auth.uid);
       
       allow read: if isOwner(existing().userId) || isSubAdmin();
       allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isSubAdmin();
