@@ -67,6 +67,8 @@ service cloud.firestore {
              (data.displayName is string || !data.keys().hasAll(['displayName'])) &&
              (data.photoURL is string || !data.keys().hasAll(['photoURL'])) &&
              (data.joinedAt is timestamp || !data.keys().hasAll(['joinedAt'])) &&
+             (data.plate is string || !data.keys().hasAll(['plate'])) &&
+             (data.selectedVehicleId is string || data.selectedVehicleId == null || !data.keys().hasAll(['selectedVehicleId'])) &&
              data.updatedAt == request.time;
     }
 
@@ -183,7 +185,10 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidProfile(incoming());
       allow update: if (isOwner(userId) || isSubAdmin()) && isValidProfile(incoming()) && 
                       (isSubAdmin() ? true : incoming().role == existing().role) &&
-                      (isAdmin() ? true : incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'updatedAt']));
+                      (isSubAdmin() ? true : incoming().joinedAt == existing().joinedAt) &&
+                      (isAdmin() ? true : incoming().diff(existing()).affectedKeys().hasOnly([
+                        'phoneNumber', 'displayName', 'photoURL', 'plate', 'selectedVehicleId', 'updatedAt'
+                      ]));
       allow delete: if isOwner(userId) || isAdmin();
     }
 

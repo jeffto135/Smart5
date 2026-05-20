@@ -95,18 +95,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     try {
       if (isAdding) {
         await onAdd(data as any);
-        alert('🟢 車輛已成功新增並同步雲端！');
         setSaving(false);
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 100);
+        resetForm();
+        onClose();
       } else if (editingVehicle) {
         await onUpdate(editingVehicle.id, data);
-        alert('🟢 更新成功，資料已同步！');
         setSaving(false);
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 100);
+        resetForm();
+        onClose();
       }
     } catch (error) {
       console.error("Save error:", error);

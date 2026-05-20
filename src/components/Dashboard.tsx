@@ -35,6 +35,120 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onActivityClick,
   onPollClick 
 }) => {
+  const [expandedDates, setExpandedDates] = useState<{ [date: string]: boolean }>({});
+
+  const toggleDate = (date: string, e: React.MouseEvent) => {
+    // Prevent event bubbling if necessary, but keep it simple
+    setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }));
+  };
+
+  // Group logs by date
+  const groupedLogs = useMemo(() => {
+    // 1. Sort ALL logs chronologically (ascending date and odo) in-memory to safely compute odoDiff client-side as fallback/guarantee.
+    const sortedAllLogs = [...logs].sort((a, b) => {
+      const dateCompare = (a.date || "").localeCompare(b.date || "");
+      if (dateCompare !== 0) return dateCompare;
+      const aOdo = Number(a.odo ?? a.odometer ?? 0);
+      const bOdo = Number(b.odo ?? b.odometer ?? 0);
+      const odoCompare = aOdo - bOdo;
+      if (odoCompare !== 0) return odoCompare;
+
+      const nodeA = a.isChargeNode || "";
+      const nodeB = b.isChargeNode || "";
+      if (nodeA !== nodeB) {
+        if (nodeA === "start") return -1;
+        if (nodeB === "start") return 1;
+        if (nodeA === "end") return 1;
+        if (nodeB === "end") return -1;
+      }
+      return 0;
+    });
+
+    // Compute odoDiff for each record in-memory to guarantee correctness even before Firebase sync completes
+    for (let i = 0; i < sortedAllLogs.length; i++) {
+      const current = sortedAllLogs[i];
+      const currentOdo = Number(current.odo ?? current.odometer ?? 0);
+      if (i === 0) {
+        current.odoDiff = 0;
+      } else {
+        const prev = sortedAllLogs[i - 1];
+        const prevOdo = Number(prev.odo ?? prev.odometer ?? 0);
+        current.odoDiff = Math.max(0, currentOdo - prevOdo);
+      }
+    }
+
+    const groups: { [date: string]: LogEntry[] } = {};
+    
+    sortedAllLogs.forEach(log => {
+      const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
+      if (!groups[d]) {
+        groups[d] = [];
+      }
+      groups[d].push(log);
+    });
+
+    return Object.entries(groups).map(([date, dayRecords]) => {
+      // Sort day records chronologically within the day
+      dayRecords.sort((a, b) => {
+        const aOdo = Number(a.odo ?? a.odometer ?? 0);
+        const bOdo = Number(b.odo ?? b.odometer ?? 0);
+        const odoCompare = aOdo - bOdo;
+        if (odoCompare !== 0) return odoCompare;
+
+        const nodeA = a.isChargeNode || "";
+        const nodeB = b.isChargeNode || "";
+        if (nodeA !== nodeB) {
+          if (nodeA === "start") return -1;
+          if (nodeB === "start") return 1;
+          if (nodeA === "end") return 1;
+          if (nodeB === "end") return -1;
+        }
+        return 0;
+      });
+
+      const odos = dayRecords.map(r => Number(r.odo ?? r.odometer ?? 0));
+      const maxOdo = odos.length > 0 ? Math.max(...odos) : 0;
+      const minOdo = odos.length > 0 ? Math.min(...odos) : 0;
+
+      // 🟢 跨日連續用車的唯一正確里程統計
+      const dayTotalDistance = dayRecords.reduce((sum, record) => sum + (record.odoDiff || 0), 0);
+
+      // 當天總耗電量 (Total Energy Used)：累加 type == "drive" / !isCharging 的 segmentDiff / batteryDiff
+      let dayTotalDriveEnergy = 0;
+      
+      // 當天總叉電量 (Total Charged)：累加 type == "charge" / isCharging 的 segmentDiff / batteryDiff
+      let dayTotalChargeEnergy = 0;
+
+      dayRecords.forEach((record) => {
+        const isDrive = record.type === "drive" || (!record.type && !record.isCharging);
+        const isCharge = record.type === "charge" || (!record.type && record.isCharging);
+        const diffVal = Number(record.segmentDiff ?? record.batteryDiff ?? 0);
+        
+        if (isDrive) {
+          dayTotalDriveEnergy += diffVal;
+        } else if (isCharge) {
+          dayTotalChargeEnergy += diffVal;
+        }
+      });
+
+      // True efficiency formula:
+      const batteryCapacity = vehicle?.batteryCapacity || 60;
+      const consumedKwh = (dayTotalDriveEnergy / 100) * batteryCapacity;
+      const avgEfficiency = dayTotalDistance > 0 ? ((consumedKwh / dayTotalDistance) * 100).toFixed(1) : "--";
+
+      return {
+        date,
+        maxOdo,
+        minOdo,
+        totalDistance: dayTotalDistance,
+        totalDriveEnergy: dayTotalDriveEnergy,
+        totalChargeEnergy: dayTotalChargeEnergy,
+        avgEfficiency,
+        records: dayRecords
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [logs, vehicle]);
+
   // Check for new content
   const hasNewActivity = useMemo(() => {
     const lastSeen = localStorage.getItem('evlog_last_seen_activity');
@@ -60,12 +174,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let totalCost = 0;
     let totalBatteryConsumed = 0;
 
+    // Sort full logs ascending globally to accurately pass down memory computed odoDiff to stats
+    const sortedLogsAsc = [...logs].sort((a, b) => {
+      const dateCompare = (a.date || "").localeCompare(b.date || "");
+      if (dateCompare !== 0) return dateCompare;
+      const aOdo = Number(a.odo ?? a.odometer ?? 0);
+      const bOdo = Number(b.odo ?? b.odometer ?? 0);
+      const odoCompare = aOdo - bOdo;
+      if (odoCompare !== 0) return odoCompare;
+
+      const nodeA = a.isChargeNode || "";
+      const nodeB = b.isChargeNode || "";
+      if (nodeA !== nodeB) {
+        if (nodeA === "start") return -1;
+        if (nodeB === "start") return 1;
+        if (nodeA === "end") return 1;
+        if (nodeB === "end") return -1;
+      }
+      return 0;
+    });
+
+    for (let i = 0; i < sortedLogsAsc.length; i++) {
+      const current = sortedLogsAsc[i];
+      const currentOdo = Number(current.odo ?? current.odometer ?? 0);
+      if (i === 0) {
+        current.odoDiff = 0;
+      } else {
+        const prev = sortedLogsAsc[i - 1];
+        const prevOdo = Number(prev.odo ?? prev.odometer ?? 0);
+        current.odoDiff = Math.max(0, currentOdo - prevOdo);
+      }
+    }
+
+    // Now map back to desc sorted order for presentation/charts
+    const statsLogs = [...sortedLogsAsc].reverse();
+
     // Use raw records for the trend line chart as requested
-    const chartData = [...logs.slice(0, 15)].reverse().map(log => ({
+    const chartData = [...statsLogs.slice(0, 15)].reverse().map(log => ({
       date: format(log.timestamp.toDate(), 'MM/dd'),
       time: format(log.timestamp.toDate(), 'HH:mm'),
       battery: log.batteryPercent,
-      distance: log.distance,
+      distance: log.odoDiff ?? log.distance ?? 0,
     }));
 
     // Monthly stats calculation
@@ -77,8 +226,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let monthlyBatteryConsumed = 0;
     let monthlyCost = 0;
 
-    logs.forEach(log => {
-      const distance = log.distance;
+    statsLogs.forEach(log => {
+      const distance = log.odoDiff ?? log.distance ?? 0;
       const cost = log.cost || 0;
       const savings = (distance / FUEL_EFFICIENCY * GAS_PRICE) - cost;
       
@@ -86,17 +235,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
       totalDistance += distance;
       totalCost += cost;
       
-      // Only add to battery consumption if it wasn't a charging event
-      if (!log.isCharging) {
-        totalBatteryConsumed += log.batteryDiff;
+      // Use segmented isolated accumulation for global statistics as well
+      const isDrive = log.type === 'drive' || (!log.type && !log.isCharging);
+      const diffVal = Number(log.segmentDiff ?? log.batteryDiff ?? 0);
+      if (isDrive) {
+        totalBatteryConsumed += diffVal;
       }
 
       // Filter for current month
       const logDate = log.timestamp.toDate();
       if (logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear) {
         monthlyDistance += distance;
-        if (!log.isCharging) {
-          monthlyBatteryConsumed += log.batteryDiff;
+        if (isDrive) {
+          monthlyBatteryConsumed += diffVal;
         }
         monthlyCost += cost;
       }
@@ -104,17 +255,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const avgEfficiencyPerc = totalDistance > 0 ? (totalBatteryConsumed / totalDistance * 100) : 0;
     const avgEfficiencyVal = (avgEfficiencyPerc / 100) * (vehicle?.batteryCapacity || 60);
-    const avgEfficiencyStr = avgEfficiencyVal.toFixed(1);
+    const avgEfficiencyStr = totalDistance > 0 ? avgEfficiencyVal.toFixed(1) : "--";
 
     // Trend calculation
-    const recentLogs = logs.slice(0, 3);
-    const recentDistance = recentLogs.reduce((sum, log) => sum + log.distance, 0);
-    const recentBattery = recentLogs.reduce((sum, log) => sum + (!log.isCharging ? log.batteryDiff : 0), 0);
-    const recentEfficiency = recentDistance > 0 ? ((recentBattery / recentDistance * 100) / 100 * (vehicle?.batteryCapacity || 60)) : avgEfficiencyVal;
+    const recentLogs = statsLogs.slice(0, 3);
+    const recentDistance = recentLogs.reduce((sum, log) => sum + (log.odoDiff ?? log.distance ?? 0), 0);
+    const recentBattery = recentLogs.reduce((sum, log) => {
+      const isDrive = log.type === 'drive' || (!log.type && !log.isCharging);
+      const diffVal = Number(log.segmentDiff ?? log.batteryDiff ?? 0);
+      return sum + (isDrive ? diffVal : 0);
+    }, 0);
+    const recentEfficiency = recentDistance > 0 ? ((recentBattery / recentDistance * 100) / 100 * (vehicle?.batteryCapacity || 60)) : (totalDistance > 0 ? avgEfficiencyVal : 0);
     
     let trend = 'stable';
-    if (recentEfficiency > avgEfficiencyVal * 1.05) trend = 'up';
-    else if (recentEfficiency < avgEfficiencyVal * 0.95) trend = 'down';
+    const baseValue = totalDistance > 0 ? avgEfficiencyVal : 0;
+    if (baseValue > 0) {
+      if (recentEfficiency > baseValue * 1.05) trend = 'up';
+      else if (recentEfficiency < baseValue * 0.95) trend = 'down';
+    }
 
     return {
       totalSavings: totalSavings.toFixed(0),
@@ -322,7 +480,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </CyberCard>
 
       {/* Recent Logs List */}
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex justify-between items-center px-1">
           <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">最近紀錄</h3>
           <button 
@@ -333,45 +491,118 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
         </div>
         
-        {logs.length === 0 ? (
+        {groupedLogs.length === 0 ? (
           <div className="glass-card p-10 text-center text-[10px] uppercase tracking-widest opacity-20">
             尚無紀錄
           </div>
         ) : (
-          logs.slice(0, 5).map((log) => (
-            <button 
-              key={log.id} 
-              onClick={() => onLogClick(log)}
-              className="w-full text-left glass-card p-4 flex justify-between items-center bg-white/[0.02] hover:bg-white/[0.05] transition-all cursor-pointer group relative overflow-hidden"
-            >
-              {log.isCharging && (
-                <div className="absolute top-0 left-0 bottom-0 w-1 bg-cyber-green/50" />
-              )}
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="text-sm font-mono group-hover:text-cyber-green transition-colors">
-                    {log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd')}
+          groupedLogs.slice(0, 5).map((group) => {
+            const hasMultiple = group.records.length > 1;
+            const isExpanded = !!expandedDates[group.date];
+            const hasCharge = group.totalChargeEnergy > 0;
+            const dominantRecord = group.records[group.records.length - 1];
+
+            return (
+              <div 
+                key={group.date}
+                className="glass-card overflow-hidden bg-white/[0.01] border border-white/5 rounded-xl transition-all"
+              >
+                {/* Daily Summary Card */}
+                <div 
+                  onClick={(e) => {
+                    if (hasMultiple) {
+                      toggleDate(group.date, e);
+                    } else {
+                      onLogClick(dominantRecord);
+                    }
+                  }}
+                  className="w-full text-left p-4 flex justify-between items-center bg-white/[0.01] hover:bg-white/[0.04] transition-all cursor-pointer relative overflow-hidden group select-none"
+                >
+                  {hasCharge && (
+                    <div className="absolute top-0 left-0 bottom-0 w-1 bg-cyber-green/50" />
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-mono group-hover:text-cyber-green transition-colors font-bold">
+                        {group.date}
+                      </div>
+                      {hasCharge && (
+                        <span className="text-[8px] bg-cyber-green font-mono font-bold text-black px-1 rounded">⚡️ 補能</span>
+                      )}
+                      {hasMultiple && (
+                        <span className="text-[8px] bg-white/10 text-white/60 font-mono px-1 rounded">
+                          {group.records.length} 段用車 {isExpanded ? '▼ 摺疊' : '▶ 展開'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5 font-mono flex items-center gap-1">
+                      <span>最後 {dominantRecord.batteryPercent}% 電量</span>
+                      {group.avgEfficiency !== "--" && (
+                        <>
+                          <span className="opacity-30">•</span>
+                          <span className="text-cyber-green/70 font-semibold">{group.avgEfficiency} kWh/100km</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  {log.isCharging && (
-                    <span className="text-[8px] bg-cyber-green font-mono font-bold text-black px-1 rounded">⚡️ CHARGED</span>
-                  )}
+                  <div className="text-right">
+                    <div className="text-lg font-mono font-bold text-cyber-green leading-tight">
+                      {group.maxOdo.toLocaleString()} <span className="text-[10px] opacity-40 font-normal">KM</span>
+                    </div>
+                    <div className="text-[9px] text-white/30 font-mono flex justify-end gap-1.5 mt-0.5">
+                      <span className="text-white/60">+{group.totalDistance}KM</span>
+                      {group.totalDriveEnergy > 0 && <span className="text-red-400">-{group.totalDriveEnergy}%⚡️</span>}
+                      {group.totalChargeEnergy > 0 && <span className="text-cyber-green">+{group.totalChargeEnergy}%🔌</span>}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[10px] text-white/40 uppercase tracking-widest">
-                  {log.batteryPercent}% BATT 
-                  {log.efficiency && !log.isCharging && (
-                    <span className="text-cyber-green/60 ml-2"> • {log.efficiency} kWh/100km</span>
-                  )}
-                </div>
+
+                {/* Sub-Segments Expandable List */}
+                {hasMultiple && isExpanded && (
+                  <div className="border-t border-white/5 bg-white/[0.015] p-2 space-y-1 animate-in slide-in-from-top-2 duration-150">
+                    <div className="text-[9px] uppercase tracking-widest text-white/30 px-2 py-1 font-mono">
+                      分段時空明細 (按記錄先後排序)：
+                    </div>
+                    {group.records.map((rec, subIdx) => {
+                      const isRecCharge = rec.type === "charge" || (!rec.type && rec.isCharging);
+                      return (
+                        <button
+                          key={rec.id}
+                          onClick={() => onLogClick(rec)}
+                          className="w-full text-left p-2.5 rounded hover:bg-white/5 transition-all flex justify-between items-center bg-white/[0.01]"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-white/40">#{subIdx + 1}</span>
+                            <span className="text-[11px] font-mono text-white/80">
+                              {rec.timestamp ? format(rec.timestamp.toDate(), 'HH:mm') : '--:--'}
+                            </span>
+                            {isRecCharge ? (
+                              <span className="text-[7px] text-cyber-green border border-cyber-green/40 px-1 rounded font-mono font-bold">CHARGE</span>
+                            ) : (
+                              <span className="text-[7px] text-white/40 border border-white/10 px-1 rounded font-mono">DRIVE</span>
+                            )}
+                            {rec.location && (
+                              <span className="text-[9px] text-white/20 truncate max-w-[100px] font-mono">
+                                ({rec.location})
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right flex items-center gap-4">
+                            <div className="text-xs font-mono text-cyber-green">
+                              {Number(rec.odo ?? rec.odometer ?? 0).toLocaleString()} <span className="text-[8px] opacity-40 font-mono">KM</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-white/40 min-w-[70px] text-right">
+                              {rec.batteryPercent}% ({isRecCharge ? `+${rec.segmentDiff ?? rec.batteryDiff}%` : `-${rec.segmentDiff ?? rec.batteryDiff}%`})
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="text-right">
-                <div className="text-lg font-mono font-bold text-cyber-green">{log.odometer.toLocaleString()} <span className="text-[10px] opacity-40">KM</span></div>
-                <div className="text-[9px] text-white/30 font-mono flex justify-end gap-2">
-                  <span>+{log.distance}KM</span>
-                  <span>{log.isCharging ? `+${log.batteryDiff}%` : `-${log.batteryDiff}%`}</span>
-                </div>
-              </div>
-            </button>
-          ))
+            );
+          })
         )}
       </div>
     </div>

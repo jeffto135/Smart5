@@ -30,6 +30,10 @@ export interface LogEntry {
   isCharging: boolean;
   efficiency?: number;
   timestamp: Timestamp;
+  type?: 'charge' | 'drive';
+  segmentDiff?: number;
+  isChargeNode?: 'start' | 'end';
+  odoDiff?: number;
 }
 
 export interface VehicleStats {

@@ -21,7 +21,7 @@ import { UserAgreementModal } from './components/UserAgreementModal';
 import { HKWeather } from './components/HKWeather';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
-import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun } from 'lucide-react';
+import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogEntry } from './types';
 
@@ -37,6 +37,8 @@ export default function App() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showUserAgreement, setShowUserAgreement] = useState(false);
   const [catchUpData, setCatchUpData] = useState<any>(null);
+  
+  const [activeWeatherWarnings, setActiveWeatherWarnings] = useState<string[]>([]);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -234,7 +236,7 @@ export default function App() {
       setTimeout(() => {
         setCatchUpData(result.catchUpInfo);
         setView('dashboard'); // Close the entry form
-      }, 1500);
+      }, 100);
     }
     return result;
   };
@@ -459,7 +461,9 @@ export default function App() {
         
         <div className="flex items-center gap-3">
           <div className="flex flex-col items-end">
-            <HKWeather />
+            <HKWeather 
+              onWarningsUpdate={setActiveWeatherWarnings}
+            />
             <div className="flex items-center gap-1.5 mt-1">
               <span className="text-[14px] font-mono font-black text-white leading-none tracking-tighter">
                 {currentTime.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' })}
@@ -503,6 +507,35 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
             >
+              {(() => {
+                const isExtremeWeather = activeWeatherWarnings.some(w => 
+                  w.includes('暴雨') || w.includes('暴風') || w.includes('颱風') || w.includes('雷暴') || w.includes('烈風') || w.includes('強風')
+                );
+                if (!isExtremeWeather) return null;
+                return (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-5 p-4 rounded-xl border border-red-500/30 bg-red-500/5 backdrop-blur-sm shadow-[0_0_15px_rgba(239,68,68,0.05)] flex items-start gap-3"
+                  >
+                    <AlertTriangle className="text-red-500 animate-pulse mt-0.5 shrink-0" size={18} />
+                    <div className="space-y-0.5 flex-1">
+                      <div className="text-[10px] uppercase tracking-widest text-red-500 font-mono font-bold">
+                        極端氣象智行提醒 ｜ WEATHER WARNING ALERT
+                      </div>
+                      <div className="text-xs text-white/95 leading-relaxed font-semibold">
+                        現正生效：<span className="text-red-400 font-bold">{activeWeatherWarnings.join(' 、 ')}</span>
+                      </div>
+                      <p className="text-xs text-cyber-green font-bold mt-1">
+                        ⚠️ 天雨路滑，小心駕駛！
+                      </p>
+                    </div>
+                    <div className="text-[8px] font-mono text-white/20 select-none uppercase tracking-tighter self-center hidden sm:block">
+                      SHKP SAFEROADS
+                    </div>
+                  </motion.div>
+                );
+              })()}
               <Dashboard 
                 logs={evStore.logs} 
                 vehicle={evStore.vehicle}

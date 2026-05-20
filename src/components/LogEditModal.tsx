@@ -64,15 +64,8 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
         cost, 
         location 
       });
-      // 🟢 確保修改成功後也是用原生絕對跳轉
-      alert("🟢 數據修改成功，已同步雲端！");
       setSubmitting(false);
-      
-      // 使用 setTimeout 給予 React 100 毫秒的緩衝時間來刷新狀態
-      // 並強制使用原生瀏覽器重定向回到首頁，徹底解決卡死問題
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 100);
+      onClose();
     } catch (error: any) {
       alert('儲存失敗：' + error.message);
       setSubmitting(false);
@@ -94,11 +87,8 @@ export const LogEditModal: React.FC<LogEditModalProps> = ({ log, onSave, onDelet
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
     try {
       await onDelete();
-      alert('🟢 紀錄已成功從雲端移除！');
       setSubmitting(false);
-      
-      // 強制回歸首頁
-      window.location.href = "/";
+      onClose();
     } catch (error: any) {
       alert('刪除失敗：' + error.message);
       setSubmitting(false);

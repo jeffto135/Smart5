@@ -29,6 +29,11 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [showNoChangeWarning, setShowNoChangeWarning] = useState(false);
 
+  // Dual document state variables for post-charge entries
+  const [justCharged, setJustCharged] = useState(false);
+  const [startSoc, setStartSoc] = useState<number | string>(vehicle.lastBatteryPercent || 50);
+  const [endSoc, setEndSoc] = useState<number | string>(100);
+
   // Network listener
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -116,6 +121,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           const prev = snap.docs[0].data() as LogEntry;
           setPrevRecordDetected(prev);
           setIsCharging(Number(battery) > prev.batteryPercent);
+          setStartSoc(prev.batteryPercent);
         } else {
           setPrevRecordDetected(null);
           setIsCharging(false); 
@@ -170,9 +176,20 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       return;
     }
 
-    if (!validateSOC(battery) || battery === "") {
-      setSaveStatus({ type: 'error', message: '❌ 電量必須在 0-100% 之間' });
-      return;
+    if (justCharged) {
+      if (!validateSOC(startSoc) || startSoc === "" || !validateSOC(endSoc) || endSoc === "") {
+        setSaveStatus({ type: 'error', message: '❌ 充電前與充電後電量均必須在 0-100% 之間' });
+        return;
+      }
+      if (Number(endSoc) <= Number(startSoc)) {
+        setSaveStatus({ type: 'error', message: '❌ 充電後電量必須大於充電前電量' });
+        return;
+      }
+    } else {
+      if (!validateSOC(battery) || battery === "") {
+        setSaveStatus({ type: 'error', message: '❌ 電量必須在 0-100% 之間' });
+        return;
+      }
     }
 
     if (!historyChecked) {
@@ -194,7 +211,17 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         const selectedDate = new Date(timestamp);
         selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-        const coldStartData: any = { 
+        const coldStartData: any = justCharged ? {
+          isDualCharge: true,
+          startSoc: Number(startSoc),
+          endSoc: Number(endSoc),
+          odometer: Number(odometer),
+          odo: Number(odometer),
+          date: timestamp,
+          timestamp: Timestamp.fromDate(selectedDate),
+          cost: Number(cost),
+          location,
+        } : { 
           timestamp: Timestamp.fromDate(selectedDate),
           userId: auth.currentUser?.uid,
           plateNumber: vehicle.plate,
@@ -218,7 +245,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       }
 
       // BRANCH B: NORMAL USER (Merge and Duplicate Logic)
-      if (prevRecordDetected && 
+      if (!justCharged && prevRecordDetected && 
           Number(odometer) === prevRecordDetected.odometer && 
           Number(battery) === prevRecordDetected.batteryPercent &&
           !showNoChangeWarning) {
@@ -244,7 +271,6 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
 
   const executeColdStartSave = async () => {
     // This is now handled inline in handleEntrySubmit for strict isolation
-    // keeping it empty or removing it to avoid confusion during this turn
   };
 
   const proceedWithSave = async () => {
@@ -253,29 +279,45 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       const selectedDate = new Date(timestamp);
       selectedDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
 
-      const data: any = { 
-        timestamp: Timestamp.fromDate(selectedDate),
-        userId: auth.currentUser?.uid,
-        plateNumber: vehicle.plate,
-        odo: Number(odometer),
-        soc: Number(battery),
-        odometer: Number(odometer), 
-        batteryPercent: Number(battery), 
-        date: timestamp,
-        status: isCharging ? "CHARGED" : "DRIVING",
-        cost: Number(cost), 
-        location,
-        distance: Math.max(0, distance),
-        batteryDiff: isCharging ? (Number(battery) - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
-        isCharging,
-      };
+      if (justCharged) {
+        const data: any = {
+          isDualCharge: true,
+          startSoc: Number(startSoc),
+          endSoc: Number(endSoc),
+          odometer: Number(odometer),
+          odo: Number(odometer),
+          date: timestamp,
+          timestamp: Timestamp.fromDate(selectedDate),
+          cost: Number(cost),
+          location,
+        };
+        const result = await onSave(data);
+        await handleOnSaveSuccess(result);
+      } else {
+        const data: any = { 
+          timestamp: Timestamp.fromDate(selectedDate),
+          userId: auth.currentUser?.uid,
+          plateNumber: vehicle.plate,
+          odo: Number(odometer),
+          soc: Number(battery),
+          odometer: Number(odometer), 
+          batteryPercent: Number(battery), 
+          date: timestamp,
+          status: isCharging ? "CHARGED" : "DRIVING",
+          cost: Number(cost), 
+          location,
+          distance: Math.max(0, distance),
+          batteryDiff: isCharging ? (Number(battery) - (prevRecordDetected?.batteryPercent || 0)) : Math.max(0, batteryDiff),
+          isCharging,
+        };
 
-      if (efficiency && !isNaN(efficiency)) {
-        data.efficiency = parseFloat(efficiency.toFixed(2));
+        if (efficiency && !isNaN(efficiency)) {
+          data.efficiency = parseFloat(efficiency.toFixed(2));
+        }
+
+        const result = await onSave(data);
+        await handleOnSaveSuccess(result);
       }
-
-      const result = await onSave(data);
-      await handleOnSaveSuccess(result);
     } catch (error) {
       throw error; // Re-throw to be caught by handleEntrySubmit
     }
@@ -285,9 +327,6 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
     const logId = typeof result === 'object' ? result.logId : result;
     const catchUpInfo = typeof result === 'object' ? result.catchUpInfo : null;
     const isMerged = typeof result === 'object' ? result.isMerged : false;
-
-    // 🟢 正確且安全的結束時序 (Safe Navigation Defrost)
-    alert("🟢 里程記錄已成功同步雲端！");
 
     // 先安全地解除 Loading 遮罩
     setIsLoading(false);
@@ -313,10 +352,9 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
       setupLogSync(logId, catchUpInfo);
     }
 
-    // 使用 setTimeout 給予 React 100 毫秒的緩衝時間來刷新狀態
-    // 並強制使用原生瀏覽器重定向回到首頁，徹底解決卡死問題
+    // 使用 setTimeout 給予 React 100 毫秒的緩衝時間來顯示成功狀態，然後平滑返回首頁
     setTimeout(() => {
-      window.location.href = "/";
+      onCancel();
     }, 100);
   };
 
@@ -396,15 +434,15 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
           value={timestamp}
           onChange={(e) => setTimestamp(e.target.value)}
           required
-          className={isDuplicate ? 'border-red-500/50' : ''}
+          className={isDuplicate ? 'border-cyber-green/50 focus:border-cyber-green' : ''}
         />
         {isDuplicate && (
           <motion.div 
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
-            className="absolute right-0 -bottom-5 text-[9px] font-mono text-red-400 uppercase tracking-wider"
+            className="absolute right-0 -bottom-5 text-[9px] font-mono text-cyber-green uppercase tracking-wider font-bold"
           >
-            ⚠️ 此日已有記錄 / record exists
+            ℹ️ 此日已有記錄 / record exists
           </motion.div>
         )}
       </div>
@@ -427,56 +465,150 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         )}
       </div>
 
-      <div className="space-y-4 p-4 rounded-2xl bg-white/5 border border-white/10">
-        <div className="space-y-2">
-          <div className="flex justify-between items-end px-1">
-            <label className="text-[10px] font-mono uppercase text-white/50">剩餘電量 / Battery (%)</label>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={battery}
-                  onChange={(e) => setBattery(e.target.value === "" ? "" : Math.min(100, Math.max(0, Number(e.target.value))))}
-                  onFocus={() => handleNumericFocus(battery, setBattery)}
-                  onBlur={() => handleNumericBlur(battery, setBattery)}
-                  className={`w-14 bg-transparent border-b border-white/20 text-center font-mono text-xl font-bold focus:outline-none focus:border-cyber-green transition-colors ${isCharging ? 'text-cyber-green' : 'text-white'}`}
-                />
-                <span className={`absolute -right-3 top-1/2 -translate-y-1/2 text-xs font-mono opacity-50 ${isCharging ? 'text-cyber-green' : 'text-white'}`}>%</span>
-              </div>
-            </div>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={Number(battery) || 0}
-            onChange={(e) => setBattery(Number(e.target.value))}
-            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyber-green"
+      {/* 🔋 Just Charged Toggle */}
+      <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all">
+        <div className="flex flex-col">
+          <span className="text-xs font-mono font-bold text-white/90">🔋 我剛才進行了充電 (Just Charged)</span>
+          <span className="text-[10px] text-white/40 mt-0.5 font-mono">在停好車後、出車前，一口氣輸入充電紀錄</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setJustCharged(!justCharged);
+            if (!justCharged && prevRecordDetected) {
+              setStartSoc(prevRecordDetected.batteryPercent);
+            }
+          }}
+          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${justCharged ? 'bg-cyber-green' : 'bg-white/10'}`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${justCharged ? 'translate-x-5' : 'translate-x-0'}`}
           />
-        </div>
-
-        {/* Live Calculation Feedback */}
-        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
-          <div className="space-y-1">
-            <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">行駛動態</div>
-            <div className="text-[10px] font-mono text-white/60">
-              {distance <= 0 ? '數據收集中' : `${distance} KM`}
-            </div>
-          </div>
-          <div className="space-y-1">
-            <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">能耗預算</div>
-            <div className={`text-[10px] font-mono ${efficiency ? 'text-cyber-green' : 'text-white/30'}`}>
-              {!isCharging && distance > 0 ? (
-                efficiency && !isNaN(efficiency) ? `${efficiency.toFixed(1)} kWh/100km` : '數據異常'
-              ) : isCharging ? '充電中' : '數據收集中'}
-            </div>
-          </div>
-        </div>
+        </button>
       </div>
 
-      {(isCharging || Number(cost) > 0) && (
+      <AnimatePresence mode="wait">
+        {!justCharged ? (
+          <motion.div
+            key="normal-battery"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="space-y-4 p-4 rounded-2xl bg-white/5 border border-white/10 overflow-hidden"
+          >
+            <div className="space-y-2">
+              <div className="flex justify-between items-end px-1">
+                <label className="text-[10px] font-mono uppercase text-white/50">剩餘電量 / Battery (%)</label>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={battery}
+                      onChange={(e) => setBattery(e.target.value === "" ? "" : Math.min(100, Math.max(0, Number(e.target.value))))}
+                      onFocus={() => handleNumericFocus(battery, setBattery)}
+                      onBlur={() => handleNumericBlur(battery, setBattery)}
+                      className={`w-14 bg-transparent border-b border-white/20 text-center font-mono text-xl font-bold focus:outline-none focus:border-cyber-green transition-colors ${isCharging ? 'text-cyber-green' : 'text-white'}`}
+                    />
+                    <span className={`absolute -right-3 top-1/2 -translate-y-1/2 text-xs font-mono opacity-50 ${isCharging ? 'text-cyber-green' : 'text-white'}`}>%</span>
+                  </div>
+                </div>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={Number(battery) || 0}
+                onChange={(e) => setBattery(Number(e.target.value))}
+                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyber-green"
+              />
+            </div>
+
+            {/* Live Calculation Feedback */}
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+              <div className="space-y-1">
+                <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">行駛動態</div>
+                <div className="text-[10px] font-mono text-white/60">
+                  {distance <= 0 ? '數據收集中' : `${distance} KM`}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">能耗預算</div>
+                <div className={`text-[10px] font-mono ${efficiency ? 'text-cyber-green' : 'text-white/30'}`}>
+                  {!isCharging && distance > 0 ? (
+                    efficiency && !isNaN(efficiency) ? `${efficiency.toFixed(1)} kWh/100km` : '數據異常'
+                  ) : isCharging ? '充電中' : '數據收集中'}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="dual-battery"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="space-y-4 p-4 rounded-2xl bg-white/5 border border-white/10 overflow-hidden"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              {/* Start SOC */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono uppercase text-white/50 block">⚡ 充電前電量 (Start SOC %)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={startSoc}
+                    onChange={(e) => setStartSoc(e.target.value === "" ? "" : Math.min(100, Math.max(0, Number(e.target.value))))}
+                    onFocus={() => handleNumericFocus(startSoc, setStartSoc)}
+                    onBlur={() => handleNumericBlur(startSoc, setStartSoc, 50)}
+                    className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-3 font-mono text-xl font-bold focus:outline-none focus:border-cyber-green text-center text-white"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-mono opacity-40">%</span>
+                </div>
+              </div>
+
+              {/* End SOC */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono uppercase text-white/50 block">⚡ 充電後電量 (End SOC %)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={endSoc}
+                    onChange={(e) => setEndSoc(e.target.value === "" ? "" : Math.min(100, Math.max(0, Number(e.target.value))))}
+                    onFocus={() => handleNumericFocus(endSoc, setEndSoc)}
+                    onBlur={() => handleNumericBlur(endSoc, setEndSoc, 100)}
+                    className="w-full bg-white/[0.02] border border-white/10 rounded-xl px-4 py-3 font-mono text-xl font-bold focus:outline-none focus:border-cyber-green text-center text-cyber-green"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-mono opacity-40">%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Calculation Feedback for charging */}
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+              <div className="space-y-1">
+                <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">行駛動態</div>
+                <div className="text-[10px] font-mono text-white/60">
+                  {distance <= 0 ? '數據收集中' : `${distance} KM`}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">補電幅度</div>
+                <div className="text-[10px] font-mono text-cyber-green font-bold">
+                  +{Number(endSoc) - Number(startSoc)}% 電量
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {(isCharging || justCharged || Number(cost) > 0) && (
         <motion.div
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}

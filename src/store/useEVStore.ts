@@ -14,7 +14,8 @@ import {
   deleteDoc,
   Timestamp,
   getDocs,
-  arrayUnion
+  arrayUnion,
+  getDocsFromCache
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
@@ -412,6 +413,148 @@ export function useEVStore() {
     }
   };
 
+  const runPipeline = async (userId: string, vehicleId: string, plateNumber: string) => {
+    try {
+      const logsRef = collection(db, 'vehicleLogs');
+      const q = query(
+        logsRef,
+        where('userId', '==', userId),
+        where('plateNumber', '==', plateNumber)
+      );
+
+      let snap;
+      try {
+        // 🚀 Optimistic cache-first read: Retrieve all synced vehicle records from local IndexedDB instantly (~0-5ms)
+        snap = await getDocsFromCache(q);
+        if (snap.empty) {
+          snap = await getDocs(q);
+        }
+      } catch (cacheErr) {
+        // Fallback to direct network query
+        snap = await getDocs(q);
+      }
+      
+      const records = snap.docs.map(docSnap => ({
+        id: docSnap.id,
+        ref: docSnap.ref,
+        ...docSnap.data()
+      })) as any[];
+      
+      if (records.length === 0) return;
+
+      // 1. Sort globally: Date, then Odo, then isChargeNode
+      records.sort((a, b) => {
+        const dateCompare = (a.date || "").localeCompare(b.date || "");
+        if (dateCompare !== 0) return dateCompare;
+        const aOdo = Number(a.odo ?? a.odometer ?? 0);
+        const bOdo = Number(b.odo ?? b.odometer ?? 0);
+        const odoCompare = aOdo - bOdo;
+        if (odoCompare !== 0) return odoCompare;
+
+        const nodeA = a.isChargeNode || "";
+        const nodeB = b.isChargeNode || "";
+        if (nodeA !== nodeB) {
+          if (nodeA === "start") return -1;
+          if (nodeB === "start") return 1;
+          if (nodeA === "end") return 1;
+          if (nodeB === "end") return -1;
+        }
+        return 0;
+      });
+
+      // 2. Linear traversal & smart recalculation
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      let batchSize = 0;
+
+      for (let i = 0; i < records.length; i++) {
+        const record = records[i];
+        let updatedType: "charge" | "drive" = "drive";
+        let updatedSegmentDiff = 0;
+        let calculatedDistance = 0;
+        let odoDiff = 0;
+
+        const currentOdo = Number(record.odo ?? record.odometer ?? 0);
+        const currentSoc = Number(record.soc ?? record.batteryPercent ?? 100);
+
+        if (i === 0) {
+          updatedType = "drive";
+          updatedSegmentDiff = 0;
+          calculatedDistance = 0;
+          odoDiff = 0;
+        } else {
+          const prev = records[i - 1];
+          const prevOdo = Number(prev.odo ?? prev.odometer ?? 0);
+          const prevSoc = Number(prev.soc ?? prev.batteryPercent ?? 100);
+
+          calculatedDistance = Math.max(0, currentOdo - prevOdo);
+          odoDiff = Math.max(0, currentOdo - prevOdo);
+
+          if (currentSoc > prevSoc) {
+            updatedType = "charge";
+            updatedSegmentDiff = currentSoc - prevSoc;
+          } else {
+            updatedType = "drive";
+            updatedSegmentDiff = prevSoc - currentSoc;
+          }
+        }
+
+        const isChargingBool = updatedType === "charge";
+        const statusStr = isChargingBool ? "CHARGED" : "DRIVING";
+
+        // Check if any fields changed to avoid extra Firestore write overhead
+        if (
+          record.type !== updatedType ||
+          record.segmentDiff !== updatedSegmentDiff ||
+          record.distance !== calculatedDistance ||
+          record.odoDiff !== odoDiff ||
+          record.isCharging !== isChargingBool ||
+          record.status !== statusStr ||
+          record.batteryDiff !== updatedSegmentDiff ||
+          record.odo !== currentOdo ||
+          record.soc !== currentSoc ||
+          record.odometer !== currentOdo ||
+          record.batteryPercent !== currentSoc
+        ) {
+          batch.update(record.ref, {
+            type: updatedType,
+            segmentDiff: updatedSegmentDiff,
+            batteryDiff: updatedSegmentDiff,
+            distance: calculatedDistance,
+            odoDiff: odoDiff,
+            isCharging: isChargingBool,
+            status: statusStr,
+            odo: currentOdo,
+            soc: currentSoc,
+            odometer: currentOdo,
+            batteryPercent: currentSoc,
+            updatedAt: serverTimestamp()
+          });
+          batchSize++;
+        }
+      }
+
+      if (batchSize > 0) {
+        await batch.commit();
+        console.log(`⚡️ [Rebuild Pipeline] Sorted and synchronized ${batchSize} logs.`);
+      }
+
+      // Sync active vehicle's head statistics to the chronologically last log
+      const latestRecord = records[records.length - 1];
+      if (latestRecord) {
+        const latestOdo = Number(latestRecord.odo ?? latestRecord.odometer ?? 0);
+        const latestSoc = Number(latestRecord.soc ?? latestRecord.batteryPercent ?? 100);
+        await updateDoc(doc(db, 'vehicles', vehicleId), {
+          lastOdometer: latestOdo,
+          lastBatteryPercent: latestSoc,
+        });
+      }
+
+    } catch (err) {
+      console.error("Pipeline Sync Failed:", err);
+    }
+  };
+
   const addLog = async (data: { 
     odometer: number; 
     batteryPercent: number; 
@@ -423,175 +566,109 @@ export function useEVStore() {
     isCharging?: boolean;
     distance?: number;
     batteryDiff?: number;
+    isDualCharge?: boolean;
+    startSoc?: number;
+    endSoc?: number;
   }) => {
     if (!vehicle || !auth.currentUser) return;
 
     try {
       const logTimestamp = data.timestamp || Timestamp.now();
-      const dateStr = format(logTimestamp.toDate(), 'yyyy-MM-dd');
-      const startOfDay = new Date(dateStr + 'T00:00:00');
-      const endOfDay = new Date(dateStr + 'T23:59:59');
+      const dateStr = data.date || format(logTimestamp.toDate(), 'yyyy-MM-dd');
 
-      // Check for existing log on the same day for merge logic
-      const existingQuery = query(
-        collection(db, 'vehicleLogs'),
-        where('userId', '==', vehicle.userId),
-        where('plateNumber', '==', vehicle.plate),
-        where('date', '==', dateStr),
-        limit(1)
-      );
-      const existingSnap = await getDocs(existingQuery);
-      const existingLog = existingSnap.docs.length > 0 ? { id: existingSnap.docs[0].id, ...existingSnap.docs[0].data() } as LogEntry : null;
+      if (data.isDualCharge) {
+        // Dual Document Batch Commit!
+        const { writeBatch, doc: fireDoc, collection: fireCollection } = await import('firebase/firestore');
+        const batch = writeBatch(db);
+        const logsRef = collection(db, 'vehicleLogs');
 
-      if (existingLog) {
-        // MERGE MODE
-        const mergedOdometer = Math.max(existingLog.odometer, data.odometer);
-        const mergedBattery = data.batteryPercent; 
-        const mergedCost = (existingLog.cost || 0) + (data.cost || 0);
-        const mergedIsCharging = existingLog.isCharging || (data.isCharging ?? false);
-        const mergedLocation = [existingLog.location, data.location].filter(Boolean).join(', ');
-
-        const prevOfExistingQuery = query(
-          collection(db, 'vehicleLogs'),
-          where('userId', '==', vehicle.userId),
-          where('plateNumber', '==', vehicle.plate),
-          where('date', '<', dateStr),
-          orderBy('date', 'desc'),
-          limit(1)
-        );
-        const prevOfExistingSnap = await getDocs(prevOfExistingQuery);
-        const prevOfExisting = prevOfExistingSnap.docs.length > 0 ? prevOfExistingSnap.docs[0].data() as LogEntry : null;
-
-        const distance = prevOfExisting ? mergedOdometer - prevOfExisting.odometer : 0;
-        const batteryDiff = prevOfExisting 
-          ? (mergedIsCharging ? mergedBattery - prevOfExisting.batteryPercent : prevOfExisting.batteryPercent - mergedBattery)
-          : 0;
-
-        await updateDoc(doc(db, 'vehicleLogs', existingLog.id), {
+        // Document 1 (start node):
+        const doc1Ref = doc(logsRef);
+        const doc1Data = {
+          id: doc1Ref.id,
           userId: auth.currentUser.uid,
           vehicleId: vehicle.id,
           plateNumber: vehicle.plate,
-          odo: Number(mergedOdometer),
-          soc: Number(mergedBattery),
-          odometer: Number(mergedOdometer),
-          batteryPercent: Number(mergedBattery),
-          date: data.date || dateStr,
-          status: data.status || (mergedIsCharging ? "CHARGED" : "DRIVING"),
-          cost: Number(mergedCost),
-          isCharging: mergedIsCharging,
-          location: mergedLocation,
-          distance: Math.max(0, distance),
-          batteryDiff: Math.max(0, batteryDiff),
-          timestamp: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
+          odo: Number(data.odometer),
+          soc: Number(data.startSoc ?? 50),
+          odometer: Number(data.odometer),
+          batteryPercent: Number(data.startSoc ?? 50),
+          date: dateStr,
+          status: "DRIVING",
+          cost: 0, // start node represents end of previous drive, zero cost
+          location: data.location || '',
+          distance: 0,
+          batteryDiff: 0,
+          isCharging: false,
+          isChargeNode: "start",
+          timestamp: logTimestamp,
+          createdAt: serverTimestamp()
+        };
+        batch.set(doc1Ref, doc1Data);
 
-        const newestCheck = query(
-          collection(db, 'vehicleLogs'),
-          where('userId', '==', vehicle.userId),
-          where('plateNumber', '==', vehicle.plate),
-          orderBy('date', 'desc'),
-          limit(1)
-        );
-        const newestSnap = await getDocs(newestCheck);
-        if (newestSnap.docs[0].id === existingLog.id) {
-          await updateDoc(doc(db, 'vehicles', vehicle.id), {
-            lastOdometer: Number(mergedOdometer),
-            lastBatteryPercent: Number(mergedBattery),
-          });
-        }
+        // Document 2 (end node):
+        const doc2Ref = doc(logsRef);
+        const doc2Data = {
+          id: doc2Ref.id,
+          userId: auth.currentUser.uid,
+          vehicleId: vehicle.id,
+          plateNumber: vehicle.plate,
+          odo: Number(data.odometer),
+          soc: Number(data.endSoc ?? 100),
+          odometer: Number(data.odometer),
+          batteryPercent: Number(data.endSoc ?? 100),
+          date: dateStr,
+          status: "CHARGED",
+          cost: Number(data.cost || 0), // Full cost recorded at end of charge
+          location: data.location || '',
+          distance: 0,
+          batteryDiff: 0,
+          isCharging: true,
+          isChargeNode: "end",
+          timestamp: Timestamp.fromMillis(logTimestamp.toMillis() + 100), // Slightly after start node for absolute safety
+          createdAt: serverTimestamp()
+        };
+        batch.set(doc2Ref, doc2Data);
+
+        await batch.commit();
+
+        // Run automatic pipeline reordering & calculation
+        await runPipeline(auth.currentUser.uid, vehicle.id, vehicle.plate);
 
         if ('vibrate' in navigator) navigator.vibrate(50);
-        return { logId: existingLog.id, isMerged: true };
-      }
+        return { logId: doc2Ref.id, catchUpInfo: null };
+      } else {
+        // 🚀 Optimistic Single Write: Pre-generate log document ID offline to avoid create-then-update roundtrips!
+        const logsRef = collection(db, 'vehicleLogs');
+        const newLogDoc = doc(logsRef);
+        const logId = newLogDoc.id;
 
-      // NEW LOG MODE - Concurrent pre-fetch for optimization (Promise.all)
-      const [prevSnap, nextSnap] = await Promise.all([
-        getDocs(query(
-          collection(db, 'vehicleLogs'),
-          where('userId', '==', vehicle.userId),
-          where('plateNumber', '==', vehicle.plate),
-          where('date', '<', dateStr),
-          orderBy('date', 'desc'),
-          limit(1)
-        )),
-        getDocs(query(
-          collection(db, 'vehicleLogs'),
-          where('userId', '==', vehicle.userId),
-          where('plateNumber', '==', vehicle.plate),
-          where('date', '>', dateStr),
-          orderBy('date', 'asc'),
-          limit(1)
-        ))
-      ]);
-
-      const prevLog = prevSnap.docs.length > 0 ? prevSnap.docs[0].data() as LogEntry : null;
-      const nextLog = nextSnap.docs.length > 0 ? { id: nextSnap.docs[0].id, ...nextSnap.docs[0].data() } as LogEntry : null;
-
-      const isCharging = data.isCharging !== undefined ? data.isCharging : (prevLog ? Number(data.batteryPercent) > prevLog.batteryPercent : false);
-      const distance = data.distance !== undefined ? data.distance : (prevLog ? Number(data.odometer) - prevLog.odometer : 0);
-      const batteryDiff = data.batteryDiff !== undefined ? data.batteryDiff : (prevLog 
-        ? (isCharging ? Number(data.batteryPercent) - prevLog.batteryPercent : prevLog.batteryPercent - Number(data.batteryPercent))
-        : 0);
-
-      const logDoc = await addDoc(collection(db, 'vehicleLogs'), {
-        userId: auth.currentUser.uid,
-        vehicleId: vehicle.id,
-        plateNumber: vehicle.plate,
-        odo: Number(data.odometer),
-        soc: Number(data.batteryPercent),
-        odometer: Number(data.odometer),
-        batteryPercent: Number(data.batteryPercent),
-        date: data.date || dateStr,
-        status: data.status || (isCharging ? "CHARGED" : "DRIVING"),
-        cost: Number(data.cost || 0),
-        location: data.location || '',
-        distance: Math.max(0, distance),
-        batteryDiff: Math.max(0, batteryDiff),
-        isCharging,
-        timestamp: serverTimestamp(),
-        createdAt: serverTimestamp()
-      });
-      
-      const logId = logDoc.id;
-      // Keep ID field if needed by existing types, otherwise rules might reject if not in isValidLog
-      // isValidLog says (data.id is string || !data.keys().hasAll(['id']))
-      await updateDoc(logDoc, { id: logId });
-
-      let catchUpInfo = null;
-      if (nextLog) {
-        const nextDistance = nextLog.odometer - data.odometer;
-        const nextIsCharging = nextLog.batteryPercent > data.batteryPercent;
-        const nextBatteryDiff = nextIsCharging 
-          ? nextLog.batteryPercent - data.batteryPercent 
-          : data.batteryPercent - nextLog.batteryPercent;
-        
-        if (nextIsCharging && (!nextLog.cost || nextLog.cost === 0)) {
-          catchUpInfo = {
-            id: nextLog.id,
-            date: format(nextLog.timestamp.toDate(), 'yyyy-MM-dd'),
-            prevBattery: data.batteryPercent,
-            nextBattery: nextLog.batteryPercent
-          };
-        }
-
-        await updateDoc(doc(db, 'vehicleLogs', nextLog.id), {
-          distance: Math.max(0, nextDistance),
-          batteryDiff: Math.max(0, nextBatteryDiff),
-          isCharging: nextIsCharging,
-          timestamp: serverTimestamp() // Ensure rule compliance
+        await setDoc(newLogDoc, {
+          id: logId,
+          userId: auth.currentUser.uid,
+          vehicleId: vehicle.id,
+          plateNumber: vehicle.plate,
+          odo: Number(data.odometer),
+          soc: Number(data.batteryPercent),
+          odometer: Number(data.odometer),
+          batteryPercent: Number(data.batteryPercent),
+          date: dateStr,
+          status: data.isCharging ? "CHARGED" : "DRIVING",
+          cost: Number(data.cost || 0),
+          location: data.location || '',
+          distance: 0,
+          batteryDiff: 0,
+          isCharging: !!data.isCharging,
+          timestamp: logTimestamp,
+          createdAt: serverTimestamp()
         });
-      }
 
-      if (!nextLog) {
-        await updateDoc(doc(db, 'vehicles', vehicle.id), {
-          lastOdometer: data.odometer,
-          lastBatteryPercent: data.batteryPercent,
-        });
+        // Run automatic pipeline reordering & calculation
+        await runPipeline(auth.currentUser.uid, vehicle.id, vehicle.plate);
+
+        if ('vibrate' in navigator) navigator.vibrate(50);
+        return { logId, catchUpInfo: null };
       }
-      
-      if ('vibrate' in navigator) navigator.vibrate(50);
-      return { logId, catchUpInfo };
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'vehicleLogs');
     }
@@ -607,6 +684,10 @@ export function useEVStore() {
         ...updateData,
         updatedAt: serverTimestamp()
       });
+
+      if (auth.currentUser && vehicle) {
+        await runPipeline(auth.currentUser.uid, vehicle.id, vehicle.plate);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'vehicleLogs');
     }
@@ -615,6 +696,10 @@ export function useEVStore() {
   const deleteLog = async (logId: string) => {
     try {
       await deleteDoc(doc(db, 'vehicleLogs', logId));
+
+      if (auth.currentUser && vehicle) {
+        await runPipeline(auth.currentUser.uid, vehicle.id, vehicle.plate);
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'vehicleLogs');
     }
@@ -1095,12 +1180,15 @@ export function useEVStore() {
     }));
     
     try {
-      // Use Batch or multiple writes
-      await Promise.all(unread.map(n => 
-        updateDoc(doc(db, 'notifications', n.id), {
+      // 🚀 Optimize: Use Batch Write to compress multiple parallel updates into a single roundtrip payload
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      unread.forEach(n => {
+        batch.update(doc(db, 'notifications', n.id), {
           readBy: arrayUnion(uid)
-        })
-      ));
+        });
+      });
+      await batch.commit();
       console.log('[Message Authority] All unread messages synchronized to Cloud.');
     } catch (error: any) {
       console.error('[CRITICAL] Bulk mark as read failed:', error);
@@ -1140,15 +1228,20 @@ export function useEVStore() {
     if (!auth.currentUser || notifications.length === 0) return;
     const uid = auth.currentUser.uid;
     try {
-      await Promise.all(notifications.map(async (n) => {
+      // 🚀 Optimize: Convert parallel asynchronous updates and deletes into a unified batch transaction
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      notifications.forEach((n) => {
+        const ref = doc(db, 'notifications', n.id);
         if (n.userId === 'all') {
-          return updateDoc(doc(db, 'notifications', n.id), {
-            dismissedBy: [...(n.dismissedBy || []), uid]
+          batch.update(ref, {
+            dismissedBy: arrayUnion(uid)
           });
         } else {
-          return deleteDoc(doc(db, 'notifications', n.id));
+          batch.delete(ref);
         }
-      }));
+      });
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'notifications');
     }
@@ -1159,7 +1252,12 @@ export function useEVStore() {
     try {
       const q = query(collection(db, 'notifications'), where('userId', '==', 'all'));
       const snap = await getDocs(q);
-      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+      
+      // 🚀 Optimize: Batch systems delete requests
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'notifications');
     }
@@ -1202,7 +1300,10 @@ export function useEVStore() {
     if (!isAdmin) return;
     try {
       const snap = await getDocs(collection(db, 'activities'));
-      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'activities');
     }
@@ -1212,7 +1313,10 @@ export function useEVStore() {
     if (!isAdmin) return;
     try {
       const snap = await getDocs(collection(db, 'polls'));
-      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'polls');
     }
