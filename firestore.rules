@@ -56,10 +56,7 @@ service cloud.firestore {
     // --- Log Validation ---
     function isValidLog(data) {
       return data.vehicleId is string &&
-             data.userId == request.auth.uid &&
-             data.odometer is number && data.odometer >= 0 &&
-             data.batteryPercent is number && data.batteryPercent >= 0 && data.batteryPercent <= 100 &&
-             (data.timestamp is timestamp || !data.keys().hasAll(['timestamp']));
+             data.userId == request.auth.uid;
     }
 
     // --- UserProfile Validation ---
