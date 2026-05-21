@@ -612,6 +612,7 @@ export default function App() {
             >
               <LogsHistory 
                 logs={evStore.logs} 
+                vehicle={evStore.vehicle}
                 onLogClick={setEditingLog}
                 onClose={() => setView('dashboard')}
               />

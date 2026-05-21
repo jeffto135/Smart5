@@ -288,8 +288,145 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [logs, vehicle]);
 
+  // 🧠 模組二：智能用車提醒與續航估算 (EV Smart Insights)
+  const smartInsights = useMemo(() => {
+    const lastLog = logs[0];
+    const lastSoc = lastLog?.batteryPercent ?? vehicle?.lastBatteryPercent ?? 100;
+    const lastOdo = lastLog ? Number(lastLog.odo ?? lastLog.odometer ?? 0) : Number(vehicle?.lastOdometer ?? 0);
+
+    // Maintenance Threshold Check (odo % 10000 >= 9500 or odo % 10000 <= 500)
+    const odoMod = lastOdo % 10000;
+    const showMaintenanceWarning = lastOdo > 0 && (odoMod >= 9500 || odoMod <= 500);
+
+    // Extract Logs in last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // Sort to compute chronological odoDiff
+    const sortedLogsAsc = [...logs].sort((a, b) => {
+      const dateCompare = (a.date || "").localeCompare(b.date || "");
+      if (dateCompare !== 0) return dateCompare;
+      const aOdo = Number(a.odo ?? a.odometer ?? 0);
+      const bOdo = Number(b.odo ?? b.odometer ?? 0);
+      return aOdo - bOdo;
+    });
+
+    for (let i = 0; i < sortedLogsAsc.length; i++) {
+      const current = sortedLogsAsc[i];
+      const currentOdo = Number(current.odo ?? current.odometer ?? 0);
+      if (i === 0) {
+        current.odoDiff = 0;
+      } else {
+        const prev = sortedLogsAsc[i - 1];
+        const prevOdo = Number(prev.odo ?? prev.odometer ?? 0);
+        current.odoDiff = Math.max(0, currentOdo - prevOdo);
+      }
+    }
+
+    const last7DaysLogs = sortedLogsAsc.filter(log => log.timestamp.toDate() >= sevenDaysAgo);
+
+    // Calculate total 7 days distance
+    const total7DaysDistance = last7DaysLogs.reduce((sum, log) => sum + (log.odoDiff || 0), 0);
+
+    // Calculate total 7 days drive energy
+    const total7DaysBatteryConsumed = last7DaysLogs.reduce((sum, log) => {
+      const isDrive = log.type === 'drive' || (!log.type && !log.isCharging);
+      const diffVal = Number(log.segmentDiff ?? log.batteryDiff ?? 0);
+      return sum + (isDrive ? diffVal : 0);
+    }, 0);
+
+    const batteryCapacity = vehicle?.batteryCapacity || 100;
+    const sevenDaysConsumedKwh = (total7DaysBatteryConsumed / 100) * batteryCapacity;
+    const avg7DaysEfficiency = total7DaysDistance > 0 ? ((sevenDaysConsumedKwh / total7DaysDistance) * 100) : 0;
+
+    // Remaining Range estimation
+    let remainingRange = 0;
+    let isEstimatedByOfficial = false;
+
+    if (avg7DaysEfficiency > 0) {
+      remainingRange = (lastSoc * 100) / avg7DaysEfficiency;
+    } else {
+      // Standard official estimate: SOC * 7.4
+      remainingRange = lastSoc * 7.4;
+      isEstimatedByOfficial = true;
+    }
+
+    return {
+      lastSoc,
+      lastOdo,
+      showMaintenanceWarning,
+      remainingRange,
+      avg7DaysEfficiency,
+      isEstimatedByOfficial
+    };
+  }, [logs, vehicle]);
+
   return (
     <div className="space-y-6">
+      {/* 🧠 模組二：EV Smart Insights 智能儀表板 */}
+      <div className="space-y-4">
+        {smartInsights.showMaintenanceWarning && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-4 rounded-2xl bg-cyber-green/10 border-2 border-cyber-green text-cyber-green flex items-start gap-3 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
+          >
+            <span className="text-lg">🛠️</span>
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold uppercase tracking-wider font-mono">保養里程碑提示 / MAINTENANCE REMINDER</h4>
+              <p className="text-xs font-semibold leading-relaxed">
+                提示：新車即將到達保養里程碑（當前已達 <span className="underline font-bold">{smartInsights.lastOdo.toLocaleString()} KM</span>），請預約回廠檢查胎壓、煞車皮與更換冷氣濾網。
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
+          {/* Cyber accents decoration */}
+          <div className="absolute top-0 right-0 w-24 h-24 bg-cyber-green/5 blur-[40px] pointer-events-none" />
+          
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/40 font-bold">EV SMART INSIGHTS ENGINE</span>
+              <h3 className="text-md font-bold uppercase tracking-wide text-white mt-0.5">智能用車提醒與續航估算</h3>
+            </div>
+            <div className="h-7 w-7 rounded-lg bg-cyber-green/10 border border-cyber-green/25 flex items-center justify-center">
+              <span className="text-cyber-green text-sm select-none">🧠</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-white/5">
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono text-white/40 uppercase block">真實剩餘續航 (km)</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-mono font-extrabold text-cyber-green">
+                  {smartInsights.remainingRange.toFixed(0)}
+                </span>
+                <span className="text-[10px] font-mono text-white/40 font-bold">KM</span>
+              </div>
+              <span className="text-[9px] text-white/30 block leading-tight">
+                {smartInsights.isEstimatedByOfficial 
+                  ? "官方標準估算 (無 7 天行車數據)" 
+                  : `基於近 7 天平均電耗 (${smartInsights.avg7DaysEfficiency.toFixed(1)} kWh/100km)`}
+              </span>
+            </div>
+
+            <div className="space-y-1 border-l border-white/5 pl-4">
+              <span className="text-[10px] font-mono text-white/40 uppercase block">當前基準電量</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-mono font-extrabold text-white">
+                  {smartInsights.lastSoc}
+                </span>
+                <span className="text-[10px] font-mono text-white/40 font-bold">%</span>
+              </div>
+              <span className="text-[9px] text-white/30 block leading-tight">
+                Smart #5 預設配置 100 kWh 電池 (CLTC 740km)
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
         <CyberCard title="對比油車節省" icon={<DollarSign size={18} />} className="border-cyber-green/20">

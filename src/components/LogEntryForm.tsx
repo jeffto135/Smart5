@@ -652,6 +652,12 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         </CyberButton>
       </div>
 
+      <div className="text-center pt-1">
+        <span className="text-[10px] font-mono text-white/30">
+          （支援地庫離線輸入，上網後自動同步）
+        </span>
+      </div>
+
       {/* No Change Warning Modal */}
       <AnimatePresence>
         {showNoChangeWarning && (
