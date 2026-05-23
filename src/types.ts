@@ -87,6 +87,34 @@ export interface ActivityRegistration {
   lockoutUntil?: Timestamp;
 }
 
+export interface Feedback {
+  userId: string;
+  userDisplayName?: string;
+  realKw: number;
+  rating: number;
+  createdAt: any;
+  note?: string;
+  testedGun?: string;
+}
+
+export interface ChargingInfo {
+  provider: string;
+  officialKw: number;
+  realKw: number;
+  rating: number | null;
+  ratingCount?: number;
+  totalRatingPoints?: number;
+  note: string;
+  userFeedbacks?: Feedback[];
+}
+
+export interface GunGroup {
+  kw: number;
+  gunType: 'DC 快充' | 'AC 慢充';
+  count: number;
+  note: string;
+}
+
 export interface ParkingLot {
   id: string;
   name: string;
@@ -94,9 +122,20 @@ export interface ParkingLot {
   address?: string;
   lat: number;
   lng: number;
-  difficultyTag: '輕易' | '中等' | '地獄' | '不可能的任務';
+  difficultyTag?: '輕易' | '中等' | '地獄' | '不可能的任務' | null;
   adminNotes?: string;
   videoGuide?: string;
+  hasCharging?: boolean;
+  chargingInfo?: ChargingInfo;
+  heightLimit?: string;
+  difficultyNote?: string;
+  chargingNote?: string;
+  hasDifficulty?: boolean;
+  maxKw?: number;
+  totalGuns?: number;
+  feeType?: 'kwh' | 'time';
+  tariffs?: Array<{ timeSlot: string; price: number; unit: string }>;
+  gunGroups?: GunGroup[];
 }
 
 export interface PollOption {

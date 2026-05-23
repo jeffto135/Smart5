@@ -109,9 +109,18 @@
         "lng": { "type": "number" },
         "difficultyTag": { "type": "string", "enum": ["輕易", "中等", "地獄", "不可能的任務"] },
         "adminNotes": { "type": "string" },
-        "videoGuide": { "type": "string" }
+        "videoGuide": { "type": "string" },
+        "hasDifficulty": { "type": "boolean" },
+        "hasCharging": { "type": "boolean" },
+        "maxKw": { "type": "number" },
+        "totalGuns": { "type": "number" },
+        "feeType": { "type": "string" },
+        "tariffs": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
       },
-      "required": ["name", "region", "lat", "lng", "difficultyTag"]
+      "required": ["name", "region", "lat", "lng"]
     },
     "Poll": {
       "title": "Poll",

@@ -92,9 +92,16 @@ service cloud.firestore {
              (data.address is string || !data.keys().hasAll(['address'])) &&
              data.lat is number &&
              data.lng is number &&
-             data.difficultyTag in ['輕易', '中等', '地獄', '不可能的任務'] &&
+             (data.difficultyTag in ['輕易', '中等', '地獄', '不可能的任務'] || data.difficultyTag == null || !data.keys().hasAll(['difficultyTag'])) &&
              (data.adminNotes is string || !data.keys().hasAll(['adminNotes'])) &&
-             (data.videoGuide is string || !data.keys().hasAll(['videoGuide']));
+             (data.videoGuide is string || !data.keys().hasAll(['videoGuide'])) &&
+             (data.hasDifficulty is bool || !data.keys().hasAll(['hasDifficulty'])) &&
+             (data.hasCharging is bool || !data.keys().hasAll(['hasCharging'])) &&
+             (data.maxKw is number || data.maxKw == null || !data.keys().hasAll(['maxKw'])) &&
+             (data.totalGuns is number || data.totalGuns == null || !data.keys().hasAll(['totalGuns'])) &&
+             (data.feeType is string || data.feeType == null || !data.keys().hasAll(['feeType'])) &&
+             (data.tariffs is list || data.tariffs == null || !data.keys().hasAll(['tariffs'])) &&
+             (data.gunGroups is list || data.gunGroups == null || !data.keys().hasAll(['gunGroups']));
     }
 
     // --- Registration Validation ---
@@ -271,7 +278,9 @@ service cloud.firestore {
 
     match /parking_slots/{lotId} {
       allow read: if isSignedIn();
-      allow create, update: if isSubAdmin() && isValidParkingLot(incoming());
+      allow create: if isSubAdmin() && isValidParkingLot(incoming());
+      allow update: if (isSubAdmin() && isValidParkingLot(incoming())) ||
+                       (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['chargingInfo']));
       allow delete: if isSubAdmin();
     }
 

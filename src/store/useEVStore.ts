@@ -14,6 +14,7 @@ import {
   deleteDoc,
   Timestamp,
   getDocs,
+  getDoc,
   arrayUnion,
   getDocsFromCache,
   runTransaction,
@@ -141,8 +142,63 @@ export function useEVStore() {
       return;
     }
     const q = query(collection(db, 'parking_slots'), orderBy('name', 'asc'));
-    return onSnapshot(q, (snap) => {
-      setParkingLots(snap.docs.map(d => ({ id: d.id, ...d.data() } as ParkingLot)));
+    return onSnapshot(q, async (snap) => {
+      const lots = snap.docs.map(d => ({ id: d.id, ...d.data() } as ParkingLot));
+      setParkingLots(lots);
+      
+      const hasPark001 = lots.some(l => l.id === 'park_001');
+      const hasPark002 = lots.some(l => l.id === 'park_002');
+      if (!hasPark001 || !hasPark002) {
+        console.log("Seeding parking and charging slot data...");
+        if (!hasPark001) {
+          try {
+            await setDoc(doc(db, 'parking_slots', 'park_001'), {
+              name: '合和中心停車場 (灣仔)',
+              region: '港島',
+              address: '香港灣仔皇后大道東183號',
+              lat: 22.274,
+              lng: 114.172,
+              difficultyTag: '輕易',
+              adminNotes: '車位寬敞，新手友善。配有 Shell Recharge 120kW 快速充電樁。',
+              hasCharging: true,
+              chargingInfo: {
+                provider: 'Shell Recharge',
+                officialKw: 120,
+                realKw: 95,
+                rating: 4,
+                note: '車位寬敞極好泊。快充速度理想，食到95kW。',
+                userFeedbacks: []
+              }
+            });
+          } catch (err) {
+            console.error("Error seeding park_001:", err);
+          }
+        }
+        if (!hasPark002) {
+          try {
+            await setDoc(doc(db, 'parking_slots', 'park_002'), {
+              name: '秀茂坪商場停車場',
+              region: '九龍',
+              address: '九龍觀塘秀茂坪秀明道101號',
+              lat: 22.319,
+              lng: 114.232,
+              difficultyTag: '地獄',
+              adminNotes: '通道十分狹窄，盲位極多，拐彎需特別小心。設有 Cornerstone 中速充電設備。',
+              hasCharging: true,
+              chargingInfo: {
+                provider: 'Cornerstone',
+                officialKw: 7,
+                realKw: 7,
+                rating: 3,
+                note: '🚨地獄級窄位，極度考驗車主技術！內置中速 7kW 慢充，僅供長停補電。',
+                userFeedbacks: []
+              }
+            });
+          } catch (err) {
+            console.error("Error seeding park_002:", err);
+          }
+        }
+      }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'parking_slots');
     });
@@ -1083,6 +1139,71 @@ export function useEVStore() {
     }
   };
 
+  const addChargingFeedback = async (lotId: string, realKw: number, rating: number, note: string, testedGun?: string) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("請先登入 / Please login first");
+      
+      const lotRef = doc(db, 'parking_slots', lotId);
+      const lotSnap = await getDoc(lotRef);
+      if (!lotSnap.exists()) return;
+      const lotData = lotSnap.data() as ParkingLot;
+      
+      const currentFeedbacks = lotData.chargingInfo?.userFeedbacks || [];
+      const username = user.displayName || user.email?.split('@')[0] || '車友';
+      const newFeedback = {
+        userId: user.uid,
+        userDisplayName: username,
+        realKw,
+        rating,
+        note: note.trim() || '',
+        createdAt: Timestamp.now(),
+        ...(testedGun ? { testedGun } : {})
+      };
+      
+      const updatedFeedbacks = [...currentFeedbacks, newFeedback];
+      const totalFeedbacks = updatedFeedbacks.length;
+      const sumKw = updatedFeedbacks.reduce((sum, f) => sum + f.realKw, 0);
+      
+      const averageRealKw = Math.round(sumKw / totalFeedbacks);
+      
+      // Calculate utilizing the specified ratingCount and totalRatingPoints logic
+      let ratingCount = lotData.chargingInfo?.ratingCount !== undefined ? lotData.chargingInfo.ratingCount : currentFeedbacks.length;
+      let totalRatingPoints = lotData.chargingInfo?.totalRatingPoints !== undefined ? lotData.chargingInfo.totalRatingPoints : currentFeedbacks.reduce((sum, f) => sum + f.rating, 0);
+      
+      let newCalculatedRating: number | null = null;
+      if (ratingCount === 0) {
+        totalRatingPoints = rating;
+        ratingCount = 1;
+        newCalculatedRating = rating;
+      } else {
+        totalRatingPoints += rating;
+        ratingCount += 1;
+        newCalculatedRating = Math.round((totalRatingPoints / ratingCount) * 10) / 10;
+      }
+      
+      const currentChargingInfo = lotData.chargingInfo || {
+        provider: '未知',
+        officialKw: realKw,
+        note: '',
+      };
+      
+      await updateDoc(lotRef, {
+        chargingInfo: {
+          ...currentChargingInfo,
+          realKw: averageRealKw,
+          rating: newCalculatedRating,
+          ratingCount,
+          totalRatingPoints,
+          userFeedbacks: updatedFeedbacks
+        }
+      });
+    } catch (error) {
+      console.error('addChargingFeedback error:', error);
+      throw error;
+    }
+  };
+
   const addPoll = async (data: Partial<Poll>) => {
     try {
       const formattedOptions = (data.options || []).map((opt, idx) => ({
@@ -1665,6 +1786,7 @@ export function useEVStore() {
     addParkingLot,
     updateParkingLot,
     deleteParkingLot,
+    addChargingFeedback,
     parkingLots,
     addPoll,
     updatePoll,

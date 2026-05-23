@@ -371,6 +371,7 @@ export default function App() {
         onAddParkingLot={evStore.addParkingLot}
         onUpdateParkingLot={evStore.updateParkingLot}
         onDeleteParkingLot={evStore.deleteParkingLot}
+        onAddChargingFeedback={evStore.addChargingFeedback}
         userProfile={evStore.userProfile}
         onUpdateProfile={evStore.updateUserProfile}
         onDeleteVehicle={evStore.deleteVehicle}
@@ -678,6 +679,7 @@ export default function App() {
                 onOpenAdmin={() => setView('admin')}
                 onLogout={handleLogoutAttempt}
                 onClose={() => setView('dashboard')}
+                onAddChargingFeedback={evStore.addChargingFeedback}
               />
             </motion.div>
           )}

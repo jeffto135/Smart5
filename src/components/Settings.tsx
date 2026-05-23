@@ -25,9 +25,10 @@ interface SettingsPageProps {
   onOpenAdmin?: () => void;
   onLogout: () => void;
   onClose: () => void;
+  onAddChargingFeedback?: (lotId: string, realKw: number, rating: number, note: string, testedGun?: string) => Promise<void>;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, vehicles, parkingLots, onUpdate, onAdd, onDelete, onDeleteAccount, isAdmin, onOpenAdmin, onLogout, onClose }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, vehicles, parkingLots, onUpdate, onAdd, onDelete, onDeleteAccount, isAdmin, onOpenAdmin, onLogout, onClose, onAddChargingFeedback }) => {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [showAccountDetails, setShowAccountDetails] = useState(false);
@@ -800,7 +801,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
               </div>
             </div>
             <div className="flex-1 overflow-hidden p-3 sm:p-4">
-              <ParkingLeafletMap parkingLots={parkingLots} />
+              <ParkingLeafletMap parkingLots={parkingLots} onAddChargingFeedback={onAddChargingFeedback} />
             </div>
           </motion.div>
         )}

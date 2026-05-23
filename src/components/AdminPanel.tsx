@@ -77,6 +77,7 @@ interface AdminPanelProps {
   onAddParkingLot: (data: Partial<ParkingLot>) => Promise<any>;
   onUpdateParkingLot: (id: string, data: Partial<ParkingLot>) => Promise<void>;
   onDeleteParkingLot: (id: string) => Promise<void>;
+  onAddChargingFeedback?: (lotId: string, realKw: number, rating: number, note: string, testedGun?: string) => Promise<void>;
   userProfile: UserProfile | null;
   onUpdateProfile: (data: Partial<UserProfile>) => Promise<void>;
   onDeleteVehicle: (id: string) => Promise<void>;
@@ -110,6 +111,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddParkingLot,
   onUpdateParkingLot,
   onDeleteParkingLot,
+  onAddChargingFeedback,
   userProfile,
   onUpdateProfile,
   onDeleteVehicle,
@@ -1341,7 +1343,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="pt-8 border-t border-white/5 space-y-4">
                 <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-white/30">地圖預覽 PREVIEW</h3>
                 <div className="h-[600px] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-                  <ParkingLeafletMap parkingLots={parkingLots} />
+                  <ParkingLeafletMap parkingLots={parkingLots} onAddChargingFeedback={onAddChargingFeedback} />
                 </div>
               </div>
             </motion.div>
