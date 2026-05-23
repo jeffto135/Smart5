@@ -15,11 +15,12 @@ import {
   Timestamp,
   getDocs,
   arrayUnion,
-  getDocsFromCache
+  getDocsFromCache,
+  runTransaction
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
-import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration } from '../types';
+import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration, GroupBuy, GroupBuyRegistration } from '../types';
 import { format } from 'date-fns';
 import { OperationType, handleFirestoreError } from '../lib/utils';
 
@@ -29,6 +30,7 @@ export function useEVStore() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
+  const [groupBuys, setGroupBuys] = useState<GroupBuy[]>([]);
   const [notifications, setNotifications] = useState<EVNotification[]>([]);
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,12 +69,13 @@ export function useEVStore() {
     const warmUpData = async () => {
       try {
         const uid = auth.currentUser!.uid;
-        // 並行請求：車輛、關鍵通知、近期活動、投票
+        // 並行請求：車輛、關鍵通知、近期活動、投票、團購
         await Promise.all([
           getDocs(query(collection(db, 'vehicles'), where('userId', '==', uid), limit(10))),
           getDocs(query(collection(db, 'notifications'), where('userId', '==', uid), limit(10))),
           getDocs(query(collection(db, 'activities'), limit(10))),
-          getDocs(query(collection(db, 'polls'), limit(5)))
+          getDocs(query(collection(db, 'polls'), limit(5))),
+          getDocs(query(collection(db, 'groupBuys'), limit(5)))
         ]);
         // 抓完後不一定要在這裡 setState，因為 onSnapshot 會緊接著利用快取觸發
         // 但完成 Promise.all 代表快取已熱，載入狀態可以提早解除
@@ -236,6 +239,17 @@ export function useEVStore() {
       setPolls(snap.docs.map(d => ({ id: d.id, ...d.data() } as Poll)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'polls');
+    });
+  }, [auth.currentUser]);
+
+  // Sync GroupBuys
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const q = query(collection(db, 'groupBuys'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snap) => {
+      setGroupBuys(snap.docs.map(d => ({ id: d.id, ...d.data() } as GroupBuy)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'groupBuys');
     });
   }, [auth.currentUser]);
 
@@ -1070,16 +1084,28 @@ export function useEVStore() {
 
   const addPoll = async (data: Partial<Poll>) => {
     try {
+      const formattedOptions = (data.options || []).map((opt, idx) => ({
+        id: opt.id || `opt_${idx + 1}`,
+        text: opt.text || '',
+        votes: opt.votes || 0
+      }));
+
       const docRef = await addDoc(collection(db, 'polls'), {
-        ...data,
+        title: data.title || data.question || '',
+        question: data.title || data.question || '', // backward compat
+        isMultiSelect: !!data.isMultiSelect,
+        maxChoices: data.maxChoices || null,
+        endDate: data.endDate || null,
+        options: formattedOptions,
         voters: [],
+        votedUserIds: [],
         createdAt: serverTimestamp(),
       });
       // Broadcast Notification
       await addNotification({
         userId: 'all',
         title: '新投票發佈 / NEW POLL',
-        message: `「${data.question}」即時投票現已開始！`,
+        message: `「${data.title || data.question || ''}」即時投票現已開始！`,
         type: 'info',
         relatedId: docRef.id,
         relatedType: 'poll'
@@ -1092,7 +1118,10 @@ export function useEVStore() {
 
   const updatePoll = async (id: string, data: Partial<Poll>) => {
     try {
-      await updateDoc(doc(db, 'polls', id), data);
+      await updateDoc(doc(db, 'polls', id), {
+        ...data,
+        question: data.title || data.question // keep sync
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'polls');
     }
@@ -1106,23 +1135,87 @@ export function useEVStore() {
     }
   };
 
-  const voteInPoll = async (pollId: string, optionIndex: number) => {
+  const voteInPoll = async (pollId: string, selection: number | string | number[] | string[]) => {
     if (!auth.currentUser) return;
-    const poll = polls.find(p => p.id === pollId);
-    if (!poll || poll.voters.includes(auth.currentUser.uid)) return;
+    const uid = auth.currentUser.uid;
 
     try {
-      const newOptions = [...poll.options];
-      newOptions[optionIndex].votes += 1;
-      await updateDoc(doc(db, 'polls', pollId), {
-        options: newOptions,
-        voters: [...poll.voters, auth.currentUser.uid]
+      await runTransaction(db, async (transaction) => {
+        const pollDocRef = doc(db, 'polls', pollId);
+        const pollSnap = await transaction.get(pollDocRef);
+        if (!pollSnap.exists()) {
+          throw new Error('投票不存在 / POLL DOES NOT EXIST');
+        }
+
+        const pollData = pollSnap.data() as Poll;
+        const votedUserIds = pollData.votedUserIds || [];
+        const voters = pollData.voters || [];
+
+        // Dual-array checks for maximum voting integrity:
+        if (votedUserIds.includes(uid) || voters.includes(uid)) {
+          throw new Error('您已經進行過投票了 / ALREADY VOTED');
+        }
+
+        // Convert selection to selected option IDs
+        let selectedOptionIds: string[] = [];
+        if (typeof selection === 'number') {
+          const opt = pollData.options[selection];
+          if (opt) selectedOptionIds.push(opt.id || `opt_${selection + 1}`);
+        } else if (typeof selection === 'string') {
+          selectedOptionIds.push(selection);
+        } else if (Array.isArray(selection)) {
+          selection.forEach(item => {
+            if (typeof item === 'number') {
+              const opt = pollData.options[item];
+              if (opt) selectedOptionIds.push(opt.id || `opt_${item + 1}`);
+            } else if (typeof item === 'string') {
+              selectedOptionIds.push(item);
+            }
+          });
+        }
+
+        if (selectedOptionIds.length === 0) {
+          throw new Error('未選擇任何選項 / NO SELECTION');
+        }
+
+        // Ensure max choices constraint isn't bypassed
+        if (pollData.isMultiSelect && pollData.maxChoices && selectedOptionIds.length > pollData.maxChoices) {
+          throw new Error(`最多只能選擇 ${pollData.maxChoices} 個選項！`);
+        } else if (!pollData.isMultiSelect && selectedOptionIds.length > 1) {
+          throw new Error('單選模式不允許選擇多個選項！');
+        }
+
+        const updatedOptions = pollData.options.map((opt, i) => {
+          const optId = opt.id || `opt_${i + 1}`;
+          if (selectedOptionIds.includes(optId)) {
+            return {
+              ...opt,
+              id: optId,
+              votes: (opt.votes || 0) + 1
+            };
+          }
+          return {
+            ...opt,
+            id: optId,
+            votes: opt.votes || 0
+          };
+        });
+
+        transaction.update(pollDocRef, {
+          options: updatedOptions,
+          votedUserIds: [...votedUserIds, uid],
+          voters: [...voters, uid] // backward compat
+        });
       });
-      // Personal Success Notification
+
+      // Get poll details for success notification
+      const poll = polls.find(p => p.id === pollId);
+      const pollTitle = poll ? (poll.title || poll.question) : '投票';
+
       await addNotification({
         userId: auth.currentUser.uid,
         title: '投票成功 / VOTE RECORDED',
-        message: `您已完成「${poll.question}」的投票。`,
+        message: `您已完成「${pollTitle}」的投票。`,
         type: 'success'
       });
     } catch (error) {
@@ -1322,6 +1415,115 @@ export function useEVStore() {
     }
   };
 
+  const addGroupBuy = async (data: Partial<GroupBuy>) => {
+    if (!isSubAdmin) return;
+    try {
+      const docRef = await addDoc(collection(db, 'groupBuys'), {
+        title: data.title || '',
+        description: data.description || '',
+        price: Number(data.price) || 0,
+        imageUrl: data.imageUrl || '',
+        status: data.status || 'active',
+        targetQuantity: Number(data.targetQuantity) || 1,
+        currentRegistrations: [],
+        createdAt: serverTimestamp(),
+      });
+      // Broadcast Notification
+      await addNotification({
+        userId: 'all',
+        title: '新團購市集上架 / NEW GROUP BUY',
+        message: `官方團購「${data.title}」今日正式成立！立即前往認購！`,
+        relatedId: docRef.id,
+        relatedType: 'groupBuy',
+        createdAt: serverTimestamp(),
+        readBy: []
+      } as any);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'groupBuys');
+    }
+  };
+
+  const updateGroupBuy = async (id: string, data: Partial<GroupBuy>) => {
+    if (!isSubAdmin) return;
+    try {
+      await updateDoc(doc(db, 'groupBuys', id), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'groupBuys');
+    }
+  };
+
+  const deleteGroupBuy = async (id: string) => {
+    if (!isSubAdmin) return;
+    try {
+      await deleteDoc(doc(db, 'groupBuys', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'groupBuys');
+    }
+  };
+
+  const registerGroupBuy = async (gbId: string, quantity: number) => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const email = auth.currentUser.email || '';
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const gbDocRef = doc(db, 'groupBuys', gbId);
+        const gbSnap = await transaction.get(gbDocRef);
+        if (!gbSnap.exists()) {
+          throw new Error('團購項目不存在 / GROUP BUY DOES NOT EXIST');
+        }
+
+        const gbData = gbSnap.data() as GroupBuy;
+        const currentRegs = gbData.currentRegistrations || [];
+
+        // Check if user already registered
+        const existingIdx = currentRegs.findIndex(r => r.userId === uid);
+        let updatedRegs = [...currentRegs];
+
+        if (existingIdx >= 0) {
+          // Update existing
+          if (quantity <= 0) {
+            // If user sets qty to 0 (or cancels), remove the entry
+            updatedRegs.splice(existingIdx, 1);
+          } else {
+            updatedRegs[existingIdx] = {
+              ...updatedRegs[existingIdx],
+              qty: quantity,
+              updatedAt: Timestamp.now()
+            };
+          }
+        } else {
+          // Add new
+          if (quantity > 0) {
+            updatedRegs.push({
+              userId: uid,
+              email: email,
+              qty: quantity,
+              updatedAt: Timestamp.now()
+            });
+          }
+        }
+
+        transaction.update(gbDocRef, {
+          currentRegistrations: updatedRegs
+        });
+      });
+
+      // Show personal registration notification
+      const gbObj = groupBuys.find(g => g.id === gbId);
+      const gbTitle = gbObj ? gbObj.title : '團購項目';
+      await addNotification({
+        userId: auth.currentUser.uid,
+        title: '團購登記成功 / REGISTRATION COMPLETED',
+        message: quantity > 0 ? `您已登記「${gbTitle}」共 ${quantity} 套。` : `您已取消「${gbTitle}」的登記。`,
+        type: 'success'
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'groupBuys');
+    }
+  };
+
   return {
     vehicle,
     vehicles,
@@ -1330,6 +1532,7 @@ export function useEVStore() {
     logs,
     activities,
     polls,
+    groupBuys,
     notifications,
     loading,
     isAdmin,
@@ -1362,6 +1565,10 @@ export function useEVStore() {
     updatePoll,
     deletePoll,
     voteInPoll,
+    addGroupBuy,
+    updateGroupBuy,
+    deleteGroupBuy,
+    registerGroupBuy,
     markNotificationAsRead,
     markAllNotificationsAsRead,
     deleteNotification,

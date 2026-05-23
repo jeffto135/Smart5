@@ -8,10 +8,10 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote } from 'lucide-react';
+import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
-import { LogEntry, Vehicle, Activity, Poll } from '../types';
+import { LogEntry, Vehicle, Activity, Poll, GroupBuy } from '../types';
 import { format } from 'date-fns';
 
 interface DashboardProps {
@@ -19,10 +19,12 @@ interface DashboardProps {
   vehicle: Vehicle | null;
   activities: Activity[];
   polls: Poll[];
+  groupBuys: GroupBuy[];
   onLogClick: (log: LogEntry) => void;
   onViewAll: () => void;
   onActivityClick: () => void;
   onPollClick: () => void;
+  onGroupBuyClick: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
@@ -30,10 +32,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   vehicle, 
   activities,
   polls,
+  groupBuys = [],
   onLogClick, 
   onViewAll,
   onActivityClick,
-  onPollClick 
+  onPollClick,
+  onGroupBuyClick
 }) => {
   const [expandedDates, setExpandedDates] = useState<{ [date: string]: boolean }>({});
 
@@ -163,6 +167,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const latestId = polls[0]?.id; // polls are desc
     return lastSeen !== latestId;
   }, [polls]);
+
+  const hasNewGroupBuy = useMemo(() => {
+    const lastSeen = localStorage.getItem('evlog_last_seen_groupbuy');
+    if (!groupBuys.length) return false;
+    const latestId = groupBuys[0]?.id; // desc
+    return lastSeen !== latestId;
+  }, [groupBuys]);
 
   const stats = useMemo(() => {
     // PRD Formula: (行駛里數 / 燃油效能 * $30) - 電費開支
@@ -489,8 +500,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </CyberCard>
       
-      {/* Activity & Poll Shortcuts */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Activity, Poll & Group Buy Shortcuts */}
+      <div className="grid grid-cols-3 gap-2 md:gap-4">
         <button 
           onClick={() => {
             if (activities.length > 0) {
@@ -498,18 +509,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
             }
             onActivityClick();
           }}
-          className="relative group p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-cyber-green/50 hover:bg-cyber-green/5 transition-all flex flex-col items-center gap-3"
+          className="relative group p-3 md:p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-cyber-green/50 hover:bg-cyber-green/5 transition-all flex flex-col items-center gap-2 md:gap-3"
         >
-          <div className="w-12 h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
-            <UserCheck size={24} className="text-cyber-green cyber-text-glow" />
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+            <UserCheck size={20} className="text-cyber-green cyber-text-glow md:w-6 md:h-6" />
           </div>
-          <div className="text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-cyber-green">🏃 報名活動</div>
+          <div className="text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-cyber-green text-center">報名活動</div>
           
           {hasNewActivity && (
             <motion.div 
               animate={{ opacity: [1, 0, 1] }}
               transition={{ duration: 1.5, repeat: Infinity }}
-              className="absolute top-3 right-3 w-2 h-2 bg-cyber-green rounded-full shadow-[0_0_8px_#CCFF00]"
+              className="absolute top-2.5 right-2.5 w-1.5 h-1.5 md:w-2 md:h-2 bg-cyber-green rounded-full shadow-[0_0_8px_#CCFF00]"
             />
           )}
         </button>
@@ -521,18 +532,41 @@ export const Dashboard: React.FC<DashboardProps> = ({
             }
             onPollClick();
           }}
-          className="relative group p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-cyber-green/50 hover:bg-cyber-green/5 transition-all flex flex-col items-center gap-3"
+          className="relative group p-3 md:p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-cyber-green/50 hover:bg-cyber-green/5 transition-all flex flex-col items-center gap-2 md:gap-3"
         >
-          <div className="w-12 h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
-            <Vote size={24} className="text-cyber-green cyber-text-glow" />
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+            <Vote size={20} className="text-cyber-green cyber-text-glow md:w-6 md:h-6" />
           </div>
-          <div className="text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-cyber-green">🗳️ 即時投票</div>
+          <div className="text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-cyber-green text-center">即時投票</div>
           
           {hasNewPoll && (
             <motion.div 
               animate={{ opacity: [1, 0, 1] }}
               transition={{ duration: 1.5, repeat: Infinity }}
-              className="absolute top-3 right-3 w-2 h-2 bg-cyber-green rounded-full shadow-[0_0_8px_#CCFF00]"
+              className="absolute top-2.5 right-2.5 w-1.5 h-1.5 md:w-2 md:h-2 bg-cyber-green rounded-full shadow-[0_0_8px_#CCFF00]"
+            />
+          )}
+        </button>
+
+        <button 
+          onClick={() => {
+            if (groupBuys.length > 0) {
+              localStorage.setItem('evlog_last_seen_groupbuy', groupBuys[0].id);
+            }
+            onGroupBuyClick();
+          }}
+          className="relative group p-3 md:p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-[#A3E635]/50 hover:bg-[#A3E635]/5 transition-all flex flex-col items-center gap-2 md:gap-3"
+        >
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-[#A3E635]/10 border border-[#A3E635]/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(163,230,21,0.1)]">
+            <ShoppingBag size={20} className="text-[#A3E635] cyber-text-glow md:w-6 md:h-6" />
+          </div>
+          <div className="text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-[#A3E635] text-center">團購市集</div>
+          
+          {hasNewGroupBuy && (
+            <motion.div 
+              animate={{ opacity: [1, 0, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="absolute top-2.5 right-2.5 w-1.5 h-1.5 md:w-2 md:h-2 bg-[#A3E635] rounded-full shadow-[0_0_8px_#A3E635]"
             />
           )}
         </button>

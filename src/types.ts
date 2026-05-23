@@ -100,15 +100,21 @@ export interface ParkingLot {
 }
 
 export interface PollOption {
+  id: string;
   text: string;
   votes: number;
 }
 
 export interface Poll {
   id: string;
-  question: string;
+  title: string;
+  question?: string; // backward compatibility
+  isMultiSelect: boolean;
+  maxChoices?: number;
   options: PollOption[];
-  voters: string[]; // UID array
+  votedUserIds: string[];
+  voters?: string[]; // backward compatibility
+  endDate?: string;
   createdAt: Timestamp;
 }
 
@@ -119,8 +125,28 @@ export interface EVNotification {
   message: string;
   type: 'info' | 'success' | 'alert' | 'reminder';
   relatedId?: string;
-  relatedType?: 'activity' | 'poll';
+  relatedType?: 'activity' | 'poll' | 'groupBuy';
   createdAt: Timestamp;
   readBy: string[]; // UID array of people who read it
   dismissedBy?: string[]; // UID array of people who dismissed this
 }
+
+export interface GroupBuyRegistration {
+  userId: string;
+  email: string;
+  qty: number;
+  updatedAt: any; // Timestamp or similar
+}
+
+export interface GroupBuy {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  imageUrl?: string;
+  status: 'active' | 'closed';
+  targetQuantity: number;
+  currentRegistrations: GroupBuyRegistration[];
+  createdAt: any; // Timestamp or similar
+}
+

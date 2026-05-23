@@ -118,21 +118,27 @@
       "description": "A real-time poll for users.",
       "type": "object",
       "properties": {
+        "title": { "type": "string" },
         "question": { "type": "string" },
+        "isMultiSelect": { "type": "boolean" },
+        "maxChoices": { "type": "number" },
         "options": { 
           "type": "array", 
           "items": { 
             "type": "object",
             "properties": {
+              "id": { "type": "string" },
               "text": { "type": "string" },
               "votes": { "type": "number" }
             }
           }
         },
+        "votedUserIds": { "type": "array", "items": { "type": "string" } },
         "voters": { "type": "array", "items": { "type": "string" } },
+        "endDate": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["question", "options"]
+      "required": ["title", "isMultiSelect", "options"]
     },
     "FCMToken": {
       "title": "FCMToken",

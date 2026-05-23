@@ -10,6 +10,7 @@ import { LogEditModal } from './components/LogEditModal';
 import { AdminPanel } from './components/AdminPanel';
 import { ActivityList } from './components/ActivityList';
 import { PollList } from './components/PollList';
+import { GroupBuyMarketplace } from './components/GroupBuyMarketplace';
 import { MessageList } from './components/MessageList';
 import { UserProfileGate } from './components/UserProfileGate';
 import { NotificationInit } from './components/NotificationInit';
@@ -28,7 +29,7 @@ import { LogEntry } from './types';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList' | 'groupBuy'>('dashboard');
   const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const evStore = useEVStore();
@@ -541,10 +542,12 @@ export default function App() {
                 vehicle={evStore.vehicle}
                 activities={evStore.activities}
                 polls={evStore.polls}
+                groupBuys={evStore.groupBuys}
                 onLogClick={setEditingLog}
                 onViewAll={() => setView('history')}
                 onActivityClick={() => setView('activityList')}
                 onPollClick={() => setView('pollList')}
+                onGroupBuyClick={() => setView('groupBuy')}
               />
             </motion.div>
           ) : view === 'entry' ? (
@@ -600,6 +603,25 @@ export default function App() {
                 polls={evStore.polls}
                 userId={user.uid}
                 onVote={evStore.voteInPoll}
+                onClose={() => setView('dashboard')}
+              />
+            </motion.div>
+          ) : view === 'groupBuy' ? (
+            <motion.div
+              key="groupBuy"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <GroupBuyMarketplace 
+                groupBuys={evStore.groupBuys}
+                userId={user.uid}
+                userEmail={user.email || ''}
+                isSubAdmin={evStore.isSubAdmin}
+                onRegister={evStore.registerGroupBuy}
+                onAddGroupBuy={evStore.addGroupBuy}
+                onUpdateGroupBuy={evStore.updateGroupBuy}
+                onDeleteGroupBuy={evStore.deleteGroupBuy}
                 onClose={() => setView('dashboard')}
               />
             </motion.div>

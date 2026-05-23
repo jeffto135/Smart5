@@ -172,6 +172,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // States for new Poll
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [maxChoices, setMaxChoices] = useState<number | ''>('');
+  const [pollEndDate, setPollEndDate] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingEntity, setEditingEntity] = useState<{ id: string, type: 'activity' | 'poll', data: any } | null>(null);
@@ -471,8 +474,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!pollQuestion || pollOptions.some(o => !o)) return;
     try {
       await onAddPoll({
-        question: pollQuestion,
-        options: pollOptions.map(text => ({ text, votes: 0 }))
+        title: pollQuestion,
+        question: pollQuestion, // back-compat
+        isMultiSelect: isMultiSelect,
+        maxChoices: isMultiSelect && maxChoices !== '' ? Number(maxChoices) : undefined,
+        endDate: pollEndDate || undefined,
+        options: pollOptions.map((text, i) => ({ id: `opt_${i + 1}`, text, votes: 0 }))
       });
       alert('投票已建立了 / POLL CREATED');
     } catch (error) {
@@ -483,6 +490,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setTimeout(() => {
         setPollQuestion('');
         setPollOptions(['', '']);
+        setIsMultiSelect(false);
+        setMaxChoices('');
+        setPollEndDate('');
         setShowAddPoll(false);
         setEditingId(null);
       }, 100);
@@ -542,6 +552,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setEditingId(null);
             setPollQuestion('');
             setPollOptions(['', '']);
+            setIsMultiSelect(false);
+            setMaxChoices('');
+            setPollEndDate('');
             setShowAddPoll(false);
           }, 100);
         }
@@ -610,8 +623,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const startEditPoll = (poll: Poll) => {
-    setPollQuestion(poll.question);
+    setPollQuestion(poll.title || poll.question || '');
     setPollOptions(poll.options.map(o => o.text));
+    setIsMultiSelect(!!poll.isMultiSelect);
+    setMaxChoices(poll.maxChoices !== undefined && poll.maxChoices !== null ? poll.maxChoices : '');
+    setPollEndDate(poll.endDate || '');
     setEditingId(poll.id);
     setShowAddPoll(true);
   };
@@ -1116,6 +1132,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <CyberCard title={editingId ? "編輯投票" : "建立新投票"} className="border-cyber-green/30">
                   <div className="space-y-4">
                     <CyberInput label="投票內容" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="例如: 您最喜歡的充電品牌？" />
+                    
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest">投票模式 / POLL MODE</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsMultiSelect(false)}
+                          className={`flex-1 py-1 px-3 rounded text-[11px] font-mono font-bold border transition-all ${
+                            !isMultiSelect 
+                              ? 'bg-cyber-green text-black border-cyber-green shadow-[0_0_10px_rgba(163,230,21,0.3)]'
+                              : 'bg-white/5 text-white/60 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          單選模式 / SINGLE
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsMultiSelect(true)}
+                          className={`flex-1 py-1 px-3 rounded text-[11px] font-mono font-bold border transition-all ${
+                            isMultiSelect 
+                              ? 'bg-cyber-green text-black border-cyber-green shadow-[0_0_10px_rgba(163,230,21,0.3)]'
+                              : 'bg-white/5 text-white/60 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          多選模式 / MULTI
+                        </button>
+                      </div>
+                    </div>
+
+                    {isMultiSelect && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest">最多可選幾項 (選填) / MAX CHOICES (OPTIONAL)</label>
+                        <input 
+                          type="number"
+                          min="1"
+                          max={pollOptions.length}
+                          className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-xs font-mono text-white"
+                          placeholder="無限制 / NO LIMIT"
+                          value={maxChoices}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setMaxChoices(val === '' ? '' : Number(val));
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest">截止日期 / END DATE (OPTIONAL)</label>
+                      <input 
+                        type="date"
+                        className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-xs font-mono text-white"
+                        value={pollEndDate}
+                        onChange={e => setPollEndDate(e.target.value)}
+                      />
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest">選項 / OPTIONS</label>
                       {pollOptions.map((opt, i) => (
@@ -1123,6 +1196,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <input 
                             className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-xs font-mono text-white"
                             value={opt}
+                            placeholder={`選項 ${i + 1}`}
                             onChange={e => {
                                 const newOpts = [...pollOptions];
                                 newOpts[i] = e.target.value;
@@ -1144,23 +1218,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       )}
                     </div>
                     <div className="flex gap-2 pt-2">
-                      <button onClick={() => { setShowAddPoll(false); setEditingId(null); }} className="flex-1 py-2 rounded bg-white/5 text-xs font-mono">取消</button>
+                      <button onClick={() => { setShowAddPoll(false); setEditingId(null); }} className="flex-1 py-1 rounded bg-white/5 text-xs font-mono">取消</button>
                       <CyberButton 
                         onClick={() => {
                           if (editingId) {
                             const poll = fleetData.polls.find(p => p.id === editingId);
                             handleUpdatePoll(editingId, { 
-                              question: pollQuestion, 
+                              title: pollQuestion,
+                              question: pollQuestion, // back-compat
+                              isMultiSelect: isMultiSelect,
+                              maxChoices: isMultiSelect && maxChoices !== '' ? Number(maxChoices) : undefined,
+                              endDate: pollEndDate || undefined,
                               options: pollOptions.map((text, i) => ({ 
+                                id: poll?.options[i]?.id || `opt_${i + 1}`,
                                 text, 
-                                votes: poll?.options[i]?.text === text ? poll.options[i].votes : 0 
+                                votes: poll?.options[i]?.text === text ? (poll.options[i].votes || 0) : 0 
                               })) 
                             });
                           } else {
                             handleCreatePoll();
                           }
                         }} 
-                        className="flex-1 text-xs py-2"
+                        className="flex-1 text-xs py-1"
                       >
                         {editingId ? '儲存更改' : '發佈投票'}
                       </CyberButton>
@@ -1170,47 +1249,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               )}
 
               <div className="space-y-6">
-                {fleetData.polls.map(poll => (
-                  <CyberCard key={poll.id} className="bg-white/[0.02]">
-                    <div className="flex justify-between items-start mb-4">
-                      <h4 className="font-bold text-white pr-8">{poll.question}</h4>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => setSelectedEntity({ type: 'poll', data: poll })}
-                          className="px-3 py-1 bg-white/5 rounded border border-white/10 text-[10px] font-mono hover:bg-cyber-green hover:text-black transition-all"
-                        >
-                          查看數據
-                        </button>
-                        <button 
-                          onClick={() => startEditPoll(poll)}
-                          className="p-2 text-white/30 hover:text-cyber-green"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeletePollAction(poll.id)} 
-                          className="p-2 text-red-500/30 hover:text-red-500"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                {fleetData.polls.map(poll => {
+                  const votersCount = (poll.votedUserIds || poll.voters || []).length;
+                  return (
+                    <CyberCard key={poll.id} className="bg-white/[0.02]">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-white pr-8">{poll.title || poll.question}</h4>
+                          <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+                            <span className="text-[#A3E635] bg-[#A3E635]/10 border border-[#A3E635]/20 px-2 py-0.5 rounded">
+                              {poll.isMultiSelect ? `多選模式${poll.maxChoices ? ` (限選 ${poll.maxChoices} 項)` : ''}` : '單選模式'}
+                            </span>
+                            {poll.endDate && (
+                              <span className="text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                                截止: {poll.endDate}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setSelectedEntity({ type: 'poll', data: poll })}
+                            className="px-3 py-1 bg-white/5 rounded border border-white/10 text-[10px] font-mono hover:bg-cyber-green hover:text-black transition-all"
+                          >
+                            查看數據
+                          </button>
+                          <button 
+                            onClick={() => startEditPoll(poll)}
+                            className="p-2 text-white/30 hover:text-cyber-green"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeletePollAction(poll.id)} 
+                            className="p-2 text-red-500/30 hover:text-red-500"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="h-[150px] w-full mb-4">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={poll.options} layout="vertical">
-                          <XAxis type="number" hide />
-                          <YAxis dataKey="text" type="category" stroke="#ffffff40" fontSize={9} width={80} />
-                          <Bar dataKey="votes" fill="#CCFF00" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
+                      <div className="h-[150px] w-full mb-4">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={poll.options} layout="vertical">
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="text" type="category" stroke="#ffffff40" fontSize={9} width={80} />
+                            <Bar dataKey="votes" fill="#A3E635" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
 
-                    <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest">
-                      總投票數: {poll.voters.length}
-                    </div>
-                  </CyberCard>
-                ))}
+                      <div className="text-[10px] font-mono text-white/30 uppercase tracking-widest">
+                        總投票數: {votersCount}
+                      </div>
+                    </CyberCard>
+                  );
+                })}
               </div>
             </motion.div>
           )}

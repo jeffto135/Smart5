@@ -112,9 +112,25 @@ service cloud.firestore {
 
     // --- Poll Validation ---
     function isValidPoll(data) {
-      return data.question is string && data.question.size() <= 500 &&
+      return (data.title is string && data.title.size() <= 500) &&
+             (data.question is string || !data.keys().hasAll(['question'])) &&
              data.options is list && data.options.size() >= 2 &&
-             data.voters is list &&
+             data.isMultiSelect is bool &&
+             (data.maxChoices is number || !data.keys().hasAll(['maxChoices'])) &&
+             data.votedUserIds is list &&
+             (data.voters is list || !data.keys().hasAll(['voters'])) &&
+             (data.endDate is string || !data.keys().hasAll(['endDate'])) &&
+             data.createdAt is timestamp;
+    }
+
+    // --- GroupBuy Validation ---
+    function isValidGroupBuy(data) {
+      return data.title is string && data.title.size() <= 200 &&
+             data.description is string &&
+             data.price is number && data.price >= 0 &&
+             data.targetQuantity is number && data.targetQuantity >= 1 &&
+             data.currentRegistrations is list &&
+             data.status in ['active', 'closed'] &&
              data.createdAt is timestamp;
     }
 
@@ -153,11 +169,15 @@ service cloud.firestore {
       allow create: if isSubAdmin() && isValidPoll(incoming());
       allow update: if isSubAdmin() ||
                       (isSignedIn() &&
-                       !(request.auth.uid in existing().voters) &&
-                       incoming().voters.hasAll(existing().voters) &&
-                       incoming().voters.size() == existing().voters.size() + 1 &&
-                       request.auth.uid in incoming().voters &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['options', 'voters']));
+                       !(request.auth.uid in existing().get('votedUserIds', [])) &&
+                       !(request.auth.uid in existing().get('voters', [])) &&
+                       incoming().get('votedUserIds', []).hasAll(existing().get('votedUserIds', [])) &&
+                       incoming().get('votedUserIds', []).size() == existing().get('votedUserIds', []).size() + 1 &&
+                       request.auth.uid in incoming().get('votedUserIds', []) &&
+                       incoming().get('voters', []).hasAll(existing().get('voters', [])) &&
+                       incoming().get('voters', []).size() == existing().get('voters', []).size() + 1 &&
+                       request.auth.uid in incoming().get('voters', []) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['options', 'votedUserIds', 'voters']));
       allow delete: if isSubAdmin();
     }
 
@@ -251,6 +271,15 @@ service cloud.firestore {
                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'cancelReason', 'lockoutUntil', 'qrCodeUsed']) &&
                       incoming().status == 'cancelled'
                     );
+      allow delete: if isSubAdmin();
+    }
+
+    match /groupBuys/{gbId} {
+      allow read: if isSignedIn();
+      allow create: if isSubAdmin() && isValidGroupBuy(incoming());
+      allow update: if isSubAdmin() ||
+                      (isSignedIn() &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['currentRegistrations']));
       allow delete: if isSubAdmin();
     }
   }
