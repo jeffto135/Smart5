@@ -199,6 +199,12 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
+    match /system_pushes/{pushId} {
+      allow read: if isSignedIn();
+      allow create: if isSubAdmin();
+      allow update, delete: if isSubAdmin();
+    }
+
     match /userProfiles/{userId} {
       allow get: if isSignedIn();
       allow list: if isSubAdmin();
@@ -212,8 +218,14 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write, create, update: if isOwner(userId);
+    }
+
     match /users/{userId}/tokens/{tokenId} {
-      allow read, delete: if isOwner(userId);
+      allow read: if isOwner(userId) || isSubAdmin();
+      allow delete: if isOwner(userId);
       allow create, update: if isOwner(userId) && isValidFCMToken(incoming());
     }
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getToken, onMessage } from 'firebase/messaging';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db, getSafeMessaging } from '../lib/firebase';
 import { Bell, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,6 +12,48 @@ export const NotificationInit: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
+    // 監聽即時廣播推播，當管理員發布新投票或新團購時，在線用戶可立即收到 OS/手機原生橫幅通知
+    if (!('Notification' in window)) return;
+
+    const baseTime = new Date();
+    const q = query(
+      collection(db, 'system_pushes'),
+      where('createdAt', '>=', baseTime)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          if (Notification.permission === 'granted') {
+            try {
+              new Notification(data.title || '車友會最新消息 / Update', {
+                body: data.message || '',
+                icon: 'https://effortless.com.hk/wp-content/uploads/2026/05/Smart5-owners-club-HK-logo-1-768x700.png',
+                tag: (data.relatedType || 'general') + '-' + (data.relatedId || 'id'),
+                requireInteraction: false
+              });
+            } catch (e) {
+              console.warn('Native notification failed, trying SW fallback:', e);
+              navigator.serviceWorker.ready.then((reg) => {
+                reg.showNotification(data.title || '車友會最新消息', {
+                  body: data.message || '',
+                  icon: 'https://effortless.com.hk/wp-content/uploads/2026/05/Smart5-owners-club-HK-logo-1-768x700.png',
+                  tag: (data.relatedType || 'general') + '-' + (data.relatedId || 'id')
+                });
+              }).catch(swErr => console.error('SW Fallback notification failed:', swErr));
+            }
+          }
+        }
+      });
+    }, (err) => {
+      console.error('System pushes real-time listener error:', err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) {
       console.warn('此瀏覽器不支援推播通知 / Push not supported');
       return;
@@ -20,13 +62,17 @@ export const NotificationInit: React.FC = () => {
     // 當用戶登入成功後觸發
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
-        if (Notification.permission === 'default') {
-          // 延遲顯示，提供更好用戶體驗
-          const timer = setTimeout(() => setShowPrompt(true), 3000);
-          return () => clearTimeout(timer);
-        } else if (Notification.permission === 'granted') {
-          registerToken();
-        }
+        // 主動觸發 Notification.requestPermission() / Proactively request permission
+        Notification.requestPermission().then((permission) => {
+          if (permission === 'granted') {
+            registerToken();
+          } else if (permission === 'default') {
+            setShowPrompt(true);
+          }
+        }).catch((err) => {
+          console.error('主動索取通知權限錯誤:', err);
+          setShowPrompt(true);
+        });
       }
     });
 
@@ -82,12 +128,34 @@ export const NotificationInit: React.FC = () => {
       });
 
       if (token) {
-        // 儲存到 users/{uid}/tokens/{token}
-        const tokenRef = doc(db, `users/${auth.currentUser.uid}/tokens`, token);
+        const uid = auth.currentUser.uid;
+
+        // 🟢 1. 儲存至該用戶的 Firestore 文檔內（users/${uid}/fcmToken）作為欄位
+        const userDocRef = doc(db, 'users', uid);
+        await setDoc(userDocRef, {
+          fcmToken: token,
+          token: token,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // 🟢 2. 儲存至子集合以符合 tokens/{tokenId} 規則，並包含 lastUpdated 以過規則
+        const tokenRef = doc(db, `users/${uid}/tokens`, token);
         await setDoc(tokenRef, {
           token,
           platform: getPlatform(),
           updatedAt: serverTimestamp(),
+          lastUpdated: serverTimestamp(),
+          userAgent: navigator.userAgent,
+          isActive: true
+        }, { merge: true });
+
+        // 🟢 3. 儲存至 tokens/fcmToken 固定路徑，以防後端/群發時的特定路徑獲取
+        const fcmTokenDocRef = doc(db, `users/${uid}/tokens`, 'fcmToken');
+        await setDoc(fcmTokenDocRef, {
+          token,
+          platform: getPlatform(),
+          updatedAt: serverTimestamp(),
+          lastUpdated: serverTimestamp(),
           userAgent: navigator.userAgent,
           isActive: true
         }, { merge: true });

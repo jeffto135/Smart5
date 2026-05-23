@@ -16,7 +16,8 @@ import {
   getDocs,
   arrayUnion,
   getDocsFromCache,
-  runTransaction
+  runTransaction,
+  collectionGroup
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
@@ -1110,6 +1111,13 @@ export function useEVStore() {
         relatedId: docRef.id,
         relatedType: 'poll'
       });
+      // Trigger FCM & OS Live banner broadcast
+      await sendFCMBroadcast(
+        '新投票發佈 / NEW POLL',
+        `「${data.title || data.question || ''}」即時投票現已開始！`,
+        docRef.id,
+        'poll'
+      );
       return docRef.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'polls');
@@ -1368,6 +1376,96 @@ export function useEVStore() {
     }
   };
 
+  const sendFCMBroadcast = async (title: string, message: string, relatedId: string, relatedType: 'poll' | 'groupBuy') => {
+    try {
+      const tokensSet = new Set<string>();
+
+      // 1. Gather tokens from users
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        usersSnap.forEach(d => {
+          const data = d.data();
+          if (data.fcmToken) tokensSet.add(data.fcmToken);
+          if (data.token) tokensSet.add(data.token);
+        });
+      } catch (e) {
+        console.warn('Querying users for tokens failed:', e);
+      }
+
+      // 2. Gather tokens from userProfiles
+      try {
+        const userProfilesSnap = await getDocs(collection(db, 'userProfiles'));
+        userProfilesSnap.forEach(d => {
+          const data = d.data();
+          if (data.fcmToken) tokensSet.add(data.fcmToken);
+          if (data.token) tokensSet.add(data.token);
+        });
+      } catch (e) {
+        console.warn('Querying userProfiles for tokens failed:', e);
+      }
+
+      // 3. Gather tokens from tokens subcollection group (using collectionGroup)
+      try {
+        const tokensSnap = await getDocs(collectionGroup(db, 'tokens'));
+        tokensSnap.forEach(d => {
+          const data = d.data();
+          if (data.token) tokensSet.add(data.token);
+          if (data.fcmToken) tokensSet.add(data.fcmToken);
+        });
+      } catch (e) {
+        console.warn('Querying collection group tokens failed:', e);
+      }
+
+      const tokens = Array.from(tokensSet).filter(Boolean);
+      console.log(`[PWA Broadcast] 找到 ${tokens.length} 個已連結的 FCM 設備 Token:`, tokens);
+
+      if (tokens.length > 0) {
+        // Direct call to FCM API legacy REST endpoint
+        const fcmUrl = 'https://fcm.googleapis.com/fcm/send';
+        const payload = {
+          registration_ids: tokens,
+          notification: {
+            title,
+            body: message,
+            icon: 'https://effortless.com.hk/wp-content/uploads/2026/05/Smart5-owners-club-HK-logo-1-768x700.png',
+            badge: 'https://effortless.com.hk/wp-content/uploads/2026/05/Smart5-owners-club-HK-logo-1-768x700.png',
+            sound: 'default'
+          },
+          data: {
+            relatedId,
+            relatedType,
+            click_action: window.location.origin
+          }
+        };
+
+        fetch(fcmUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'key=AIzaSyCAM2sX_OVXioieZYZG5Jyyk3gB_tLxddU' // Primary API Key matching client configuration
+          },
+          body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(result => console.log('FCM REST API Response:', result))
+        .catch(err => console.error('FCM REST API call error:', err));
+      }
+
+      // Broadcast immediately in-app/online status stream by creating a live db broadcast doc
+      await addDoc(collection(db, 'system_pushes'), {
+        title,
+        message,
+        relatedId,
+        relatedType,
+        createdAt: serverTimestamp(),
+        tokensCount: tokens.length
+      });
+
+    } catch (err) {
+      console.error('sendFCMBroadcast error:', err);
+    }
+  };
+
   const updateMemberRole = async (userId: string, role: string) => {
     if (!isAdmin) return;
     try {
@@ -1438,6 +1536,13 @@ export function useEVStore() {
         createdAt: serverTimestamp(),
         readBy: []
       } as any);
+      // Trigger FCM & OS Live banner broadcast
+      await sendFCMBroadcast(
+        '新團購市集上架 / NEW GROUP BUY',
+        `官方團購「${data.title}」今日正式成立！立即前往認購！`,
+        docRef.id,
+        'groupBuy'
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'groupBuys');
     }
