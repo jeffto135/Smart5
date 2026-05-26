@@ -189,3 +189,14 @@ export interface GroupBuy {
   createdAt: any; // Timestamp or similar
 }
 
+export interface ClubPerk {
+  id: string;
+  merchantName: string;
+  category: '汽車美容' | '改裝配件' | '汽車保險' | '餐飲娛樂';
+  title: string;
+  discountDetail: string;
+  contact: string;
+  expiryDate?: string;
+  createdAt: any;
+}
+

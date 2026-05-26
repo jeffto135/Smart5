@@ -22,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
-import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration, GroupBuy, GroupBuyRegistration } from '../types';
+import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration, GroupBuy, GroupBuyRegistration, ClubPerk } from '../types';
 import { format } from 'date-fns';
 import { OperationType, handleFirestoreError } from '../lib/utils';
 
@@ -33,6 +33,7 @@ export function useEVStore() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [groupBuys, setGroupBuys] = useState<GroupBuy[]>([]);
+  const [clubPerks, setClubPerks] = useState<ClubPerk[]>([]);
   const [notifications, setNotifications] = useState<EVNotification[]>([]);
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,6 +308,17 @@ export function useEVStore() {
       setGroupBuys(snap.docs.map(d => ({ id: d.id, ...d.data() } as GroupBuy)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'groupBuys');
+    });
+  }, [auth.currentUser]);
+
+  // Sync ClubPerks
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const q = query(collection(db, 'clubPerks'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snap) => {
+      setClubPerks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ClubPerk)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'clubPerks');
     });
   }, [auth.currentUser]);
 
@@ -1687,6 +1699,48 @@ export function useEVStore() {
     }
   };
 
+  const addClubPerk = async (data: Omit<ClubPerk, 'id' | 'createdAt'>) => {
+    if (!isAdmin) {
+      throw new Error("無權限執行此操作 / Unauthorized");
+    }
+    try {
+      const docRef = await addDoc(collection(db, 'clubPerks'), {
+        merchantName: data.merchantName,
+        category: data.category,
+        title: data.title,
+        discountDetail: data.discountDetail,
+        contact: data.contact,
+        expiryDate: data.expiryDate || '',
+        createdAt: serverTimestamp(),
+      });
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'clubPerks');
+    }
+  };
+
+  const updateClubPerk = async (id: string, data: Partial<ClubPerk>) => {
+    if (!isAdmin) {
+      throw new Error("無權限執行此操作 / Unauthorized");
+    }
+    try {
+      await updateDoc(doc(db, 'clubPerks', id), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'clubPerks');
+    }
+  };
+
+  const deleteClubPerk = async (id: string) => {
+    if (!isAdmin) {
+      throw new Error("無權限執行此操作 / Unauthorized");
+    }
+    try {
+      await deleteDoc(doc(db, 'clubPerks', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'clubPerks');
+    }
+  };
+
   const registerGroupBuy = async (gbId: string, quantity: number) => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
@@ -1796,6 +1850,10 @@ export function useEVStore() {
     updateGroupBuy,
     deleteGroupBuy,
     registerGroupBuy,
+    clubPerks,
+    addClubPerk,
+    updateClubPerk,
+    deleteClubPerk,
     markNotificationAsRead,
     markAllNotificationsAsRead,
     deleteNotification,

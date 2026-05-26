@@ -415,7 +415,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleCreateActivity = async () => {
-    const finalLimit = Math.max(1, actLimit);
+    const finalLimit = parseInt(String(actLimit), 10) || 100;
+    const finalDeadline = actDeadlineDate ? actDeadlineDate : null;
     try {
       await onAddActivity({
         title: actTitle,
@@ -423,16 +424,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         date: actStartDate.split('T')[0], // For compatibility with older lists
         eventStartDate: actStartDate ? Timestamp.fromDate(new Date(actStartDate)) : undefined,
         eventEndDate: actEndDate ? Timestamp.fromDate(new Date(actEndDate)) : undefined,
-        deadlineDate: actDeadlineDate,
+        deadlineDate: finalDeadline,
         location: actLocation,
         locationCoordinates: actLocationCoordinates,
         limit: finalLimit,
         status: 'open'
       });
       alert('活動已發佈 / ACTIVITY PUBLISHED');
-    } catch (error) {
-      console.error("Failed to create activity:", error);
-      alert('發佈失敗 / FAILED');
+    } catch (error: any) {
+      console.error("Firebase 寫入失敗詳細原因:", error);
+      alert(`發佈失敗: ${error.message || '未知錯誤'}`);
     } finally {
       // Force UI reset with delay
       setTimeout(() => {
@@ -504,7 +505,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleUpdateActivity = async (id: string, data: Partial<Activity>) => {
     const finalData = { ...data };
     if (finalData.limit !== undefined) {
-      finalData.limit = Math.max(1, finalData.limit);
+      finalData.limit = parseInt(String(finalData.limit), 10) || 100;
+    }
+    if (finalData.deadlineDate === "" || !finalData.deadlineDate) {
+      finalData.deadlineDate = null;
     }
     setConfirmModal({
       isOpen: true,
@@ -516,6 +520,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           await onUpdateActivity(id, finalData);
           alert('更新成功 / ACTIVITY UPDATED');
         } catch (error: any) {
+          console.error("Firebase 寫入失敗詳細原因:", error);
           alert('更新失敗: ' + (error.message || '未知錯誤'));
         } finally {
           setConfirmModal(prev => ({ ...prev, isOpen: false }));

@@ -11,6 +11,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { ActivityList } from './components/ActivityList';
 import { PollList } from './components/PollList';
 import { GroupBuyMarketplace } from './components/GroupBuyMarketplace';
+import { ClubPerks } from './components/ClubPerks';
 import { MessageList } from './components/MessageList';
 import { UserProfileGate } from './components/UserProfileGate';
 import { NotificationInit } from './components/NotificationInit';
@@ -29,7 +30,7 @@ import { LogEntry } from './types';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList' | 'groupBuy'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList' | 'groupBuy' | 'clubPerks'>('dashboard');
   const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const evStore = useEVStore();
@@ -549,6 +550,7 @@ export default function App() {
                 onActivityClick={() => setView('activityList')}
                 onPollClick={() => setView('pollList')}
                 onGroupBuyClick={() => setView('groupBuy')}
+                onClubPerksClick={() => setView('clubPerks')}
               />
             </motion.div>
           ) : view === 'entry' ? (
@@ -623,6 +625,21 @@ export default function App() {
                 onAddGroupBuy={evStore.addGroupBuy}
                 onUpdateGroupBuy={evStore.updateGroupBuy}
                 onDeleteGroupBuy={evStore.deleteGroupBuy}
+                onClose={() => setView('dashboard')}
+              />
+            </motion.div>
+          ) : view === 'clubPerks' ? (
+            <motion.div
+              key="clubPerks"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <ClubPerks 
+                clubPerks={evStore.clubPerks}
+                isAdmin={evStore.isAdmin}
+                onAddPerk={evStore.addClubPerk}
+                onDeletePerk={evStore.deleteClubPerk}
                 onClose={() => setView('dashboard')}
               />
             </motion.div>

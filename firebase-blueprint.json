@@ -159,6 +159,21 @@
         "lastUpdated": { "type": "string", "format": "date-time" }
       },
       "required": ["token", "lastUpdated"]
+    },
+    "ClubPerk": {
+      "title": "ClubPerk",
+      "description": "Exclusive merchant discount and perk for members.",
+      "type": "object",
+      "properties": {
+        "merchantName": { "type": "string" },
+        "category": { "type": "string", "enum": ["汽車美容", "改裝配件", "汽車保險", "餐飲娛樂"] },
+        "title": { "type": "string" },
+        "discountDetail": { "type": "string" },
+        "contact": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["merchantName", "category", "title", "discountDetail", "contact", "createdAt"]
     }
   },
   "firestore": {
@@ -201,6 +216,10 @@
     "registrations": {
       "schema": "ActivityRegistration",
       "description": "Activity registrations."
+    },
+    "clubPerks": {
+      "schema": "ClubPerk",
+      "description": "Exclusive merchant benefits and discounts for members."
     }
   }
 }

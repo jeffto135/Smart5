@@ -8,7 +8,7 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag } from 'lucide-react';
+import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag, Gift } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
 import { LogEntry, Vehicle, Activity, Poll, GroupBuy } from '../types';
@@ -25,6 +25,7 @@ interface DashboardProps {
   onActivityClick: () => void;
   onPollClick: () => void;
   onGroupBuyClick: () => void;
+  onClubPerksClick: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
@@ -37,7 +38,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewAll,
   onActivityClick,
   onPollClick,
-  onGroupBuyClick
+  onGroupBuyClick,
+  onClubPerksClick
 }) => {
   const [expandedDates, setExpandedDates] = useState<{ [date: string]: boolean }>({});
 
@@ -500,8 +502,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </CyberCard>
       
-      {/* Activity, Poll & Group Buy Shortcuts */}
-      <div className="grid grid-cols-3 gap-2 md:gap-4">
+      {/* Activity, Poll, Group Buy & Perks Shortcuts */}
+      <div className="grid grid-cols-4 gap-2 md:gap-4">
         <button 
           onClick={() => {
             if (activities.length > 0) {
@@ -514,7 +516,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
             <UserCheck size={20} className="text-cyber-green cyber-text-glow md:w-6 md:h-6" />
           </div>
-          <div className="text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-cyber-green text-center">報名活動</div>
+          <div className="text-[9.5px] md:text-[11px] font-mono font-bold uppercase tracking-wide text-white/70 group-hover:text-cyber-green text-center">報名活動</div>
           
           {hasNewActivity && (
             <motion.div 
@@ -537,7 +539,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
             <Vote size={20} className="text-cyber-green cyber-text-glow md:w-6 md:h-6" />
           </div>
-          <div className="text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-cyber-green text-center">即時投票</div>
+          <div className="text-[9.5px] md:text-[11px] font-mono font-bold uppercase tracking-wide text-white/70 group-hover:text-cyber-green text-center">即時投票</div>
           
           {hasNewPoll && (
             <motion.div 
@@ -560,7 +562,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-[#A3E635]/10 border border-[#A3E635]/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(163,230,21,0.1)]">
             <ShoppingBag size={20} className="text-[#A3E635] cyber-text-glow md:w-6 md:h-6" />
           </div>
-          <div className="text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-widest text-white/70 group-hover:text-[#A3E635] text-center">團購市集</div>
+          <div className="text-[9.5px] md:text-[11px] font-mono font-bold uppercase tracking-wide text-white/70 group-hover:text-[#A3E635] text-center">團購市集</div>
           
           {hasNewGroupBuy && (
             <motion.div 
@@ -569,6 +571,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="absolute top-2.5 right-2.5 w-1.5 h-1.5 md:w-2 md:h-2 bg-[#A3E635] rounded-full shadow-[0_0_8px_#A3E635]"
             />
           )}
+        </button>
+
+        <button 
+          onClick={onClubPerksClick}
+          className="relative group p-3 md:p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-cyber-green/50 hover:bg-cyber-green/5 transition-all flex flex-col items-center gap-2 md:gap-3"
+          id="dashboard_club_perks_btn"
+        >
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.1)]">
+            <Gift size={20} className="text-cyber-green cyber-text-glow md:w-6 md:h-6" />
+          </div>
+          <div className="text-[9.5px] md:text-[11px] font-mono font-bold uppercase tracking-wide text-white/70 group-hover:text-cyber-green text-center">車友福利</div>
         </button>
       </div>
 

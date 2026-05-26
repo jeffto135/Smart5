@@ -76,10 +76,11 @@ service cloud.firestore {
     function isValidActivity(data) {
       return data.title is string && data.title.size() <= 200 &&
              data.date is string &&
-             (data.eventEndDate is string || !data.keys().hasAll(['eventEndDate'])) &&
+             (data.eventStartDate is timestamp || !data.keys().hasAll(['eventStartDate'])) &&
+             (data.eventEndDate is timestamp || !data.keys().hasAll(['eventEndDate'])) &&
              data.location is string &&
              data.limit is number && data.limit >= 1 &&
-             (data.deadlineDate is string || !data.keys().hasAll(['deadlineDate'])) &&
+             (data.deadlineDate is string || data.deadlineDate == null || !data.keys().hasAll(['deadlineDate'])) &&
              data.participants is list &&
              data.status in ['open', 'closed'] &&
              data.createdAt is timestamp;
@@ -138,6 +139,17 @@ service cloud.firestore {
              data.targetQuantity is number && data.targetQuantity >= 1 &&
              data.currentRegistrations is list &&
              data.status in ['active', 'closed'] &&
+             data.createdAt is timestamp;
+    }
+
+    // --- ClubPerks Validation ---
+    function isValidClubPerk(data) {
+      return data.merchantName is string && data.merchantName.size() <= 200 &&
+             data.category in ['汽車美容', '改裝配件', '汽車保險', '餐飲娛樂'] &&
+             data.title is string && data.title.size() <= 200 &&
+             data.discountDetail is string && data.discountDetail.size() <= 1000 &&
+             data.contact is string && data.contact.size() <= 500 &&
+             (data.expiryDate is string || !data.keys().hasAll(['expiryDate'])) &&
              data.createdAt is timestamp;
     }
 
@@ -302,6 +314,13 @@ service cloud.firestore {
                       (isSignedIn() &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['currentRegistrations']));
       allow delete: if isSubAdmin();
+    }
+
+    match /clubPerks/{perkId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidClubPerk(incoming());
+      allow update: if isAdmin() && isValidClubPerk(incoming());
+      allow delete: if isAdmin();
     }
   }
 }
