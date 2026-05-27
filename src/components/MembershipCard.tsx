@@ -51,7 +51,7 @@ export const MembershipCard: React.FC<MembershipCardProps> = ({
 
   // Find vehicle model to determine if BRABUS
   const smart5Vehicle = vehicles.find(v => v.model.includes('#5')) || vehicles[0];
-  const vehicleColor = smart5Vehicle?.color || '沉橡綠';
+  const vehicleColor = smart5Vehicle?.color || '祕境綠';
   const vehicleTrim = smart5Vehicle?.trim || (smart5Vehicle?.model.includes('BRABUS') ? 'BRABUS性能版' : 'Summit Edition');
   const vehiclePlate = smart5Vehicle?.plate || userProfile?.plate || 'S5 OWNERS';
   const isBrabus = vehicleTrim.toUpperCase().includes('BRABUS') || (smart5Vehicle?.model || '').toUpperCase().includes('BRABUS');
@@ -342,8 +342,15 @@ export const MembershipCard: React.FC<MembershipCardProps> = ({
             </div>
           </div>
 
-          {/* Certification seal */}
-          <div className="flex flex-col items-end opacity-25">
+          {/* Certification seal & logo */}
+          <div className="flex flex-col items-end gap-1 select-none z-10 -mt-2">
+            <img 
+              src="https://effortless.com.hk/wp-content/uploads/2026/05/Smart5-owners-club-HK-logo-1-768x700.png" 
+              alt="Smart5 Owners Club HK Logo" 
+              className="h-10 md:h-12 w-auto object-contain brightness-105 transition-all duration-300 hover:scale-[1.03] drop-shadow-[0_0_8px_rgba(163,230,21,0.15)]"
+              referrerPolicy="no-referrer"
+            />
+            <div className="flex flex-col items-end opacity-25">
             <div className={`text-[7px] font-mono tracking-widest text-right font-black ${
               isBrabus ? 'text-red-500' : 'text-[#A3E635]'
             }`}>SECURE AUTH</div>
@@ -351,8 +358,9 @@ export const MembershipCard: React.FC<MembershipCardProps> = ({
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   return (
     <div className="flex flex-col items-center justify-center p-1 w-full max-w-sm mx-auto">

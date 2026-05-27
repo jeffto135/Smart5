@@ -100,17 +100,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       setColor('');
       setCustomColor('');
     } else {
-      let standardColors: string[] = [];
-      const m = v.model || '';
-      if (m.includes('#1')) {
-        standardColors = ['粒子白', '曜石黑', '控墨灰', '時光綠', '能量黃', '亮銅金', '沉靜藍', 'BRABUS 運動紅', 'BRABUS 啞光灰'];
-      } else if (m.includes('#3')) {
-        standardColors = ['粒子白', '曜石黑', '光速銀', '控墨灰', '宇宙藍', '星塵紅', '鐳射蟬綠', 'BRABUS 鋼鐵灰'];
-      } else if (m.includes('#5')) {
-        standardColors = ['沉橡綠', '秘境綠', '流沙金', '太空燕麥', '粒子白', '曜石黑', '琥珀棕', '烈焰紅'];
-      } else {
-        standardColors = ['沉橡綠', '粒子白', '曜石黑', '琥珀棕', '流沙金', '太空燕麥', '鐳射蟬綠', '控墨灰', '烈焰紅'];
-      }
+      const standardColors = [
+        '祕境綠', '流沙金', '啞光灰', '粒子白', '沉寂黑', '電子銀', '時光綠', '赤楓紅', '亮光黃', '鐳射紅',
+        '沉橡綠', '曜石黑', '琥珀棕', '太空燕麥', '鐳射蟬綠', '控墨灰', '烈焰紅', '秘境綠', '能量黃', '亮銅金', '沉靜藍', 'BRABUS 運動紅', 'BRABUS 啞光灰', '光速銀', '宇宙藍', '星塵紅', 'BRABUS 鋼鐵灰'
+      ];
       
       if (standardColors.includes(vehicleColor)) {
         setColor(vehicleColor);
@@ -175,61 +168,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
   const selectedBrandData = HK_EV_MODELS.find(b => b.brand === brand);
 
   const getSmartColors = () => {
-    let colors = [];
-    if (model.includes('#1')) {
-      colors = [
-        { value: '粒子白', label: '粒子白 (Chroma White)' },
-        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
-        { value: '控墨灰', label: '控墨灰 (Laser Grey)' },
-        { value: '時光綠', label: '時光綠 (Grid Green)' },
-        { value: '能量黃', label: '能量黃 (Digital Yellow)' },
-        { value: '亮銅金', label: '亮銅金 (Clear Jaguar Brown)' },
-        { value: '沉靜藍', label: '沉靜藍 (Silent Blue)' },
-        ...(model.includes('BRABUS') ? [
-          { value: 'BRABUS 運動紅', label: 'BRABUS 運動紅 (BRABUS Sport Red)' },
-          { value: 'BRABUS 啞光灰', label: 'BRABUS 啞光灰 (BRABUS Matte Grey)' }
-        ] : [])
-      ];
-    } else if (model.includes('#3')) {
-      colors = [
-        { value: '粒子白', label: '粒子白 (Chroma White)' },
-        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
-        { value: '光速銀', label: '光速銀 (Speed Silver)' },
-        { value: '控墨灰', label: '控墨灰 (Matter Grey)' },
-        { value: '宇宙藍', label: '宇宙藍 (Photon Blue)' },
-        { value: '星塵紅', label: '星塵紅 (Stardust Red)' },
-        { value: '鐳射蟬綠', label: '鐳射蟬綠 (Acid Metallic Green)' },
-        ...(model.includes('BRABUS') ? [
-          { value: 'BRABUS 鋼鐵灰', label: 'BRABUS 鋼鐵灰 (BRABUS Matte Gray)' }
-        ] : [])
-      ];
-    } else if (model.includes('#5')) {
-      colors = [
-        { value: '沉橡綠', label: '沉橡綠 (Forest Green)' },
-        { value: '秘境綠', label: '秘境綠 (Secret Green)' },
-        { value: '流沙金', label: '流沙金 (Sahara Desert Gold)' },
-        { value: '太空燕麥', label: '太空燕麥 (Cosmic Oatmeal)' },
-        { value: '粒子白', label: '粒子白 (Chroma White)' },
-        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
-        { value: '琥珀棕', label: '琥珀棕 (Amber Brown)' },
-        ...(model.includes('BRABUS') ? [
-          { value: '烈焰紅', label: '烈焰紅 (BRABUS Flame Red)' }
-        ] : [])
-      ];
-    } else {
-      colors = [
-        { value: '沉橡綠', label: '沉橡綠 (Forest Green)' },
-        { value: '粒子白', label: '粒子白 (Chroma White)' },
-        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
-        { value: '琥珀棕', label: '琥珀棕 (Amber Brown)' },
-        { value: '流沙金', label: '流沙金 (Sahara Gold)' },
-        { value: '太空燕麥', label: '太空燕麥 (Cosmic Oatmeal)' },
-        { value: '鐳射蟬綠', label: '鐳射蟬綠 (Laser Green)' },
-        { value: '控墨灰', label: '控墨灰 (Laser Grey)' },
-        { value: '烈焰紅', label: '烈焰紅 (Flame Red)' }
-      ];
-    }
-    return [...colors, { value: '其他', label: '其他 (自行輸入 / Custom)' }];
+    return [
+      { value: '祕境綠', label: '祕境綠 (Terra Green)' },
+      { value: '流沙金', label: '流沙金 (Satuen Beige)' },
+      { value: '啞光灰', label: '啞光灰 (Atom Grey)' },
+      { value: '粒子白', label: '粒子白 (Digital White)' },
+      { value: '沉寂黑', label: '沉寂黑 (Meta Black)' },
+      { value: '電子銀', label: '電子銀 (Cyber Silver)' },
+      { value: '時光綠', label: '時光綠 (Future Green)' },
+      { value: '赤楓紅', label: '赤楓紅 (Pulsar Ruby)' },
+      { value: '亮光黃', label: '亮光黃 (Lumen Yellow)' },
+      { value: '鐳射紅', label: '鐳射紅 (Laser Red)' },
+      { value: '其他', label: '其他 (自行輸入/ Custom)' }
+    ];
   };
 
   const getSmartTrims = () => {
