@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Settings, Save, ArrowLeft, Car, ShieldCheck, Mail, ChevronRight, X, Trash2, Trophy, Phone, UserX, ExternalLink, BookOpen, MapPin, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,6 +11,7 @@ import { DisclaimerModal } from './DisclaimerModal';
 import { UserAgreementModal } from './UserAgreementModal';
 import { AdminConductModal } from './AdminConductModal';
 import { ParkingLeafletMap } from './ParkingLeafletMap';
+import { MembershipCard } from './MembershipCard';
 
 interface SettingsPageProps {
   user: User | null;
@@ -46,8 +47,30 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [capacity, setCapacity] = useState(0);
+  const [color, setColor] = useState('');
+  const [customColor, setCustomColor] = useState('');
+  const [trim, setTrim] = useState('');
 
   const [saving, setSaving] = useState(false);
+
+  // Auto pre-fill model trim option according to smart official HK naming conventions
+  useEffect(() => {
+    if (brand === 'smart' && model) {
+      if (model.includes('BRABUS')) {
+        setTrim('BRABUS性能版');
+      } else if (model.includes('Summit')) {
+        setTrim('Summit Edition 山野奇旅版');
+      } else if (model.includes('Premium+')) {
+        setTrim('Premium+ 豪華經典版');
+      } else if (model.includes('Premium')) {
+        setTrim('Premium 豪華版');
+      } else if (model.includes('Pro+')) {
+        setTrim('Pro+ 尊豪版');
+      } else if (model.includes('Pro')) {
+        setTrim('Pro 智雅版');
+      }
+    }
+  }, [model, brand]);
 
   const resetForm = () => {
     setEditingVehicle(null);
@@ -57,6 +80,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     setBrand('');
     setModel('');
     setCapacity(0);
+    setColor('');
+    setCustomColor('');
+    setTrim('');
   };
 
   const openEdit = (v: Vehicle) => {
@@ -67,6 +93,35 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     setBrand(v.brand || '');
     setModel(v.model || '');
     setCapacity(v.batteryCapacity || 0);
+    
+    // Check if the current color is one of the standard colors
+    const vehicleColor = v.color || '';
+    if (vehicleColor === '') {
+      setColor('');
+      setCustomColor('');
+    } else {
+      let standardColors: string[] = [];
+      const m = v.model || '';
+      if (m.includes('#1')) {
+        standardColors = ['粒子白', '曜石黑', '控墨灰', '時光綠', '能量黃', '亮銅金', '沉靜藍', 'BRABUS 運動紅', 'BRABUS 啞光灰'];
+      } else if (m.includes('#3')) {
+        standardColors = ['粒子白', '曜石黑', '光速銀', '控墨灰', '宇宙藍', '星塵紅', '鐳射蟬綠', 'BRABUS 鋼鐵灰'];
+      } else if (m.includes('#5')) {
+        standardColors = ['沉橡綠', '秘境綠', '流沙金', '太空燕麥', '粒子白', '曜石黑', '琥珀棕', '烈焰紅'];
+      } else {
+        standardColors = ['沉橡綠', '粒子白', '曜石黑', '琥珀棕', '流沙金', '太空燕麥', '鐳射蟬綠', '控墨灰', '烈焰紅'];
+      }
+      
+      if (standardColors.includes(vehicleColor)) {
+        setColor(vehicleColor);
+        setCustomColor('');
+      } else {
+        setColor('其他');
+        setCustomColor(vehicleColor);
+      }
+    }
+    
+    setTrim(v.trim || '');
   };
 
   const openAdd = () => {
@@ -77,6 +132,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
     setBrand('');
     setModel('');
     setCapacity(0);
+    setColor('');
+    setCustomColor('');
+    setTrim('');
   };
 
   const handleSave = async () => {
@@ -90,7 +148,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       plate,
       brand,
       model,
-      batteryCapacity: Number(capacity)
+      batteryCapacity: Number(capacity),
+      color: color === '其他' ? customColor : color,
+      trim
     };
 
     try {
@@ -114,6 +174,91 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
 
   const selectedBrandData = HK_EV_MODELS.find(b => b.brand === brand);
 
+  const getSmartColors = () => {
+    let colors = [];
+    if (model.includes('#1')) {
+      colors = [
+        { value: '粒子白', label: '粒子白 (Chroma White)' },
+        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
+        { value: '控墨灰', label: '控墨灰 (Laser Grey)' },
+        { value: '時光綠', label: '時光綠 (Grid Green)' },
+        { value: '能量黃', label: '能量黃 (Digital Yellow)' },
+        { value: '亮銅金', label: '亮銅金 (Clear Jaguar Brown)' },
+        { value: '沉靜藍', label: '沉靜藍 (Silent Blue)' },
+        ...(model.includes('BRABUS') ? [
+          { value: 'BRABUS 運動紅', label: 'BRABUS 運動紅 (BRABUS Sport Red)' },
+          { value: 'BRABUS 啞光灰', label: 'BRABUS 啞光灰 (BRABUS Matte Grey)' }
+        ] : [])
+      ];
+    } else if (model.includes('#3')) {
+      colors = [
+        { value: '粒子白', label: '粒子白 (Chroma White)' },
+        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
+        { value: '光速銀', label: '光速銀 (Speed Silver)' },
+        { value: '控墨灰', label: '控墨灰 (Matter Grey)' },
+        { value: '宇宙藍', label: '宇宙藍 (Photon Blue)' },
+        { value: '星塵紅', label: '星塵紅 (Stardust Red)' },
+        { value: '鐳射蟬綠', label: '鐳射蟬綠 (Acid Metallic Green)' },
+        ...(model.includes('BRABUS') ? [
+          { value: 'BRABUS 鋼鐵灰', label: 'BRABUS 鋼鐵灰 (BRABUS Matte Gray)' }
+        ] : [])
+      ];
+    } else if (model.includes('#5')) {
+      colors = [
+        { value: '沉橡綠', label: '沉橡綠 (Forest Green)' },
+        { value: '秘境綠', label: '秘境綠 (Secret Green)' },
+        { value: '流沙金', label: '流沙金 (Sahara Desert Gold)' },
+        { value: '太空燕麥', label: '太空燕麥 (Cosmic Oatmeal)' },
+        { value: '粒子白', label: '粒子白 (Chroma White)' },
+        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
+        { value: '琥珀棕', label: '琥珀棕 (Amber Brown)' },
+        ...(model.includes('BRABUS') ? [
+          { value: '烈焰紅', label: '烈焰紅 (BRABUS Flame Red)' }
+        ] : [])
+      ];
+    } else {
+      colors = [
+        { value: '沉橡綠', label: '沉橡綠 (Forest Green)' },
+        { value: '粒子白', label: '粒子白 (Chroma White)' },
+        { value: '曜石黑', label: '曜石黑 (Obsidian Black)' },
+        { value: '琥珀棕', label: '琥珀棕 (Amber Brown)' },
+        { value: '流沙金', label: '流沙金 (Sahara Gold)' },
+        { value: '太空燕麥', label: '太空燕麥 (Cosmic Oatmeal)' },
+        { value: '鐳射蟬綠', label: '鐳射蟬綠 (Laser Green)' },
+        { value: '控墨灰', label: '控墨灰 (Laser Grey)' },
+        { value: '烈焰紅', label: '烈焰紅 (Flame Red)' }
+      ];
+    }
+    return [...colors, { value: '其他', label: '其他 (自行輸入 / Custom)' }];
+  };
+
+  const getSmartTrims = () => {
+    if (model.includes('#1') || model.includes('#3')) {
+      return [
+        { value: 'Pro+ 型動版', label: 'Pro+ 型動版 (Pro+)' },
+        { value: 'Premium 豪華版', label: 'Premium 豪華版 (Premium)' },
+        { value: 'BRABUS性能版', label: 'BRABUS 性能專屬版 (BRABUS)' }
+      ];
+    }
+    if (model.includes('#5')) {
+      return [
+        { value: 'Pro 智雅版', label: 'Pro 智雅版 (Pro)' },
+        { value: 'Pro+ 尊豪版', label: 'Pro+ 尊豪版 (Pro+)' },
+        { value: 'Premium+ 豪華經典版', label: 'Premium+ 豪華經典版 (Premium+)' },
+        { value: 'Summit Edition 山野奇旅版', label: 'Summit Edition 山野奇旅版 (Summit)' },
+        { value: 'BRABUS性能版', label: 'BRABUS 性能版 (BRABUS)' }
+      ];
+    }
+    return [
+      { value: 'BRABUS性能版', label: 'BRABUS 性能版 (BRABUS)' },
+      { value: 'Summit Edition 山野奇旅版', label: 'Summit Edition' },
+      { value: 'Premium+ 豪華經典版', label: 'Premium+' },
+      { value: 'Premium 豪華版', label: 'Premium' },
+      { value: 'Pro+ 尊豪版', label: 'Pro+' },
+      { value: 'Pro 智雅版', label: 'Pro' }
+    ];
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between mb-2">
@@ -136,6 +281,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       </div>
 
       <div className="space-y-8">
+        {/* Section 0: Dynamic Membership Card */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 px-1">
+            <div className="w-1 h-4 bg-cyber-green rounded-full shadow-[0_0_8px_rgba(204,255,0,0.5)]"></div>
+            <h3 className="text-sm font-mono font-bold uppercase tracking-[0.2em] text-white/80">電子會員卡 / MEMBER CARD</h3>
+          </div>
+          <MembershipCard 
+            user={user}
+            userProfile={userProfile}
+            vehicles={vehicles}
+          />
+        </section>
+
         {/* Section 1: My Account */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 px-1">
@@ -493,9 +651,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                       <select 
                         value={model}
                         onChange={(e) => {
-                          const m = selectedBrandData?.models.find(mod => mod.name === e.target.value);
-                          setModel(e.target.value);
-                          if (m) setCapacity(m.capacity);
+                          const val = e.target.value;
+                          const m = selectedBrandData?.models.find(mod => mod.name === val);
+                          setModel(val);
+                          if (m) {
+                            setCapacity(m.capacity);
+                          }
+                          
+                          // Pre-fill model trim option according to smart official HK naming conventions
+                          if (brand === 'smart') {
+                            if (val.includes('BRABUS')) {
+                              setTrim('BRABUS性能版');
+                            } else if (val.includes('Summit')) {
+                              setTrim('Summit Edition 山野奇旅版');
+                            } else if (val.includes('Premium+')) {
+                              setTrim('Premium+ 豪華經典版');
+                            } else if (val.includes('Premium')) {
+                              setTrim('Premium 豪華版');
+                            } else if (val.includes('Pro+')) {
+                              setTrim('Pro+ 尊豪版');
+                            } else if (val.includes('Pro')) {
+                              setTrim('Pro 智雅版');
+                            }
+                          }
                         }}
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyber-green/50 transition-all font-mono appearance-none"
                       >
@@ -514,6 +692,66 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                     onChange={(e) => setCapacity(Number(e.target.value))}
                     prefix="kWh"
                   />
+
+                  {brand === 'smart' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-mono uppercase text-[#A3E635]/80 ml-1">車身顏色 / EXTERIOR COLOR</label>
+                        <select
+                          value={color}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setColor(val);
+                            if (val !== '其他') {
+                              setCustomColor('');
+                            }
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyber-green/50 transition-all font-sans appearance-none"
+                        >
+                          <option value="" className="bg-[#121212]">選擇車色 (選填)</option>
+                          {getSmartColors().map(col => (
+                            <option key={col.value} value={col.value} className="bg-[#121212]">
+                              {col.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {color === '其他' && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <div className="space-y-2">
+                            <label className="text-xs font-mono uppercase text-[#A3E635]/80 ml-1">請手動輸入自訂顏色 / CUSTOM EXTERIOR COLOR</label>
+                            <input
+                              type="text"
+                              value={customColor}
+                              onChange={(e) => setCustomColor(e.target.value)}
+                              placeholder="例如: 迷霧灰, 太空銀, Obsidian Grey..."
+                              className="w-full bg-[#121212] border border-white/10 focus:border-[#A3E635]/50 focus:ring-1 focus:ring-[#A3E635]/30 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:outline-none transition-all font-sans"
+                              required
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-mono uppercase text-[#A3E635]/80 ml-1">車型版本 / VEHICLE TRIM</label>
+                        <select
+                          value={trim}
+                          onChange={(e) => setTrim(e.target.value)}
+                          disabled={brand === 'smart'}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white/55 focus:outline-none focus:border-cyber-green/50 transition-all font-sans appearance-none disabled:opacity-75 disabled:cursor-not-allowed"
+                        >
+                          <option value="" className="bg-[#121212]">選擇版本 (選填)</option>
+                          {getSmartTrims().map(tr => (
+                            <option key={tr.value} value={tr.value} className="bg-[#121212]">
+                              {tr.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-white/30 font-mono ml-1 uppercase">車型版本已根據您選擇的型號自動配對填寫 / Auto-matched by model</p>
+                      </div>
+                    </>
+                  )}
 
                   <div className="flex flex-wrap gap-3 pt-4">
                     <button

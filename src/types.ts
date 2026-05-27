@@ -11,6 +11,8 @@ export interface Vehicle {
   lastOdometer: number;
   lastBatteryPercent: number;
   createdAt: Timestamp;
+  color?: string;
+  trim?: string;
 }
 
 export interface LogEntry {
