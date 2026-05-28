@@ -187,6 +187,9 @@ export interface GroupBuy {
   imageUrl?: string;
   status: 'active' | 'closed';
   targetQuantity: number;
+  minQuantity?: number;
+  maxQuantity?: number;
+  endDate?: any; // Timestamp or similar
   currentRegistrations: GroupBuyRegistration[];
   createdAt: any; // Timestamp or similar
 }

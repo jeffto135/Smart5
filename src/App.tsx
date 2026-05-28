@@ -637,7 +637,7 @@ export default function App() {
             >
               <ClubPerks 
                 clubPerks={evStore.clubPerks}
-                isAdmin={evStore.isAdmin}
+                isAdmin={evStore.isSubAdmin}
                 onAddPerk={evStore.addClubPerk}
                 onDeletePerk={evStore.deleteClubPerk}
                 onClose={() => setView('dashboard')}

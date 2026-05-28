@@ -35,14 +35,44 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
   const [qty, setQty] = useState<number>(1);
   const [regLoading, setRegLoading] = useState(false);
 
+  // Compute remaining slots for selected Group Buy inside modal
+  const otherUsersQty = useMemo(() => {
+    if (!selectedGb) return 0;
+    return (selectedGb.currentRegistrations || [])
+      .filter(r => r.userId === userId ? false : true)
+      .reduce((acc, curr) => acc + curr.qty, 0);
+  }, [selectedGb, userId]);
+
+  const remainingSlots = useMemo(() => {
+    if (!selectedGb) return Infinity;
+    return (selectedGb.maxQuantity !== undefined && selectedGb.maxQuantity !== null && selectedGb.maxQuantity > 0)
+      ? Math.max(0, selectedGb.maxQuantity - otherUsersQty)
+      : Infinity;
+  }, [selectedGb, otherUsersQty]);
+
+  const isPlusDisabled = qty >= remainingSlots;
+
   // Admin New Group Buy Form State
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newPrice, setNewPrice] = useState<number | ''>('');
   const [newTargetQty, setNewTargetQty] = useState<number | ''>('');
+  const [newMinQty, setNewMinQty] = useState<number | ''>('');
+  const [newMaxQty, setNewMaxQty] = useState<number | ''>('');
+  const [newEndDate, setNewEndDate] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
   const [formLoading, setFormLoading] = useState(false);
+
+  const minDateTimeStr = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }, []);
 
   // Admin Audit List for specific group buy
   const [selectedAuditGb, setSelectedAuditGb] = useState<GroupBuy | null>(null);
@@ -83,6 +113,16 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
       alert('請填寫所有必要欄位 / PLEASE FILL ALL REQUIRED FIELDS');
       return;
     }
+    if (!newEndDate) {
+      alert('請填寫團購截止時間 / PLEASE FILL IN GROUP BUY DEADLINE TIME');
+      return;
+    }
+    const selectedDeadline = new Date(newEndDate);
+    if (selectedDeadline <= new Date()) {
+      alert('團購截止時間必須大於當前時間 / THE DEADLINE TIME MUST BE IN THE FUTURE');
+      return;
+    }
+
     setFormLoading(true);
     try {
       await onAddGroupBuy({
@@ -90,6 +130,9 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
         description: newDescription,
         price: Number(newPrice),
         targetQuantity: Number(newTargetQty),
+        minQuantity: newMinQty !== '' ? Number(newMinQty) : undefined,
+        maxQuantity: newMaxQty !== '' ? Number(newMaxQty) : undefined,
+        endDate: new Date(newEndDate),
         imageUrl: newImageUrl || undefined,
         status: 'active'
       });
@@ -98,6 +141,9 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
       setNewDescription('');
       setNewPrice('');
       setNewTargetQty('');
+      setNewMinQty('');
+      setNewMaxQty('');
+      setNewEndDate('');
       setNewImageUrl('');
       setShowAddForm(false);
     } catch (err) {
@@ -210,6 +256,35 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                   />
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <CyberInput
+                    label="最少成團數量 (選填) / MINIMUM QUANTITY"
+                    type="number"
+                    min="0"
+                    value={newMinQty}
+                    onChange={(e) => setNewMinQty(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="留空或 0 代表無最少限制 / No minimum limit"
+                  />
+                  <CyberInput
+                    label="最大限量總數 (選填) / MAXIMUM QUANTITY"
+                    type="number"
+                    min="0"
+                    value={newMaxQty}
+                    onChange={(e) => setNewMaxQty(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="留空或 0 代表無最多限制 / Sold out limit"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <CyberInput
+                    label="團購截止時間 * / GROUP BUY DEADLINE *"
+                    type="datetime-local"
+                    min={minDateTimeStr}
+                    value={newEndDate}
+                    onChange={(e) => setNewEndDate(e.target.value)}
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest block">
                     詳細描述 / DETAIL DESCRIPTION *
@@ -262,6 +337,34 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
             const hasRegistered = userQty > 0;
 
             const trackingGlowColor = percentage >= 100 ? 'bg-[#CCFF00]' : 'bg-[#A3E635]';
+            
+            // Check if it's sold out (scenario 3 and 4)
+            const isSoldOut = gb.maxQuantity !== undefined && gb.maxQuantity !== null && gb.maxQuantity > 0 && totalQty >= gb.maxQuantity;
+
+            // Check if it's expired
+            let isExpired = false;
+            let countdownText = '';
+            if (gb.endDate) {
+              const deadlineDate = typeof gb.endDate.toDate === 'function' ? gb.endDate.toDate() : new Date(gb.endDate);
+              const now = new Date();
+              isExpired = now > deadlineDate;
+
+              if (!isExpired) {
+                // Compute difference
+                const diffTime = deadlineDate.getTime() - now.getTime();
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                const diffHours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const diffMins = Math.floor((diffTime % (1000 * 60 * 60)) / (1000 * 60));
+                
+                if (diffDays > 0) {
+                  countdownText = `⏱️ 限時募集：距離截止還有 ${diffDays} 天 ${diffHours} 小時`;
+                } else if (diffHours > 0) {
+                  countdownText = `⏱️ 限時募集：距離截止還有 ${diffHours} 小時 ${diffMins} 分鐘`;
+                } else {
+                  countdownText = `⏱️ 限時募集：距離截止還有 ${diffMins} 分鐘`;
+                }
+              }
+            }
 
             return (
               <motion.div
@@ -272,8 +375,8 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
               >
                 <CyberCard
                   className={`overflow-hidden transition-all duration-300 relative ${
-                    gb.status === 'closed'
-                      ? 'border-white/5 opacity-60 bg-white/[0.01]'
+                    gb.status === 'closed' || isSoldOut || isExpired
+                      ? 'border-white/5 opacity-50 bg-white/[0.01] grayscale-[30%]'
                       : hasRegistered
                       ? 'border-[#A3E635]/60 shadow-[0_0_25px_rgba(163,230,21,0.06)] bg-[#A3E635]/[0.01]'
                       : 'border-white/10'
@@ -301,26 +404,68 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                       {/* Status Badges on Image */}
                       <span
                         className={`absolute top-3 left-3 px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider select-none ${
-                          gb.status === 'active'
-                            ? 'bg-[#A3E635] text-black shadow-[0_0_10px_#A3E635]'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          gb.status !== 'active' || isExpired
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            : isSoldOut
+                            ? 'bg-red-500/30 text-red-400 border border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]'
+                            : 'bg-[#A3E635] text-black shadow-[0_0_10px_#A3E635]'
                         }`}
                       >
-                        {gb.status === 'active' ? '● 招募中 / ACTIVE' : '■ 已截止 / CLOSED'}
+                        {gb.status !== 'active' || isExpired
+                          ? '■ 已截止 / CLOSED' 
+                          : isSoldOut 
+                          ? '■ 已滿額 / SOLD OUT' 
+                          : '● 招募中 / ACTIVE'}
                       </span>
                     </div>
-
+ 
                     {/* Content Column */}
                     <div className="md:col-span-8 flex flex-col justify-between space-y-4">
                       <div className="space-y-3">
                         {/* Title and Badge */}
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                           <h3 className="text-xl font-bold font-mono text-white leading-tight">
                             {gb.title}
                           </h3>
-                          <span className="inline-block text-[8px] font-mono text-[#A3E635] bg-[#A3E635]/10 border border-[#A3E635]/20 px-2 py-0.5 rounded">
-                            車友福利 • 官方統一控管
-                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-block text-[8px] font-mono text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                              車友官方規格團購
+                            </span>
+                            
+                            {/* Four-scenario adaptive tags */}
+                            {isSoldOut ? (
+                              <span className="inline-block text-[8px] font-mono font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded">
+                                🔴 感謝支持！本團已滿額 (SOLD OUT)
+                              </span>
+                            ) : (gb.minQuantity !== undefined && gb.minQuantity !== null && gb.minQuantity > 0) ? (
+                              totalQty < gb.minQuantity ? (
+                                <span className="inline-block text-[8px] font-mono font-bold text-yellow-400 bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 rounded animate-pulse">
+                                  ⏳ 預訂募集（差 {gb.minQuantity - totalQty} 套成團）
+                                </span>
+                              ) : (
+                                <span className="inline-block text-[8px] font-mono font-bold text-[#A3E635] bg-[#A3E635]/15 border border-[#A3E635]/30 px-2 py-0.5 rounded shadow-[0_0_8px_rgba(163,230,21,0.15)]">
+                                  🟢 恭喜！本團已成功成團
+                                </span>
+                              )
+                            ) : (
+                              <span className="inline-block text-[8px] font-mono text-[#A3E635] bg-[#A3E635]/10 border border-[#A3E635]/20 px-2 py-0.5 rounded">
+                                🔥 官方福利團（熱烈認購中）
+                              </span>
+                            )}
+
+                            {/* Deadline Countdown / Status Tag */}
+                            {gb.endDate && (
+                              isExpired ? (
+                                <span className="inline-block text-[8px] font-mono font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2 py-0.5 rounded shadow-[0_0_5px_rgba(239,68,68,0.1)]">
+                                  🔒 本團已截止 (Closed)
+                                </span>
+                              ) : (
+                                <span className="inline-block text-[8px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded shadow-[0_0_5px_rgba(245,158,11,0.1)]">
+                                  {countdownText}
+                                </span>
+                              )
+                            )}
+                          </div>
                         </div>
 
                         {/* Description */}
@@ -348,6 +493,11 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                           <div className="text-[11px] font-mono">
                             <span className="text-white/60 font-bold">目前已認購 {totalQty}</span>
                             <span className="text-white/30"> / {gb.targetQuantity} 套</span>
+                            {gb.maxQuantity !== undefined && gb.maxQuantity !== null && gb.maxQuantity > 0 && (
+                              <span className="text-xs text-red-400 font-bold ml-1.5">
+                                (限量 {gb.maxQuantity} 套)
+                              </span>
+                            )}
                             <span className="text-[#A3E635] font-black ml-2 text-xs">
                               (已完成 {percentage}%)
                             </span>
@@ -365,19 +515,33 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                         </div>
                         
                         {/* Success target notification */}
-                        {percentage >= 100 && (
+                        {isSoldOut ? (
+                          <div className="flex items-center gap-1 text-[9px] font-mono text-red-400 font-bold">
+                            <CheckCircle size={10} className="text-red-400" />
+                            <span>本品已全數額滿，感謝車友們的鼎力支持！SOLD OUT!</span>
+                          </div>
+                        ) : (gb.minQuantity !== undefined && gb.minQuantity !== null && gb.minQuantity > 0 && totalQty >= gb.minQuantity) ? (
+                          <div className="flex items-center gap-1 text-[9px] font-mono text-[#A3E635]/90">
+                            <CheckCircle size={10} />
+                            <span>本團已成功達標成團！SUCCESS TARGET REACHED AND MET MINIMUM!</span>
+                          </div>
+                        ) : percentage >= 100 ? (
                           <div className="flex items-center gap-1 text-[9px] font-mono text-[#A3E635]/90">
                             <CheckCircle size={10} />
                             <span>已成功達標，正在集結成團！SUCCESS TARGET REACHED!</span>
                           </div>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Interactive Section / User Actions */}
                       <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
                         {/* Display existing registered quantity */}
-                        {hasRegistered ? (
-                          <div className="flex items-center gap-2 text-xs font-mono bg-[#A3E635]/10 border border-[#A3E635]/20 px-3 py-2 rounded-xl text-[#A3E635]">
+                        {isExpired ? (
+                          <div className="flex items-center gap-1.5 text-xs font-mono bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl text-red-400 font-bold max-w-full md:max-w-2xl">
+                            <span>⚠️ 本項目已過截止時間，認購名單已鎖定，如需協助請聯絡會長。</span>
+                          </div>
+                        ) : hasRegistered ? (
+                          <div className="flex items-center gap-2 text-[#A3E635] text-xs font-mono bg-[#A3E635]/10 border border-[#A3E635]/20 px-3 py-2 rounded-xl">
                             <Check size={14} className="stroke-[3]" />
                             <span>
                               您已在本次團購登記認購：<strong>{userQty} 套</strong>
@@ -385,12 +549,30 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                           </div>
                         ) : (
                           <div className="text-[10px] font-mono text-white/30 uppercase tracking-wider">
-                            {gb.status === 'active' ? '🛡️ 一人一單，認購後系統記錄誠意登記' : '❌ 本次團購已截止認購'}
+                            {gb.status === 'active' 
+                              ? isSoldOut 
+                                ? '❌ 本品已宣布額滿，感謝熱切關注！' 
+                                : '🛡️ 一人一單，認購後系統記錄誠意登記' 
+                              : '❌ 本次團購已截止認購'}
                           </div>
                         )}
 
                         {/* Subscription Buttons */}
-                        {gb.status === 'active' ? (
+                        {gb.status !== 'active' || isExpired ? (
+                          <button
+                            disabled
+                            className="py-2.5 px-6 rounded-xl bg-white/5 text-white/20 border border-white/5 text-xs font-mono font-bold cursor-not-allowed select-none"
+                          >
+                            🔒 已截止 / LOCK
+                          </button>
+                        ) : isSoldOut ? (
+                          <button
+                            disabled
+                            className="py-2.5 px-6 rounded-xl bg-red-500/10 text-red-400/50 border border-red-500/15 text-xs font-mono font-bold cursor-not-allowed select-none"
+                          >
+                            🔴 感謝支持！本團已滿額 (SOLD OUT)
+                          </button>
+                        ) : (
                           <CyberButton
                             onClick={() => handleOpenRegisterModal(gb)}
                             variant={hasRegistered ? 'secondary' : 'primary'}
@@ -398,13 +580,6 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                           >
                             {hasRegistered ? '修改我的認購數量 / EDIT SELECTION' : '我要認購 / COMMENCE REGISTER'}
                           </CyberButton>
-                        ) : (
-                          <button
-                            disabled
-                            className="py-2.5 px-6 rounded-xl bg-white/5 text-white/20 border border-white/5 text-xs font-mono font-bold cursor-not-allowed select-none"
-                          >
-                            已截止 / ENDED
-                          </button>
                         )}
                       </div>
                     </div>
@@ -562,12 +737,26 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                     {/* Increase */}
                     <button
                       type="button"
+                      disabled={isPlusDisabled}
                       onClick={() => setQty(qty + 1)}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#A3E635]/50 text-white transition-all font-bold"
+                      className={`w-10 h-10 flex items-center justify-center rounded-xl border transition-all font-bold ${
+                        isPlusDisabled
+                          ? 'bg-white/5 text-white/15 border-white/5 cursor-not-allowed select-none'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-[#A3E635]/50 text-white'
+                      }`}
                     >
                       <Plus size={16} />
                     </button>
                   </div>
+
+                  {/* Highlight limits info */}
+                  {remainingSlots !== Infinity && (
+                    <div className="text-center">
+                      <span className="text-[9px] font-mono text-red-400 font-bold bg-red-500/10 border border-red-500/15 px-2 py-0.5 rounded">
+                        ⚠️ 限量剩餘名額: {remainingSlots} 套 (您最高可調至 {remainingSlots} 套)
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Dynamic mathematical subtotal calculation summary table */}

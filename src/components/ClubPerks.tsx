@@ -79,7 +79,18 @@ export const ClubPerks: React.FC<ClubPerksProps> = ({
       setIsModalOpen(false);
     } catch (err: any) {
       console.error(err);
-      alert('發佈失敗: ' + (err.message || '未知錯誤'));
+      const isPermissionDenied = err.message && (
+        err.message.includes('permission') || 
+        err.message.includes('Permission') || 
+        err.message.includes('Unauthorised') || 
+        err.message.includes('Unauthorized') || 
+        err.message.includes('權限')
+      );
+      if (isPermissionDenied) {
+        alert("發佈失敗，請聯絡會長確認您的次級管理員權限設定");
+      } else {
+        alert('發佈失敗: ' + (err.message || '未知錯誤'));
+      }
     } finally {
       setIsSubmitting(false);
     }

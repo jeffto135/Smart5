@@ -56,7 +56,7 @@ export function useEVStore() {
   // Derive permissions
   const isRevoked = auth.currentUser?.email === 'apadrama30@gmail.com';
   const isAdmin = !isRevoked && (auth.currentUser?.email === 'jeffto135@gmail.com' || userProfile?.role === 'admin');
-  const isSubAdmin = !isRevoked && (isAdmin || userProfile?.role === 'sub-admin');
+  const isSubAdmin = !isRevoked && (isAdmin || userProfile?.role === 'sub-admin' || userProfile?.role === 'subAdmin');
 
   // Unified loading state
   const isDataLoading = loading || profileLoading;
@@ -1656,6 +1656,9 @@ export function useEVStore() {
         imageUrl: data.imageUrl || '',
         status: data.status || 'active',
         targetQuantity: Number(data.targetQuantity) || 1,
+        minQuantity: data.minQuantity ? Number(data.minQuantity) : null,
+        maxQuantity: data.maxQuantity ? Number(data.maxQuantity) : null,
+        endDate: data.endDate ? (data.endDate instanceof Timestamp ? data.endDate : Timestamp.fromDate(new Date(data.endDate))) : null,
         currentRegistrations: [],
         createdAt: serverTimestamp(),
       });
@@ -1700,7 +1703,7 @@ export function useEVStore() {
   };
 
   const addClubPerk = async (data: Omit<ClubPerk, 'id' | 'createdAt'>) => {
-    if (!isAdmin) {
+    if (!isSubAdmin) {
       throw new Error("無權限執行此操作 / Unauthorized");
     }
     try {
@@ -1720,7 +1723,7 @@ export function useEVStore() {
   };
 
   const updateClubPerk = async (id: string, data: Partial<ClubPerk>) => {
-    if (!isAdmin) {
+    if (!isSubAdmin) {
       throw new Error("無權限執行此操作 / Unauthorized");
     }
     try {
@@ -1731,7 +1734,7 @@ export function useEVStore() {
   };
 
   const deleteClubPerk = async (id: string) => {
-    if (!isAdmin) {
+    if (!isSubAdmin) {
       throw new Error("無權限執行此操作 / Unauthorized");
     }
     try {
@@ -1755,6 +1758,15 @@ export function useEVStore() {
         }
 
         const gbData = gbSnap.data() as GroupBuy;
+        
+        // Check if the deadline has passed
+        if (gbData.endDate) {
+          const endDateObj = typeof gbData.endDate.toDate === 'function' ? gbData.endDate.toDate() : new Date(gbData.endDate);
+          if (new Date() > endDateObj) {
+            throw new Error('⚠️ 本項目已過截止時間，認購名單已鎖定，如需協助請聯絡會長。');
+          }
+        }
+
         const currentRegs = gbData.currentRegistrations || [];
 
         // Check if user already registered
@@ -1782,6 +1794,19 @@ export function useEVStore() {
               qty: quantity,
               updatedAt: Timestamp.now()
             });
+          }
+        }
+
+        // Apply maximum quantity limit check
+        const maxQty = gbData.maxQuantity || 0;
+        if (maxQty > 0) {
+          const totalQtyAfterUpdate = updatedRegs.reduce((acc, curr) => acc + curr.qty, 0);
+          if (totalQtyAfterUpdate > maxQty) {
+            const otherRegsQty = currentRegs
+              .filter(r => r.userId !== uid)
+              .reduce((acc, curr) => acc + curr.qty, 0);
+            const remaining = Math.max(0, maxQty - otherRegsQty);
+            throw new Error(`認購失敗：本團最大限量為 ${maxQty} 套，當前剩餘可認購名額為 ${remaining} 套。`);
           }
         }
 

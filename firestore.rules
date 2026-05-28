@@ -38,7 +38,8 @@ service cloud.firestore {
 
     function isSubAdmin() {
       return isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) && 
-                          get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.role == 'sub-admin');
+                          (get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.role == 'sub-admin' ||
+                           get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.role == 'subAdmin'));
     }
 
     // --- Vehicle Validation ---
@@ -139,6 +140,9 @@ service cloud.firestore {
              data.targetQuantity is number && data.targetQuantity >= 1 &&
              data.currentRegistrations is list &&
              data.status in ['active', 'closed'] &&
+             (data.minQuantity is number || !data.keys().hasAll(['minQuantity'])) &&
+             (data.maxQuantity is number || !data.keys().hasAll(['maxQuantity'])) &&
+             (data.endDate is timestamp || !data.keys().hasAll(['endDate'])) &&
              data.createdAt is timestamp;
     }
 
@@ -312,15 +316,16 @@ service cloud.firestore {
       allow create: if isSubAdmin() && isValidGroupBuy(incoming());
       allow update: if isSubAdmin() ||
                       (isSignedIn() &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['currentRegistrations']));
+                       incoming().diff(existing()).affectedKeys().hasOnly(['currentRegistrations']) &&
+                       (existing().get('endDate', null) == null || existing().endDate > request.time));
       allow delete: if isSubAdmin();
     }
 
     match /clubPerks/{perkId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() && isValidClubPerk(incoming());
-      allow update: if isAdmin() && isValidClubPerk(incoming());
-      allow delete: if isAdmin();
+      allow create: if isSubAdmin() && isValidClubPerk(incoming());
+      allow update: if isSubAdmin() && isValidClubPerk(incoming());
+      allow delete: if isSubAdmin();
     }
   }
 }
