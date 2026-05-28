@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { EVNotification } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, CheckCircle2, AlertTriangle, Clock, MessageSquare, X, CheckSquare, Trash2 } from 'lucide-react';
+import { Bell, CheckCircle2, AlertTriangle, Clock, MessageSquare, X, CheckSquare, Trash2, ShoppingBag } from 'lucide-react';
 import { CyberCard } from './ui/CyberCard';
 import { CyberButton } from './ui/CyberButton';
 import { format } from 'date-fns';
@@ -55,6 +55,8 @@ export const MessageList: React.FC<MessageListProps> = ({
       onNavigate('activityList', notif.relatedId);
     } else if (notif.relatedType === 'poll') {
       onNavigate('pollList', notif.relatedId);
+    } else if (notif.relatedType === 'groupBuy' || notif.type === 'groupBuy') {
+      onNavigate('groupBuy', notif.relatedId);
     }
     setSelectedNotif(null);
   };
@@ -143,11 +145,13 @@ export const MessageList: React.FC<MessageListProps> = ({
                     notif.type === 'success' ? 'bg-cyber-green/10 text-cyber-green' :
                     notif.type === 'reminder' ? 'bg-yellow-500/10 text-yellow-500' :
                     notif.type === 'alert' ? 'bg-red-500/10 text-red-500' :
+                    (notif.type === 'groupBuy' || notif.relatedType === 'groupBuy') ? 'bg-amber-500/10 text-amber-500' :
                     'bg-white/5 text-white/40'
                   }`}>
                     {notif.type === 'success' ? <CheckCircle2 size={20} /> :
                      notif.type === 'reminder' ? <Clock size={20} /> :
                      notif.type === 'alert' ? <AlertTriangle size={20} /> :
+                     (notif.type === 'groupBuy' || notif.relatedType === 'groupBuy') ? <ShoppingBag size={20} /> :
                      <Bell size={20} />}
                   </div>
                   
@@ -218,10 +222,12 @@ export const MessageList: React.FC<MessageListProps> = ({
                   <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
                     selectedNotif.type === 'success' ? 'bg-cyber-green/10 text-cyber-green' :
                     selectedNotif.type === 'reminder' ? 'bg-yellow-500/10 text-yellow-500' :
+                    (selectedNotif.type === 'groupBuy' || selectedNotif.relatedType === 'groupBuy') ? 'bg-amber-500/10 text-amber-500' :
                     'bg-white/5 text-white/40'
                   }`}>
                     {selectedNotif.type === 'success' ? <CheckCircle2 size={32} /> :
                      selectedNotif.type === 'reminder' ? <Clock size={32} /> :
+                     (selectedNotif.type === 'groupBuy' || selectedNotif.relatedType === 'groupBuy') ? <ShoppingBag size={32} /> :
                      <Bell size={32} />}
                   </div>
 
@@ -229,6 +235,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                     <h3 className={`text-lg font-mono font-bold uppercase tracking-tight ${
                       selectedNotif.type === 'success' ? 'text-cyber-green' :
                       selectedNotif.type === 'reminder' ? 'text-yellow-500' :
+                      (selectedNotif.type === 'groupBuy' || selectedNotif.relatedType === 'groupBuy') ? 'text-amber-500' :
                       'text-white'
                     }`}>
                       {selectedNotif.title}
@@ -247,7 +254,11 @@ export const MessageList: React.FC<MessageListProps> = ({
                   <div className="w-full space-y-3">
                     {selectedNotif.relatedId && (
                       <CyberButton onClick={() => handleAction(selectedNotif)} className="w-full">
-                        {selectedNotif.relatedType === 'activity' ? '前往活動頁面 GO TO ACTIVITY' : '前往投票頁面 GO TO POLL'}
+                        {selectedNotif.relatedType === 'groupBuy' || selectedNotif.type === 'groupBuy' 
+                          ? '前往團購市集 GO TO MARKETPLACE' 
+                          : selectedNotif.relatedType === 'activity' 
+                          ? '前往活動頁面 GO TO ACTIVITY' 
+                          : '前往投票頁面 GO TO POLL'}
                       </CyberButton>
                     )}
                     <CyberButton onClick={() => setSelectedNotif(null)} className="w-full" variant="outline">

@@ -1,33 +1,27 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronLeft, Plus, Minus, Tag, Clock, Check, AlertTriangle, Trash2, Mail, Users, FileEdit, Archive, PlusCircle, CheckCircle, ShoppingBag } from 'lucide-react';
-import { GroupBuy, GroupBuyRegistration } from '../types';
+import { ChevronLeft, Plus, Minus, Tag, Clock, Check, AlertTriangle, Users, CheckCircle, ShoppingBag, CheckCircle2 } from 'lucide-react';
+import { GroupBuy } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
 import { CyberButton } from './ui/CyberButton';
-import { CyberInput } from './ui/CyberInput';
-import { ConfirmationModal } from './ui/ConfirmationModal';
 
 interface GroupBuyMarketplaceProps {
   groupBuys: GroupBuy[];
   userId: string;
   userEmail: string;
-  isSubAdmin: boolean;
+  isSubAdmin?: boolean; // Kept for compatibility with other parts of the codebase if any
   onRegister: (gbId: string, qty: number) => Promise<void>;
-  onAddGroupBuy: (data: Partial<GroupBuy>) => Promise<void>;
-  onUpdateGroupBuy: (id: string, data: Partial<GroupBuy>) => Promise<void>;
-  onDeleteGroupBuy: (id: string) => Promise<void>;
+  onAddGroupBuy?: (data: Partial<GroupBuy>) => Promise<any>;
+  onUpdateGroupBuy?: (id: string, data: Partial<GroupBuy>) => Promise<void>;
+  onDeleteGroupBuy?: (id: string) => Promise<void>;
   onClose: () => void;
 }
 
 export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
-  groupBuys,
+  groupBuys = [],
   userId,
   userEmail,
-  isSubAdmin,
   onRegister,
-  onAddGroupBuy,
-  onUpdateGroupBuy,
-  onDeleteGroupBuy,
   onClose
 }) => {
   // Modal State for user subscription
@@ -52,35 +46,6 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
 
   const isPlusDisabled = qty >= remainingSlots;
 
-  // Admin New Group Buy Form State
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newPrice, setNewPrice] = useState<number | ''>('');
-  const [newTargetQty, setNewTargetQty] = useState<number | ''>('');
-  const [newMinQty, setNewMinQty] = useState<number | ''>('');
-  const [newMaxQty, setNewMaxQty] = useState<number | ''>('');
-  const [newEndDate, setNewEndDate] = useState('');
-  const [newImageUrl, setNewImageUrl] = useState('');
-  const [formLoading, setFormLoading] = useState(false);
-
-  const minDateTimeStr = useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  }, []);
-
-  // Admin Audit List for specific group buy
-  const [selectedAuditGb, setSelectedAuditGb] = useState<GroupBuy | null>(null);
-
-  // Confirmation Modals
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [closeConfirmId, setCloseConfirmId] = useState<{ id: string, status: 'closed' | 'active' } | null>(null);
-
   // Open User Registration Modal
   const handleOpenRegisterModal = (gb: GroupBuy) => {
     const existingIndex = (gb.currentRegistrations || []).findIndex(r => r.userId === userId);
@@ -101,79 +66,9 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
       setSelectedGb(null);
     } catch (e) {
       console.error(e);
+      alert('登記失敗，請稍後再試！');
     } finally {
       setRegLoading(false);
-    }
-  };
-
-  // Submit Admin Add Group Buy
-  const handleAddSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle || !newDescription || !newPrice || !newTargetQty) {
-      alert('請填寫所有必要欄位 / PLEASE FILL ALL REQUIRED FIELDS');
-      return;
-    }
-    if (!newEndDate) {
-      alert('請填寫團購截止時間 / PLEASE FILL IN GROUP BUY DEADLINE TIME');
-      return;
-    }
-    const selectedDeadline = new Date(newEndDate);
-    if (selectedDeadline <= new Date()) {
-      alert('團購截止時間必須大於當前時間 / THE DEADLINE TIME MUST BE IN THE FUTURE');
-      return;
-    }
-
-    setFormLoading(true);
-    try {
-      await onAddGroupBuy({
-        title: newTitle,
-        description: newDescription,
-        price: Number(newPrice),
-        targetQuantity: Number(newTargetQty),
-        minQuantity: newMinQty !== '' ? Number(newMinQty) : undefined,
-        maxQuantity: newMaxQty !== '' ? Number(newMaxQty) : undefined,
-        endDate: new Date(newEndDate),
-        imageUrl: newImageUrl || undefined,
-        status: 'active'
-      });
-      // Clear
-      setNewTitle('');
-      setNewDescription('');
-      setNewPrice('');
-      setNewTargetQty('');
-      setNewMinQty('');
-      setNewMaxQty('');
-      setNewEndDate('');
-      setNewImageUrl('');
-      setShowAddForm(false);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  // Toggle Close / Open Group Buy Action
-  const handleToggleStatus = async () => {
-    if (!closeConfirmId) return;
-    try {
-      await onUpdateGroupBuy(closeConfirmId.id, { status: closeConfirmId.status });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setCloseConfirmId(null);
-    }
-  };
-
-  // Delete Group Buy Action
-  const handleDeleteGroupBuy = async () => {
-    if (!deleteConfirmId) return;
-    try {
-      await onDeleteGroupBuy(deleteConfirmId);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setDeleteConfirmId(null);
     }
   };
 
@@ -182,139 +77,24 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 -ml-2 text-white/40 hover:text-white transition-colors">
+          <button 
+            type="button"
+            onClick={onClose} 
+            className="p-2 -ml-2 text-white/40 hover:text-white transition-colors cursor-pointer"
+            id="gb_back_btn"
+          >
             <ChevronLeft size={24} />
           </button>
           <div>
             <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
-              團購市集 <span className="text-[#A3E635]">Group Buy</span>
+              團購市集 <span className="text-cyber-green">Group Buy</span>
             </h2>
             <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
               100% 官方控管優質福利市集 / Authentic Accessories Marketplace
             </p>
           </div>
         </div>
-
-        {/* Admin triggering action */}
-        {isSubAdmin && (
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className={`flex items-center gap-1.5 py-2 px-4 rounded-xl font-mono text-xs font-bold transition-all ${
-              showAddForm
-                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                : 'bg-[#A3E635]/10 text-[#A3E635] border border-[#A3E635]/25 hover:bg-[#A3E635] hover:text-black shadow-[0_0_15px_rgba(163,230,21,0.1)]'
-            }`}
-          >
-            <PlusCircle size={15} />
-            {showAddForm ? '關閉管理面板 / CLOSE ADMIN' : '發起新團購 / NEW GROUP BUY'}
-          </button>
-        )}
       </div>
-
-      {/* Admin Add Group Buy Form Drawer */}
-      <AnimatePresence>
-        {isSubAdmin && showAddForm && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-6"
-          >
-            <CyberCard title="上架官方規格團購項目 / PUBLISH GROUP BUY" className="border-[#A3E635]/30">
-              <form onSubmit={handleAddSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <CyberInput
-                    label="商品標題 / ITEM TITLE *"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="例如: Smart #5 專屬全天候 TPE 雙層腳墊"
-                  />
-                  <CyberInput
-                    label="示意圖網址 (選填) / IMAGE URL"
-                    value={newImageUrl}
-                    onChange={(e) => setNewImageUrl(e.target.value)}
-                    placeholder="https://example.com/item.jpg"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <CyberInput
-                    label="官方特惠價 (HKD) / SPECIAL PRICE *"
-                    type="number"
-                    min="1"
-                    value={newPrice}
-                    onChange={(e) => setNewPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="HKD 380"
-                  />
-                  <CyberInput
-                    label="成團目標數量 / TARGET QUANTITY *"
-                    type="number"
-                    min="1"
-                    value={newTargetQty}
-                    onChange={(e) => setNewTargetQty(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="50"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <CyberInput
-                    label="最少成團數量 (選填) / MINIMUM QUANTITY"
-                    type="number"
-                    min="0"
-                    value={newMinQty}
-                    onChange={(e) => setNewMinQty(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="留空或 0 代表無最少限制 / No minimum limit"
-                  />
-                  <CyberInput
-                    label="最大限量總數 (選填) / MAXIMUM QUANTITY"
-                    type="number"
-                    min="0"
-                    value={newMaxQty}
-                    onChange={(e) => setNewMaxQty(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="留空或 0 代表無最多限制 / Sold out limit"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <CyberInput
-                    label="團購截止時間 * / GROUP BUY DEADLINE *"
-                    type="datetime-local"
-                    min={minDateTimeStr}
-                    value={newEndDate}
-                    onChange={(e) => setNewEndDate(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest block">
-                    詳細描述 / DETAIL DESCRIPTION *
-                  </label>
-                  <textarea
-                    rows={3}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-[#A3E635]/50 transition-colors"
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    placeholder="描述商品特色、發貨時間、售後服務等規格..."
-                  />
-                </div>
-
-                <div className="flex gap-2 justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="py-2 px-5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-mono text-white transition-colors"
-                  >
-                    取消 / CANCEL
-                  </button>
-                  <CyberButton type="submit" disabled={formLoading} className="py-2 px-6 text-xs">
-                    {formLoading ? '發布中...' : '確認上架 / PUBLISH ITEM'}
-                  </CyberButton>
-                </div>
-              </form>
-            </CyberCard>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Main List Grid */}
       {groupBuys.length === 0 ? (
@@ -336,9 +116,9 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
             const userQty = userReg ? userReg.qty : 0;
             const hasRegistered = userQty > 0;
 
-            const trackingGlowColor = percentage >= 100 ? 'bg-[#CCFF00]' : 'bg-[#A3E635]';
+            const trackingGlowColor = percentage >= 100 ? 'bg-cyber-green' : 'bg-cyber-green/85';
             
-            // Check if it's sold out (scenario 3 and 4)
+            // Check if it's sold out
             const isSoldOut = gb.maxQuantity !== undefined && gb.maxQuantity !== null && gb.maxQuantity > 0 && totalQty >= gb.maxQuantity;
 
             // Check if it's expired
@@ -366,6 +146,8 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
               }
             }
 
+            const isLocked = gb.status === 'closed' || isExpired;
+
             return (
               <motion.div
                 key={gb.id}
@@ -375,7 +157,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
               >
                 <CyberCard
                   className={`overflow-hidden transition-all duration-300 relative ${
-                    gb.status === 'closed' || isSoldOut || isExpired
+                    isLocked || isSoldOut
                       ? 'border-white/5 opacity-50 bg-white/[0.01] grayscale-[30%]'
                       : hasRegistered
                       ? 'border-[#A3E635]/60 shadow-[0_0_25px_rgba(163,230,21,0.06)] bg-[#A3E635]/[0.01]'
@@ -404,14 +186,14 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                       {/* Status Badges on Image */}
                       <span
                         className={`absolute top-3 left-3 px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider select-none ${
-                          gb.status !== 'active' || isExpired
+                          isLocked
                             ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                             : isSoldOut
                             ? 'bg-red-500/30 text-red-400 border border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.2)]'
-                            : 'bg-[#A3E635] text-black shadow-[0_0_10px_#A3E635]'
+                            : 'bg-cyber-green text-black font-extrabold shadow-[0_0_10px_rgba(204,255,0,0.3)]'
                         }`}
                       >
-                        {gb.status !== 'active' || isExpired
+                        {isLocked
                           ? '■ 已截止 / CLOSED' 
                           : isSoldOut 
                           ? '■ 已滿額 / SOLD OUT' 
@@ -443,12 +225,12 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                                   ⏳ 預訂募集（差 {gb.minQuantity - totalQty} 套成團）
                                 </span>
                               ) : (
-                                <span className="inline-block text-[8px] font-mono font-bold text-[#A3E635] bg-[#A3E635]/15 border border-[#A3E635]/30 px-2 py-0.5 rounded shadow-[0_0_8px_rgba(163,230,21,0.15)]">
+                                <span className="inline-block text-[8px] font-mono font-bold text-cyber-green bg-cyber-green/15 border border-cyber-green/30 px-2 py-0.5 rounded shadow-[0_0_8px_rgba(204,255,0,0.15)]">
                                   🟢 恭喜！本團已成功成團
                                 </span>
                               )
                             ) : (
-                              <span className="inline-block text-[8px] font-mono text-[#A3E635] bg-[#A3E635]/10 border border-[#A3E635]/20 px-2 py-0.5 rounded">
+                              <span className="inline-block text-[8px] font-mono text-cyber-green bg-cyber-green/10 border border-cyber-green/20 px-2 py-0.5 rounded">
                                 🔥 官方福利團（熱烈認購中）
                               </span>
                             )}
@@ -476,7 +258,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                         {/* Pricing Highlight Info */}
                         <div className="flex items-baseline gap-2">
                           <span className="text-xs font-mono text-white/30 lowercase">特惠價格 / PRICE</span>
-                          <span className="text-2xl font-mono font-bold text-[#A3E635] cyber-text-glow leading-none">
+                          <span className="text-2xl font-mono font-black text-cyber-green leading-none tracking-tight">
                             HKD ${gb.price}
                           </span>
                           <span className="text-[10px] font-mono text-white/20">/ 包郵到港</span>
@@ -487,7 +269,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                       <div className="space-y-2 p-4 rounded-xl bg-white/[0.02] border border-white/5">
                         <div className="flex justify-between items-baseline mb-1">
                           <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase text-white/40">
-                            <Users size={12} className="text-[#A3E635]" />
+                            <Users size={12} className="text-cyber-green" />
                             <span>認購進度 / PROGRESS</span>
                           </div>
                           <div className="text-[11px] font-mono">
@@ -498,18 +280,18 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                                 (限量 {gb.maxQuantity} 套)
                               </span>
                             )}
-                            <span className="text-[#A3E635] font-black ml-2 text-xs">
+                            <span className="text-cyber-green font-black ml-2 text-xs">
                               (已完成 {percentage}%)
                             </span>
                           </div>
                         </div>
 
                         {/* Fluid Progress Bar */}
-                        <div className="h-4 bg-white/5 rounded-full overflow-hidden border border-[#A3E635]/10 p-[1px]">
+                        <div className="h-4 bg-white/5 rounded-full overflow-hidden border border-cyber-green/10 p-[1px]">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${progressPercent}%` }}
-                            className={`h-full ${trackingGlowColor} shadow-[0_0_15px_rgba(163,230,21,0.4)] rounded-full`}
+                            className={`h-full ${trackingGlowColor} shadow-[0_0_15px_rgba(204,255,0,0.3)] rounded-full`}
                             transition={{ duration: 0.8, ease: 'easeOut' }}
                           />
                         </div>
@@ -521,13 +303,13 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                             <span>本品已全數額滿，感謝車友們的鼎力支持！SOLD OUT!</span>
                           </div>
                         ) : (gb.minQuantity !== undefined && gb.minQuantity !== null && gb.minQuantity > 0 && totalQty >= gb.minQuantity) ? (
-                          <div className="flex items-center gap-1 text-[9px] font-mono text-[#A3E635]/90">
-                            <CheckCircle size={10} />
+                          <div className="flex items-center gap-1 text-[9px] font-mono text-cyber-green">
+                            <CheckCircle2 size={10} className="stroke-[3]" />
                             <span>本團已成功達標成團！SUCCESS TARGET REACHED AND MET MINIMUM!</span>
                           </div>
                         ) : percentage >= 100 ? (
-                          <div className="flex items-center gap-1 text-[9px] font-mono text-[#A3E635]/90">
-                            <CheckCircle size={10} />
+                          <div className="flex items-center gap-1 text-[9px] font-mono text-cyber-green">
+                            <CheckCircle2 size={10} className="stroke-[3]" />
                             <span>已成功達標，正在集結成團！SUCCESS TARGET REACHED!</span>
                           </div>
                         ) : null}
@@ -537,11 +319,11 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
                         {/* Display existing registered quantity */}
                         {isExpired ? (
-                          <div className="flex items-center gap-1.5 text-xs font-mono bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl text-red-400 font-bold max-w-full md:max-w-2xl">
+                          <div className="flex items-center gap-1.5 text-xs font-mono bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-xl text-red-400 font-bold max-w-full">
                             <span>⚠️ 本項目已過截止時間，認購名單已鎖定，如需協助請聯絡會長。</span>
                           </div>
                         ) : hasRegistered ? (
-                          <div className="flex items-center gap-2 text-[#A3E635] text-xs font-mono bg-[#A3E635]/10 border border-[#A3E635]/20 px-3 py-2 rounded-xl">
+                          <div className="flex items-center gap-2 text-cyber-green text-xs font-mono bg-cyber-green/10 border border-cyber-green/20 px-3 py-2 rounded-xl">
                             <Check size={14} className="stroke-[3]" />
                             <span>
                               您已在本次團購登記認購：<strong>{userQty} 套</strong>
@@ -558,7 +340,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                         )}
 
                         {/* Subscription Buttons */}
-                        {gb.status !== 'active' || isExpired ? (
+                        {isLocked ? (
                           <button
                             disabled
                             className="py-2.5 px-6 rounded-xl bg-white/5 text-white/20 border border-white/5 text-xs font-mono font-bold cursor-not-allowed select-none"
@@ -578,102 +360,12 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                             variant={hasRegistered ? 'secondary' : 'primary'}
                             className="text-xs font-bold py-2.5 px-6 min-w-[140px]"
                           >
-                            {hasRegistered ? '修改我的認購數量 / EDIT SELECTION' : '我要認購 / COMMENCE REGISTER'}
+                            {hasRegistered ? '修改我的認購數量 / EDIT QUANTITY' : '我要認購 / COMMENCE REGISTER'}
                           </CyberButton>
                         )}
                       </div>
                     </div>
                   </div>
-
-                  {/* Special Administrative Management Section */}
-                  {isSubAdmin && (
-                    <div className="mt-6 pt-5 border-t border-white/5 space-y-4">
-                      <div className="flex flex-wrap justify-between items-center gap-2 bg-white/[0.01] p-3 rounded-xl border border-white/5">
-                        <div className="flex items-center gap-2 text-[10px] font-mono text-white/40 uppercase tracking-wider">
-                          <Users size={12} className="text-[#A3E635]" />
-                          <span>管理員控制板 / ADMINISTRATIVE ACTIONS PANEL</span>
-                        </div>
-                        <div className="flex gap-2">
-                          {/* Audit Registrant emails Button */}
-                          <button
-                            onClick={() => setSelectedAuditGb(selectedAuditGb?.id === gb.id ? null : gb)}
-                            className="py-1 px-3 rounded bg-white/5 hover:bg-white/10 text-[10px] font-mono text-white border border-white/10 transition-colors flex items-center gap-1"
-                          >
-                            <Mail size={12} />
-                            {selectedAuditGb?.id === gb.id ? '隱藏名單 / HIDE REGISTRANTS' : `檢視已登記車友 (${(gb.currentRegistrations || []).length} 人)`}
-                          </button>
-
-                          {/* Close/Archive Button */}
-                          <button
-                            onClick={() =>
-                              setCloseConfirmId({
-                                id: gb.id,
-                                status: gb.status === 'active' ? 'closed' : 'active'
-                              })
-                            }
-                            className={`py-1 px-3 rounded text-[10px] font-mono transition-all border flex items-center gap-1 ${
-                              gb.status === 'active'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500 hover:text-black'
-                                : 'bg-green-500/10 text-green-400 border-green-500/25 hover:bg-green-500 hover:text-black'
-                            }`}
-                          >
-                            <Archive size={12} />
-                            {gb.status === 'active' ? '截止團購 / END' : '重新啟動 / RETRIGGER'}
-                          </button>
-
-                          {/* Delete Button */}
-                          <button
-                            onClick={() => setDeleteConfirmId(gb.id)}
-                            className="py-1 px-3 rounded bg-red-500/10 hover:bg-red-500 hover:text-black text-[10px] font-mono text-red-400 border border-red-500/25 transition-all flex items-center gap-1"
-                          >
-                            <Trash2 size={12} />
-                            刪除項目 / DELETE
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Display Audit Registered users Table if opened */}
-                      {selectedAuditGb?.id === gb.id && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          className="p-3 bg-black/40 border border-[#A3E635]/20 rounded-xl space-y-2 overflow-hidden"
-                        >
-                          <div className="text-[10px] font-mono font-bold text-[#A3E635] uppercase tracking-wider mb-2">
-                            👤 團購認購人明細 / REGISTRANT DETAILS LIST (COMS INTEGRITY CHECK)
-                          </div>
-                          {(gb.currentRegistrations || []).length === 0 ? (
-                            <div className="text-[11px] font-mono opacity-40 text-center py-4">
-                              目前尚無任何車友登記 / NO RESERVATIONS REGISTERED
-                            </div>
-                          ) : (
-                            <div className="max-h-[200px] overflow-y-auto space-y-1 pr-1">
-                              <table className="w-full text-left font-mono text-xs">
-                                <thead>
-                                  <tr className="border-b border-white/10 text-[9px] text-white/40 uppercase">
-                                    <th className="pb-1 text-center w-8">#</th>
-                                    <th className="pb-1">聯絡信箱 / EMAIL</th>
-                                    <th className="pb-1 text-center w-20">認購數 / QTY</th>
-                                    <th className="pb-1 text-right w-24">小計 / SUBTOTAL</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(gb.currentRegistrations || []).map((reg, index) => (
-                                    <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                      <td className="py-1 text-center text-white/30">{index + 1}</td>
-                                      <td className="py-1 text-white/80 select-all">{reg.email || '未知信箱'}</td>
-                                      <td className="py-1 text-center font-bold text-[#A3E635]">{reg.qty}</td>
-                                      <td className="py-1 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </div>
-                  )}
                 </CyberCard>
               </motion.div>
             );
@@ -689,10 +381,10 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md bg-[#0D1117] border border-[#A3E635]/30 rounded-2xl p-6 shadow-[0_0_30px_rgba(163,230,21,0.15)] relative overflow-hidden"
+              className="w-full max-w-md bg-cyber-bg border border-cyber-green/30 rounded-2xl p-6 shadow-[0_0_30px_rgba(204,255,0,0.15)] relative overflow-hidden"
             >
               {/* Glow Accent line */}
-              <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-[#A3E635] to-transparent" />
+              <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-cyber-green to-transparent" />
 
               <div className="space-y-4">
                 <div className="space-y-1">
@@ -709,7 +401,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                   <h4 className="font-bold text-sm text-white font-mono">{selectedGb.title}</h4>
                   <div className="flex justify-between font-mono text-xs">
                     <span className="text-white/40">特別優惠價 / UNIT PRICE</span>
-                    <span className="text-[#A3E635] font-bold">HKD ${selectedGb.price}</span>
+                    <span className="text-cyber-green font-bold">HKD ${selectedGb.price}</span>
                   </div>
                 </div>
 
@@ -723,7 +415,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                     <button
                       type="button"
                       onClick={() => setQty(Math.max(0, qty - 1))}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white transition-all font-bold"
+                      className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white transition-all font-bold cursor-pointer"
                     >
                       <Minus size={16} />
                     </button>
@@ -739,10 +431,10 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                       type="button"
                       disabled={isPlusDisabled}
                       onClick={() => setQty(qty + 1)}
-                      className={`w-10 h-10 flex items-center justify-center rounded-xl border transition-all font-bold ${
+                      className={`w-10 h-10 flex items-center justify-center rounded-xl border transition-all font-bold cursor-pointer ${
                         isPlusDisabled
                           ? 'bg-white/5 text-white/15 border-white/5 cursor-not-allowed select-none'
-                          : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-[#A3E635]/50 text-white'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-cyber-green/50 text-white'
                       }`}
                     >
                       <Plus size={16} />
@@ -762,7 +454,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                 {/* Dynamic mathematical subtotal calculation summary table */}
                 <div className="p-3 bg-white/[0.01] border-t border-b border-white/5 flex justify-between font-mono text-xs">
                   <span className="text-white/40">合計認購金額 / TOTAL PRICE</span>
-                  <span className="text-[#A3E635] font-black tracking-tight text-sm">
+                  <span className="text-cyber-green font-black tracking-tight text-sm">
                     HKD ${qty * selectedGb.price}
                   </span>
                 </div>
@@ -777,7 +469,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                   </div>
                 ) : (
                   <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 flex gap-2 text-[10px] font-mono text-white/40">
-                    <CheckCircle className="text-[#A3E635] flex-shrink-0 mt-0.5" size={12} />
+                    <CheckCircle className="text-cyber-green flex-shrink-0 mt-0.5" size={12} />
                     <span>
                       登記將會綁定您的車友信箱 <strong>{userEmail}</strong>。成團後系統將通知您付款與發寄！
                     </span>
@@ -790,7 +482,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                     type="button"
                     disabled={regLoading}
                     onClick={() => setSelectedGb(null)}
-                    className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-mono font-bold text-white transition-colors border border-white/10"
+                    className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-mono font-bold text-white transition-colors border border-white/10 cursor-pointer"
                   >
                     取消 / CANCEL
                   </button>
@@ -808,24 +500,6 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Confirmation Modals for Actions */}
-      <ConfirmationModal
-        isOpen={!!deleteConfirmId}
-        title="安全刪除確認 / CONFIRM DELETE ITEM"
-        message="您確定要刪除本項團購商品嗎？\n此行為將會抹除所有已登記車友的記錄，此操作不可逆！"
-        variant="danger"
-        onConfirm={handleDeleteGroupBuy}
-        onCancel={() => setDeleteConfirmId(null)}
-      />
-
-      <ConfirmationModal
-        isOpen={!!closeConfirmId}
-        title="切換團購截止狀態 / CONFIRM TOGGLE STATUS"
-        message={`您確定要將此團購項目切換至為 [ ${closeConfirmId?.status === 'closed' ? '截止 CLOSED' : '進行中 ACTIVE'} ] 嗎？`}
-        variant="info"
-        onConfirm={handleToggleStatus}
-        onCancel={() => setCloseConfirmId(null)}
-      />
     </div>
   );
 };

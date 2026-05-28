@@ -154,6 +154,10 @@ service cloud.firestore {
              data.discountDetail is string && data.discountDetail.size() <= 1000 &&
              data.contact is string && data.contact.size() <= 500 &&
              (data.expiryDate is string || !data.keys().hasAll(['expiryDate'])) &&
+             (data.originalPrice is number || !data.keys().hasAll(['originalPrice'])) &&
+             (data.discountPrice is number || !data.keys().hasAll(['discountPrice'])) &&
+             (data.address is string || !data.keys().hasAll(['address'])) &&
+             (data.googleMapsUrl is string || !data.keys().hasAll(['googleMapsUrl'])) &&
              data.createdAt is timestamp;
     }
 

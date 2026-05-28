@@ -62,6 +62,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (view === 'admin' && !evStore.isAdmin && !evStore.isSubAdmin) {
+      setView('dashboard');
+    }
+  }, [view, evStore.isAdmin, evStore.isSubAdmin]);
+
+  useEffect(() => {
     const checkRedirect = async () => {
       try {
         const result = await handleRedirectResult();
@@ -156,6 +162,12 @@ export default function App() {
   }
 
   const handleUpdateLog = async (logId: string, newData: any) => {
+    // 🔐 全端一體化安全鎖：若不是最高管理員且在 Admin 後台，強制欄截核心紀錄篡改行為
+    if (evStore.userProfile?.role !== 'admin' && view === 'admin') {
+      alert("對不起，只有最高管理員（主 Admin）有權更改或刪除此歷史紀錄！");
+      return;
+    }
+
     const logIndex = evStore.logs.findIndex((l) => l.id === logId);
     if (logIndex === -1) return;
 
@@ -199,6 +211,12 @@ export default function App() {
   };
 
   const handleDeleteLog = async (logId: string) => {
+    // 🔐 全端一體化安全鎖：若不是最高管理員且在 Admin 後台，強制欄截核心紀錄刪除行為
+    if (evStore.userProfile?.role !== 'admin' && view === 'admin') {
+      alert("對不起，只有最高管理員（主 Admin）有權更改或刪除此歷史紀錄！");
+      return;
+    }
+
     const logIndex = evStore.logs.findIndex((l) => l.id === logId);
     if (logIndex === -1) return;
 
@@ -353,8 +371,11 @@ export default function App() {
         fleetData={evStore.fleetData}
         parkingLots={evStore.parkingLots}
         allProfiles={evStore.allProfiles}
+        groupBuys={evStore.groupBuys}
+        clubPerks={evStore.clubPerks}
         isAdmin={evStore.isAdmin}
         isSubAdmin={evStore.isSubAdmin}
+        isRoleLoading={evStore.profileLoading}
         onUpdateLog={handleUpdateLog}
         onDeleteLog={handleDeleteLog}
         onAddActivity={evStore.addActivity}
@@ -373,6 +394,12 @@ export default function App() {
         onUpdateParkingLot={evStore.updateParkingLot}
         onDeleteParkingLot={evStore.deleteParkingLot}
         onAddChargingFeedback={evStore.addChargingFeedback}
+        onAddGroupBuy={evStore.addGroupBuy}
+        onUpdateGroupBuy={evStore.updateGroupBuy}
+        onDeleteGroupBuy={evStore.deleteGroupBuy}
+        onAddPerk={evStore.addClubPerk}
+        onUpdatePerk={evStore.updateClubPerk}
+        onDeletePerk={evStore.deleteClubPerk}
         userProfile={evStore.userProfile}
         onUpdateProfile={evStore.updateUserProfile}
         onDeleteVehicle={evStore.deleteVehicle}
@@ -639,6 +666,7 @@ export default function App() {
                 clubPerks={evStore.clubPerks}
                 isAdmin={evStore.isSubAdmin}
                 onAddPerk={evStore.addClubPerk}
+                onUpdatePerk={evStore.updateClubPerk}
                 onDeletePerk={evStore.deleteClubPerk}
                 onClose={() => setView('dashboard')}
               />

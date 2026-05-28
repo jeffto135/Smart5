@@ -19,7 +19,9 @@ import {
   MessageSquare,
   ShieldCheck,
   MapPin,
-  Youtube
+  Youtube,
+  ShoppingBag,
+  Gift
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -44,7 +46,12 @@ import { DisclaimerModal } from './DisclaimerModal';
 import { AdminCheckIn } from './AdminCheckIn';
 import { AdminParkingManager } from './AdminParkingManager';
 import { ParkingLeafletMap } from './ParkingLeafletMap';
-import { Vehicle, LogEntry, Activity, Poll, UserProfile, ParkingLot, ActivityRegistration } from '../types';
+import { AdminGroupBuy } from './AdminGroupBuy';
+import { AdminPerks } from './AdminPerks';
+import { AdminMemberApproval } from './AdminMemberApproval';
+import { AdminPushNotification } from './AdminPushNotification';
+import { AdminDataRecords } from './AdminDataRecords';
+import { Vehicle, LogEntry, Activity, Poll, UserProfile, ParkingLot, ActivityRegistration, GroupBuy, ClubPerk } from '../types';
 import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 
@@ -60,6 +67,8 @@ interface AdminPanelProps {
   };
   parkingLots: ParkingLot[];
   allProfiles: UserProfile[];
+  groupBuys: GroupBuy[];
+  clubPerks: ClubPerk[];
   onUpdateLog: (id: string, data: Partial<LogEntry>) => Promise<void>;
   onDeleteLog: (id: string) => Promise<void>;
   onAddActivity: (data: Partial<Activity>) => Promise<any>;
@@ -78,6 +87,12 @@ interface AdminPanelProps {
   onUpdateParkingLot: (id: string, data: Partial<ParkingLot>) => Promise<void>;
   onDeleteParkingLot: (id: string) => Promise<void>;
   onAddChargingFeedback?: (lotId: string, realKw: number, rating: number, note: string, testedGun?: string) => Promise<void>;
+  onAddGroupBuy: (data: Partial<GroupBuy>) => Promise<any>;
+  onUpdateGroupBuy: (id: string, data: Partial<GroupBuy>) => Promise<void>;
+  onDeleteGroupBuy: (id: string) => Promise<void>;
+  onAddPerk: (data: Omit<ClubPerk, 'id' | 'createdAt'>) => Promise<any>;
+  onUpdatePerk: (id: string, data: Partial<ClubPerk>) => Promise<void>;
+  onDeletePerk: (id: string) => Promise<void>;
   userProfile: UserProfile | null;
   onUpdateProfile: (data: Partial<UserProfile>) => Promise<void>;
   onDeleteVehicle: (id: string) => Promise<void>;
@@ -85,6 +100,7 @@ interface AdminPanelProps {
   onClearSystemNotifications: () => Promise<void>;
   isAdmin: boolean;
   isSubAdmin: boolean;
+  isRoleLoading?: boolean;
   onClose: () => void;
 }
 
@@ -92,8 +108,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   fleetData, 
   parkingLots,
   allProfiles,
+  groupBuys = [],
+  clubPerks = [],
   isAdmin,
   isSubAdmin,
+  isRoleLoading,
   onUpdateLog, 
   onDeleteLog, 
   onAddActivity,
@@ -112,6 +131,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateParkingLot,
   onDeleteParkingLot,
   onAddChargingFeedback,
+  onAddGroupBuy,
+  onUpdateGroupBuy,
+  onDeleteGroupBuy,
+  onAddPerk,
+  onUpdatePerk,
+  onDeletePerk,
   userProfile,
   onUpdateProfile,
   onDeleteVehicle,
@@ -119,7 +144,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onClearSystemNotifications,
   onClose 
 }) => {
-  const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account' | 'checkin' | 'parking'>('fleet');
+  if (isRoleLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] text-cyber-green flex items-center justify-center font-mono">
+        <div className="text-center space-y-4">
+          <div className="text-xl animate-pulse">🔒 安全權限驗證中...</div>
+          <div className="text-[10px] text-cyber-green/50 uppercase tracking-[0.2em] animate-pulse">VERIFYING USER ACCESS CREDENTIALS...</div>
+        </div>
+      </div>
+    );
+  }
+
+  const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account' | 'checkin' | 'parking' | 'groupBuys' | 'clubPerks' | 'notifications'>('fleet');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showAddPoll, setShowAddPoll] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'activity' | 'poll', data: any } | null>(null);
@@ -135,6 +171,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       { id: 'checkin', label: '簽到', icon: ShieldCheck },
       { id: 'parking', label: '泊車', icon: MapPin },
       { id: 'polls', label: '投票', icon: Vote },
+      { id: 'groupBuys', label: '團購', icon: ShoppingBag },
+      { id: 'clubPerks', label: '福利', icon: Gift },
       { id: 'notifications', label: '訊息', icon: MessageSquare },
       { id: 'members', label: '成員', icon: Users },
       { id: 'account', label: '帳戶', icon: User },
@@ -143,18 +181,90 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (isAdmin) return tabs;
 
     if (isSubAdmin) {
-      // Sub-admins can see fleet summary (limited), vehicles, activities, polls, notifications, account, plus checkin and parking
-      return tabs.filter(t => ['fleet', 'vehicles', 'activities', 'polls', 'notifications', 'account', 'checkin', 'parking'].includes(t.id));
+      // Sub-admins can see fleet summary (limited), vehicles, activities, polls, notifications, account, plus checkin, parking, groupBuys, and clubPerks
+      return tabs.filter(t => ['fleet', 'vehicles', 'activities', 'polls', 'notifications', 'account', 'checkin', 'parking', 'groupBuys', 'clubPerks'].includes(t.id));
     }
     
     return [{ id: 'account', label: '帳戶', icon: User }];
   }, [isAdmin, isSubAdmin]);
 
+  const mainModules = useMemo(() => {
+    const modules = [
+      { id: 'analytics', label: '數據總覽', icon: TrendingUp },
+      { id: 'community', label: '社群活動', icon: Calendar },
+      { id: 'marketplace', label: '福利市集', icon: ShoppingBag },
+      { id: 'parking', label: '泊車地圖', icon: MapPin },
+      { id: 'account', label: '帳戶設定', icon: User }
+    ];
+    if (isAdmin || isSubAdmin) return modules;
+    return [{ id: 'account', label: '帳戶設定', icon: User }];
+  }, [isAdmin, isSubAdmin]);
+
+  const activeModule = useMemo(() => {
+    if (['fleet', 'logs', 'vehicles', 'members'].includes(activeTab)) return 'analytics';
+    if (['activities', 'checkin', 'polls', 'notifications'].includes(activeTab)) return 'community';
+    if (['groupBuys', 'clubPerks'].includes(activeTab)) return 'marketplace';
+    if (['parking'].includes(activeTab)) return 'parking';
+    return 'account';
+  }, [activeTab]);
+
+  const subModules = useMemo(() => {
+    const isOnlySubAdmin = isSubAdmin && !isAdmin; // 🚀 關鍵修復：確保當前僅為 subAdmin 時，才隱蔽高權限面板 (最高管理員 100% 通行)
+    switch (activeModule) {
+      case 'analytics':
+        return [
+          { id: 'fleet', label: '數據圖表' },
+          ...(!isOnlySubAdmin ? [{ id: 'logs', label: '營運紀錄' }] : []),
+          { id: 'vehicles', label: '車輛名單' },
+          ...(!isOnlySubAdmin ? [{ id: 'members', label: '成員審批' }] : []),
+        ];
+      case 'community':
+        return [
+          { id: 'activities', label: '活動發佈' },
+          { id: 'checkin', label: '現場簽到' },
+          { id: 'polls', label: '發佈投票' },
+          ...(!isOnlySubAdmin ? [{ id: 'notifications', label: '群發訊息' }] : []),
+        ];
+      case 'marketplace':
+        return [
+          { id: 'groupBuys', label: '團購項目' },
+          { id: 'clubPerks', label: '商戶福利' },
+        ];
+      case 'parking':
+        return [
+          { id: 'parking', label: '泊車地圖' },
+        ];
+      case 'account':
+      default:
+        return [
+          { id: 'account', label: '帳戶管理' },
+        ];
+    }
+  }, [activeModule, isSubAdmin, isAdmin]);
+
+  // Combined route guard syncing tab validations
+  useEffect(() => {
+    const isOnlySubAdmin = isSubAdmin && !isAdmin; // 🚀 關鍵修復：確保當前僅為 subAdmin 時才觸發安全防線攔截 (主 Admin 絕不受限)
+    if (isOnlySubAdmin && ['logs', 'members', 'notifications'].includes(activeTab)) {
+      if (['logs', 'members'].includes(activeTab)) {
+        setActiveTab('fleet');
+      } else if (activeTab === 'notifications') {
+        setActiveTab('activities');
+      }
+    }
+  }, [activeTab, isSubAdmin, isAdmin]);
+
   useEffect(() => {
     if (!availableTabs.find(t => t.id === activeTab)) {
-      setActiveTab(availableTabs[0]?.id as any);
+      // Find fallback
+      const found = subModules.find(s => s.id === activeTab);
+      if (!found && subModules[0]) {
+        setActiveTab(subModules[0].id as any);
+      } else if (!found) {
+        setActiveTab(availableTabs[0]?.id as any);
+      }
     }
-  }, [availableTabs, activeTab]);
+  }, [availableTabs, activeTab, subModules]);
   const [actTitle, setActTitle] = useState('');
   const [actDescription, setActDescription] = useState('');
   const [actDate, setActDate] = useState('');
@@ -853,22 +963,52 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-cyber-bg via-cyber-bg/90 to-transparent">
         <div className="max-w-md mx-auto flex justify-between items-center bg-black/80 backdrop-blur-2xl border border-white/10 px-2 py-3 rounded-2xl shadow-[0_-15px_35px_rgba(0,0,0,0.6)]">
-          {availableTabs.map(tab => (
+          {mainModules.map(module => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-1 flex flex-col items-center gap-1 transition-all ${
-                activeTab === tab.id ? 'text-cyber-green scale-110' : 'text-white/30 hover:text-white/50'
+              key={module.id}
+              onClick={() => {
+                let firstTab: any = 'account';
+                if (module.id === 'analytics') {
+                  firstTab = 'fleet';
+                } else if (module.id === 'community') {
+                  firstTab = 'activities';
+                } else if (module.id === 'marketplace') {
+                  firstTab = 'groupBuys';
+                } else if (module.id === 'parking') {
+                  firstTab = 'parking';
+                }
+                setActiveTab(firstTab);
+              }}
+              className={`flex-1 flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                activeModule === module.id ? 'text-cyber-green scale-110' : 'text-white/30 hover:text-white/50'
               }`}
             >
-              <tab.icon size={18} className={activeTab === tab.id ? 'cyber-text-glow' : ''} />
-              <span className="text-[7px] font-mono font-bold uppercase tracking-wider">{tab.label}</span>
+              <module.icon size={18} className={activeModule === module.id ? 'cyber-text-glow' : ''} />
+              <span className="text-[7px] font-mono font-bold uppercase tracking-wider">{module.label}</span>
             </button>
           ))}
         </div>
       </div>
 
       <div className="p-6">
+        {subModules.length > 1 && (
+          <div className="mb-6 flex gap-2 overflow-x-auto pb-3 scrollbar-none border-b border-white/5">
+            {subModules.map(subTab => (
+              <button
+                key={subTab.id}
+                onClick={() => setActiveTab(subTab.id as any)}
+                className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all border whitespace-nowrap cursor-pointer ${
+                  activeTab === subTab.id
+                    ? 'bg-cyber-green text-black border-cyber-green shadow-[0_0_15px_rgba(204,255,0,0.15)]'
+                    : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {subTab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
           {activeTab === 'fleet' && (
             <motion.div
@@ -1355,362 +1495,79 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
 
           {activeTab === 'logs' && (
-            <motion.div
-              key="logs"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-4"
-            >
-              <div className="mb-4">
-                <CyberInput 
-                  placeholder="搜尋車牌或車名 / SEARCH LOGS..." 
-                  value={logSearch} 
-                  onChange={e => setLogSearch(e.target.value)}
-                />
-              </div>
-              {(Object.entries(filteredGroupedLogs) as [string, LogEntry[]][]).map(([plate, logs]) => (
-                <div key={plate} className="space-y-2">
-                  <button 
-                    onClick={() => setExpandedPlate(expandedPlate === plate ? null : plate)}
-                    className="w-full flex items-center justify-between p-4 bg-white/[0.03] border border-white/10 rounded-xl hover:bg-white/[0.05] transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center text-cyber-green font-mono font-bold">
-                        {logs.length}
-                      </div>
-                      <div className="text-left">
-                        <div className="text-sm font-bold text-white">{plate}</div>
-                        <div className="text-[9px] font-mono text-white/30 uppercase tracking-widest">
-                          最後紀錄: {logs[0].date || format(logs[0].timestamp.toDate(), 'yyyy-MM-dd')}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-mono font-bold text-cyber-green">{logs[0].odometer.toLocaleString()} KM</div>
-                      <div className="text-[8px] text-white/20 uppercase font-mono">LATEST ODO</div>
-                    </div>
-                  </button>
-
-                  <AnimatePresence>
-                    {expandedPlate === plate && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden space-y-2 pl-4"
-                      >
-                        {logs.map(log => {
-                          const isEditing = editingLogId === log.id;
-                          return (
-                            <CyberCard key={log.id} className="p-3 bg-white/[0.01]">
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="text-[9px] font-mono text-white/30 uppercase">
-                                  {log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd')} {format(log.timestamp.toDate(), 'HH:mm')}
-                                </div>
-                                <div className="flex gap-1">
-                                  {isEditing ? (
-                                    <button onClick={() => handleUpdateLogAction(log.id, { odometer: editOdometer, cost: editCost })} className="p-1.5 bg-cyber-green text-black rounded transition-transform active:scale-95">
-                                      <Download size={12} />
-                                    </button>
-                                  ) : (
-                                    <button onClick={() => startEdit(log)} className="p-1.5 hover:bg-white/5 text-white/30 rounded transition-colors">
-                                      <Edit3 size={12} />
-                                    </button>
-                                  )}
-                                  <button 
-                                    onClick={() => handleDeleteLogAction(log.id)}
-                                    className="p-1.5 hover:bg-red-500/10 text-red-500/30 rounded transition-colors"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                <div className="text-[10px] font-mono"><span className="opacity-30">里程:</span> {isEditing ? <input type="number" value={editOdometer} onChange={e => setEditOdometer(Number(e.target.value))} className="w-full bg-white/10 rounded px-1 outline-none text-cyber-green" /> : log.odometer}</div>
-                                <div className="text-[10px] font-mono text-cyber-green"><span className="opacity-30 text-white">電量:</span> {log.batteryPercent}%</div>
-                                <div className="text-[10px] font-mono"><span className="opacity-30">費用:</span> {isEditing ? <input type="number" value={editCost} onChange={e => setEditCost(Number(e.target.value))} className="w-full bg-white/10 rounded px-1 outline-none text-cyber-green" /> : `$${log.cost || 0}`}</div>
-                              </div>
-                            </CyberCard>
-                          );
-                        })}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ))}
-            </motion.div>
+            <AdminDataRecords
+              type="logs"
+              userRole={isAdmin ? 'admin' : 'subAdmin'}
+              fleetData={fleetData}
+              isAdmin={isAdmin}
+              onUpdateLog={onUpdateLog}
+              onDeleteLog={onDeleteLog}
+              onDeleteVehicle={onDeleteVehicle}
+              format={format}
+            />
           )}
 
           {activeTab === 'notifications' && (
-            <motion.div
-              key="notifications"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
-            >
-              <h3 className="text-sm font-mono font-bold uppercase tracking-widest text-white/50 mb-6">全體訊息發佈</h3>
-              <CyberCard title="撰寫新訊息" className="border-cyber-green/30">
-                <div className="space-y-4">
-                  <CyberInput 
-                    label="訊息標題" 
-                    value={notifTitle} 
-                    onChange={e => setNotifTitle(e.target.value)} 
-                    placeholder="例如: 系統公告 / SYSTEM NOTICE"
-                  />
-                  <div className="space-y-2">
-                    <label className="text-xs font-mono uppercase text-cyber-green/70 ml-1">訊息內容</label>
-                    <textarea 
-                      value={notifMessage}
-                      onChange={e => setNotifMessage(e.target.value)}
-                      placeholder="請輸入訊息詳情..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50 transition-all min-h-[120px] resize-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-mono uppercase text-cyber-green/70 ml-1">訊息類型</label>
-                    <div className="flex gap-2">
-                      {['info', 'success', 'warning', 'reminder'].map(type => (
-                        <button
-                          key={type}
-                          onClick={() => setNotifType(type as any)}
-                          className={`flex-1 py-2 rounded-lg text-[10px] font-mono font-bold uppercase tracking-widest border transition-all ${
-                            notifType === type 
-                              ? 'bg-cyber-green text-black border-cyber-green' 
-                              : 'bg-white/5 text-white/40 border-white/10 hover:border-white/20'
-                          }`}
-                        >
-                          {type}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="pt-4">
-                    <CyberButton 
-                      onClick={handleSendNotification} 
-                      className="w-full"
-                      disabled={sendingNotif || !notifTitle || !notifMessage}
-                    >
-                      {sendingNotif ? '發佈中...' : '發佈至全體成員 BROADCAST'}
-                    </CyberButton>
-                  </div>
-                </div>
-              </CyberCard>
-
-              {isAdmin && (
-                <div className="pt-4">
-                  <button
-                    onClick={() => {
-                      setConfirmModal({
-                        isOpen: true,
-                        title: '清除全體訊息',
-                        message: '確定要一鍵刪除所有全體系統訊息嗎？此動作無法復原。所有成員將無法再看到這些訊息。\nDELETE ALL BROADCAST MESSAGES? THIS CANNOT BE UNDONE.',
-                        variant: 'danger',
-                        onConfirm: async () => {
-                          await onClearSystemNotifications();
-                          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                        }
-                      });
-                    }}
-                    className="w-full py-4 rounded-xl border border-red-500/30 bg-red-500/5 text-red-500 text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-red-500/10 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Trash2 size={14} />
-                    一鍵清除所有全體系統訊息 / CLEAR ALL BROADCASTS
-                  </button>
-                </div>
-              )}
-
-              <div className="p-10 text-center space-y-4 opacity-40">
-                <p className="text-[10px] font-mono uppercase tracking-[0.2em]">
-                  發佈後，所有成員將會即時收到通知。<br />
-                  BROADCAST MESSAGES ARE SENT TO EVERYONE INSTANTLY.
-                </p>
-              </div>
-            </motion.div>
+            <AdminPushNotification
+              userRole={isAdmin ? 'admin' : 'subAdmin'}
+              setActiveSubTab={(tab) => {
+                if (tab === 'dashboard') {
+                  setActiveTab('fleet');
+                } else {
+                  setActiveTab(tab as any);
+                }
+              }}
+              notifTitle={notifTitle}
+              setNotifTitle={setNotifTitle}
+              notifMessage={notifMessage}
+              setNotifMessage={setNotifMessage}
+              notifType={notifType}
+              setNotifType={setNotifType}
+              sendingNotif={sendingNotif}
+              handleSendNotification={handleSendNotification}
+              isAdmin={isAdmin}
+              onClearSystemNotifications={onClearSystemNotifications}
+              setConfirmModal={setConfirmModal}
+            />
           )}
 
           {activeTab === 'members' && (
-            <motion.div
-              key="members"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
-            >
-              <h3 className="text-sm font-mono font-bold uppercase tracking-widest text-white/50 mb-6">成員管理</h3>
-              <div className="mb-4">
-                <CyberInput 
-                  placeholder="搜尋姓名、電話或電郵 / SEARCH MEMBERS..." 
-                  value={memberSearch} 
-                  onChange={e => {
-                    setMemberSearch(e.target.value);
-                    setMemberPage(1);
-                  }}
-                />
-              </div>
-              {pagedProfiles.map(profile => {
-                const userVehicles = fleetData.vehicles.filter(v => v.userId === profile.id);
-                return (
-                  <CyberCard key={profile.id} className="bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer" onClick={() => setSelectedMember(profile)}>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-                          {profile.photoURL ? (
-                            <img src={profile.photoURL} alt="avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <Users className="text-white/20" size={20} />
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-white flex items-center gap-2">
-                            {profile.displayName && profile.displayName !== '匿名用戶' ? profile.displayName : (profile.phoneNumber || '匿名用戶')}
-                            {profile.role !== 'member' && (
-                              <span className="text-[8px] px-1 bg-cyber-green/20 text-cyber-green border border-cyber-green/30 rounded font-mono uppercase">
-                                {profile.role}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[9px] font-mono text-white/30 uppercase truncate max-w-[150px]">
-                            {profile.email || profile.phoneNumber} • 加入於 {profile.joinedAt ? format(profile.joinedAt.toDate(), 'yyyy-MM-dd') : '未知'}
-                          </div>
-                          <div className="flex gap-2 mt-1">
-                            {userVehicles.map(v => (
-                              <span key={v.id} className="text-[8px] px-1 bg-cyber-green/10 text-cyber-green border border-cyber-green/20 rounded font-mono">
-                                {v.plate}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right" onClick={e => e.stopPropagation()}>
-                        <select 
-                          value={profile.role}
-                          disabled={!isAdmin}
-                          onChange={(e) => onUpdateMemberRole(profile.id, e.target.value)}
-                          className={`bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] font-mono text-cyber-green outline-none focus:border-cyber-green/50 ${!isAdmin ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                          <option value="member" className="bg-[#121212]">會員</option>
-                          <option value="sub-admin" className="bg-[#121212]">次管理員</option>
-                          <option value="admin" className="bg-[#121212]">管理員</option>
-                        </select>
-                      </div>
-                    </div>
-                  </CyberCard>
-                );
-              })}
-
-              {sortedProfiles.length > MEMBERS_PER_PAGE && (
-                <div className="flex justify-between items-center pt-4">
-                  <button 
-                    onClick={() => {
-                      setMemberPage(p => Math.max(1, p - 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    disabled={memberPage === 1}
-                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
-                  >
-                    PREV
-                  </button>
-                  <span className="text-[10px] font-mono text-white/20">PAGE {memberPage} / {Math.ceil(sortedProfiles.length / MEMBERS_PER_PAGE)}</span>
-                  <button 
-                    onClick={() => {
-                      setMemberPage(p => Math.min(Math.ceil(sortedProfiles.length / MEMBERS_PER_PAGE), p + 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    disabled={memberPage === Math.ceil(sortedProfiles.length / MEMBERS_PER_PAGE)}
-                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
-                  >
-                    NEXT
-                  </button>
-                </div>
-              )}
-            </motion.div>
+            <AdminMemberApproval
+              userRole={isAdmin ? 'admin' : 'subAdmin'}
+              setActiveSubTab={(tab) => {
+                if (tab === 'dashboard') {
+                  setActiveTab('fleet');
+                } else {
+                  setActiveTab(tab as any);
+                }
+              }}
+              memberSearch={memberSearch}
+              setMemberSearch={setMemberSearch}
+              memberPage={memberPage}
+              setMemberPage={setMemberPage}
+              MEMBERS_PER_PAGE={MEMBERS_PER_PAGE}
+              sortedProfiles={sortedProfiles}
+              pagedProfiles={pagedProfiles}
+              vehicles={fleetData.vehicles}
+              setSelectedMember={setSelectedMember}
+              isAdmin={isAdmin}
+              onUpdateMemberRole={onUpdateMemberRole}
+              onDeleteMember={onDeleteMember}
+              format={format}
+            />
           )}
 
           {activeTab === 'vehicles' && (
-            <motion.div
-              key="vehicles"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-4"
-            >
-              <div className="mb-4">
-                <CyberInput 
-                  placeholder="搜尋車牌、品牌或型號 / SEARCH VEHICLES..." 
-                  value={vehicleSearch} 
-                  onChange={e => {
-                    setVehicleSearch(e.target.value);
-                    setVehiclePage(1);
-                  }}
-                />
-              </div>
-
-              {pagedVehicles.map(v => (
-                <CyberCard key={v.id} className="p-4 bg-white/[0.02]">
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center text-cyber-green">
-                        <Car size={18} />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-white">{v.name}</div>
-                        <div className="text-[9px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
-                          {v.brand} {v.model} • {v.plate || '尚未設定車牌'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="mb-4 flex items-center justify-end gap-2">
-                        <div className="text-right">
-                          <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono">擁有者 ID</div>
-                          <div className="text-[10px] font-mono text-white/40">{v.userId.slice(0, 12)}...</div>
-                        </div>
-                        {isAdmin && (
-                          <button 
-                            onClick={() => handleDeleteVehicle(v.id)}
-                            className="p-2 text-red-500/20 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[8px] uppercase tracking-widest text-white/20 font-mono mb-1">同步狀態</div>
-                        <div className="text-[10px] font-mono text-cyber-green flex items-center gap-1 justify-end">
-                          <CheckCircle2 size={10} /> 雲端同步
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CyberCard>
-              ))}
-
-              {filteredVehicles.length > VEHICLES_PER_PAGE && (
-                <div className="flex justify-between items-center pt-4">
-                  <button 
-                    onClick={() => {
-                      setVehiclePage(p => Math.max(1, p - 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    disabled={vehiclePage === 1}
-                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
-                  >
-                    PREV
-                  </button>
-                  <span className="text-[10px] font-mono text-white/20">PAGE {vehiclePage} / {Math.ceil(filteredVehicles.length / VEHICLES_PER_PAGE)}</span>
-                  <button 
-                    onClick={() => {
-                      setVehiclePage(p => Math.min(Math.ceil(filteredVehicles.length / VEHICLES_PER_PAGE), p + 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    disabled={vehiclePage === Math.ceil(filteredVehicles.length / VEHICLES_PER_PAGE)}
-                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/40 disabled:opacity-30"
-                  >
-                    NEXT
-                  </button>
-                </div>
-              )}
-            </motion.div>
+            <AdminDataRecords
+              type="vehicles"
+              userRole={isAdmin ? 'admin' : 'subAdmin'}
+              fleetData={fleetData}
+              isAdmin={isAdmin}
+              onUpdateLog={onUpdateLog}
+              onDeleteLog={onDeleteLog}
+              onDeleteVehicle={onDeleteVehicle}
+              format={format}
+            />
           )}
 
           {activeTab === 'account' && userProfile && (
@@ -1794,6 +1651,41 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <span className="text-white/60">{userProfile.id.slice(0, 16)}...</span>
                 </div>
               </CyberCard>
+            </motion.div>
+          )}
+
+          {activeTab === 'groupBuys' && (
+            <motion.div
+              key="groupBuys"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <AdminGroupBuy 
+                groupBuys={groupBuys}
+                onAddGroupBuy={onAddGroupBuy}
+                onUpdateGroupBuy={onUpdateGroupBuy}
+                onDeleteGroupBuy={onDeleteGroupBuy}
+                isSubAdmin={isSubAdmin}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === 'clubPerks' && (
+            <motion.div
+              key="clubPerks"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <AdminPerks 
+                clubPerks={clubPerks}
+                onAddPerk={onAddPerk}
+                onUpdatePerk={onUpdatePerk}
+                onDeletePerk={onDeletePerk}
+              />
             </motion.div>
           )}
         </AnimatePresence>

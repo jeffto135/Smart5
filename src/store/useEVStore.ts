@@ -1667,6 +1667,7 @@ export function useEVStore() {
         userId: 'all',
         title: '新團購市集上架 / NEW GROUP BUY',
         message: `官方團購「${data.title}」今日正式成立！立即前往認購！`,
+        type: 'groupBuy',
         relatedId: docRef.id,
         relatedType: 'groupBuy',
         createdAt: serverTimestamp(),
@@ -1714,6 +1715,10 @@ export function useEVStore() {
         discountDetail: data.discountDetail,
         contact: data.contact,
         expiryDate: data.expiryDate || '',
+        originalPrice: data.originalPrice !== undefined ? data.originalPrice : null,
+        discountPrice: data.discountPrice !== undefined ? data.discountPrice : null,
+        address: data.address || '',
+        googleMapsUrl: data.googleMapsUrl || '',
         createdAt: serverTimestamp(),
       });
       return docRef.id;

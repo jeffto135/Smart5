@@ -164,7 +164,7 @@ export interface EVNotification {
   userId: string; // "all" for broadcast or specific UID
   title: string;
   message: string;
-  type: 'info' | 'success' | 'alert' | 'reminder';
+  type: 'info' | 'success' | 'alert' | 'reminder' | 'groupBuy' | 'poll' | 'activity';
   relatedId?: string;
   relatedType?: 'activity' | 'poll' | 'groupBuy';
   createdAt: Timestamp;
@@ -202,6 +202,10 @@ export interface ClubPerk {
   discountDetail: string;
   contact: string;
   expiryDate?: string;
+  originalPrice?: number | null;
+  discountPrice?: number;
+  address?: string;
+  googleMapsUrl?: string;
   createdAt: any;
 }
 
