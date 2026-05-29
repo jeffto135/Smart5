@@ -80,6 +80,7 @@ interface AdminPanelProps {
   onUpdatePoll: (id: string, data: Partial<Poll>) => Promise<void>;
   onDeletePoll: (id: string) => Promise<void>;
   onUpdateMemberRole: (userId: string, role: string) => Promise<void>;
+  onUpdateMemberPlate?: (userId: string, plate: string) => Promise<void>;
   onDeleteMember: (userId: string) => Promise<void>;
   onClearActivities: () => Promise<void>;
   onClearPolls: () => Promise<void>;
@@ -126,6 +127,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdatePoll,
   onDeletePoll,
   onUpdateMemberRole,
+  onUpdateMemberPlate,
   onDeleteMember,
   onClearActivities,
   onClearPolls,
@@ -1566,6 +1568,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               setSelectedMember={setSelectedMember}
               isAdmin={isAdmin}
               onUpdateMemberRole={onUpdateMemberRole}
+              onUpdateMemberPlate={onUpdateMemberPlate}
               onDeleteMember={onDeleteMember}
               format={format}
             />
@@ -1682,6 +1685,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 onUpdateGroupBuy={onUpdateGroupBuy}
                 onDeleteGroupBuy={onDeleteGroupBuy}
                 isSubAdmin={isSubAdmin}
+                allProfiles={allProfiles}
               />
             </motion.div>
           )}

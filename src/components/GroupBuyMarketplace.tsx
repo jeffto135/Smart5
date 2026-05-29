@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, Plus, Minus, Tag, Clock, Check, AlertTriangle, Users, CheckCircle, ShoppingBag, CheckCircle2 } from 'lucide-react';
 import { GroupBuy } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,6 +15,8 @@ interface GroupBuyMarketplaceProps {
   onUpdateGroupBuy?: (id: string, data: Partial<GroupBuy>) => Promise<void>;
   onDeleteGroupBuy?: (id: string) => Promise<void>;
   onClose: () => void;
+  initialTargetId?: string | null;
+  onClearTargetId?: () => void;
 }
 
 export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
@@ -22,12 +24,37 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
   userId,
   userEmail,
   onRegister,
-  onClose
+  onClose,
+  initialTargetId,
+  onClearTargetId
 }) => {
   // Modal State for user subscription
   const [selectedGb, setSelectedGb] = useState<GroupBuy | null>(null);
   const [qty, setQty] = useState<number>(1);
   const [regLoading, setRegLoading] = useState(false);
+  const [modalMessage, setModalMessage] = useState<string | null>(null);
+
+  // Compute active group buys (non-deleted)
+  const activeGroupBuys = useMemo(() => {
+    return groupBuys.filter(gb => gb.status !== 'deleted');
+  }, [groupBuys]);
+
+  // Handle pre-selected target ID from notifications or direct jumps
+  useEffect(() => {
+    if (initialTargetId) {
+      // Find within all groupBuys (since we check deleted/status, we want to know if it existed but was soft-deleted)
+      const gb = groupBuys.find(g => g.id === initialTargetId);
+      if (!gb || gb.status === 'deleted') {
+        const errorMsg = "🔒 提示：本團購項目已被管理團隊調整下架或取消，請留意車會最新群發消息。";
+        setModalMessage(errorMsg);
+      } else {
+        handleOpenRegisterModal(gb);
+      }
+      if (onClearTargetId) {
+        onClearTargetId();
+      }
+    }
+  }, [initialTargetId, groupBuys]);
 
   // Compute remaining slots for selected Group Buy inside modal
   const otherUsersQty = useMemo(() => {
@@ -97,7 +124,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
       </div>
 
       {/* Main List Grid */}
-      {groupBuys.length === 0 ? (
+      {activeGroupBuys.length === 0 ? (
         <div className="text-center py-20 opacity-30 font-mono text-sm uppercase tracking-widest border border-white/5 rounded-2xl bg-white/[0.01]">
           目前暫時沒有進行中的官方團購項目
           <br />
@@ -105,7 +132,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
         </div>
       ) : (
         <div className="space-y-8">
-          {groupBuys.map((gb) => {
+          {activeGroupBuys.map((gb) => {
             // Calculate total registered item quantities
             const totalQty = (gb.currentRegistrations || []).reduce((acc, current) => acc + current.qty, 0);
             const percentage = Math.round((totalQty / gb.targetQuantity) * 100);
@@ -493,6 +520,43 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                   >
                     {regLoading ? '處理中...' : qty === 0 ? '取消認購 / REMOVE' : '確定認購 / SUBMIT'}
                   </CyberButton>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🔴 Ghost Notification Foolproof Conditions Modal Message (黑綠科技風格 / CYBERPUNK CHIC ALERT) */}
+      <AnimatePresence>
+        {modalMessage && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md bg-[#0d0f12] border-2 border-cyber-green rounded-2xl p-6 shadow-[0_0_35px_rgba(163,230,21,0.2)] relative overflow-hidden text-white"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyber-green via-emerald-500 to-cyber-green" />
+              
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 text-cyber-green">
+                  <AlertTriangle size={24} className="animate-pulse" />
+                  <h4 className="font-mono font-bold uppercase tracking-wider text-sm">系統與安全傳輸提示 / SYSTEM ALERT</h4>
+                </div>
+
+                <div className="p-4 rounded-xl bg-black/50 border border-cyber-green/20 text-[#A3E635] font-mono text-xs leading-relaxed">
+                  {modalMessage}
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setModalMessage(null)}
+                    className="px-5 py-2 bg-cyber-green hover:bg-[#aefd2f] active:brightness-90 text-black font-mono font-black text-xs rounded-xl transition-all shadow-[0_0_20px_rgba(163,230,21,0.3)] tracking-widest cursor-pointer"
+                  >
+                    讀取確認 / CONFIRM
+                  </button>
                 </div>
               </div>
             </motion.div>

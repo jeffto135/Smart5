@@ -93,7 +93,6 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         const anyBeforeQ = query(
           collection(db, 'vehicleLogs'),
           where('userId', '==', vehicle.userId),
-          where('plateNumber', '==', vehicle.plate),
           limit(1)
         );
         const anyBeforeSnap = await getDocs(anyBeforeQ);
@@ -111,7 +110,6 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({ vehicle, logs, onSav
         const q = query(
           collection(db, 'vehicleLogs'),
           where('userId', '==', vehicle.userId),
-          where('plateNumber', '==', vehicle.plate),
           where('date', '<', timestamp),
           orderBy('date', 'desc'),
           limit(1)

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Users } from 'lucide-react';
 import { UserProfile, Vehicle } from '../types';
@@ -19,6 +19,7 @@ interface AdminMemberApprovalProps {
   setSelectedMember: (p: UserProfile | null) => void;
   isAdmin: boolean;
   onUpdateMemberRole: (id: string, role: string) => Promise<void>;
+  onUpdateMemberPlate?: (id: string, plate: string) => Promise<void>;
   onDeleteMember: (id: string) => Promise<void>;
   format: (date: Date, pattern: string) => string;
 }
@@ -37,9 +38,39 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
   setSelectedMember,
   isAdmin,
   onUpdateMemberRole,
+  onUpdateMemberPlate,
   onDeleteMember,
   format
 }) => {
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingPlateValue, setEditingPlateValue] = useState<string>('');
+  const [isPlateSaving, setIsPlateSaving] = useState(false);
+
+  const startEditPlate = (userId: string, currentPlate: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isAdmin) return;
+    setEditingUserId(userId);
+    setEditingPlateValue(currentPlate);
+  };
+
+  const handleSavePlate = async (userId: string) => {
+    if (!editingPlateValue.trim()) {
+      setEditingUserId(null);
+      return;
+    }
+    setIsPlateSaving(true);
+    try {
+      if (onUpdateMemberPlate) {
+        await onUpdateMemberPlate(userId, editingPlateValue.trim().toUpperCase());
+      }
+      setEditingUserId(null);
+    } catch (err: any) {
+      alert("修改車牌出錯: " + err.message);
+    } finally {
+      setIsPlateSaving(false);
+    }
+  };
+
   // 🟢 雙重防線：若明確「不是最高管理員」嘗試加載此敏感組件，直接安全阻斷並強制跳轉
   useEffect(() => {
     if (userRole !== 'admin') {
@@ -100,13 +131,58 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
                   <div className="text-[9px] font-mono text-white/30 uppercase truncate max-w-[150px]">
                     {profile.email || profile.phoneNumber} • 加入於 {profile.joinedAt ? format(profile.joinedAt.toDate(), 'yyyy-MM-dd') : '未知'}
                   </div>
-                  <div className="flex gap-2 mt-1">
-                    {userVehicles.map(v => (
-                      <span key={v.id} className="text-[8px] px-1 bg-cyber-green/10 text-cyber-green border border-cyber-green/20 rounded font-mono">
-                        {v.plate}
-                      </span>
-                    ))}
-                  </div>
+                  {editingUserId === profile.id ? (
+                    <div className="mt-1 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={editingPlateValue}
+                        onChange={(e) => setEditingPlateValue(e.target.value)}
+                        onBlur={() => handleSavePlate(profile.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSavePlate(profile.id);
+                          } else if (e.key === 'Escape') {
+                            setEditingUserId(null);
+                          }
+                        }}
+                        autoFocus
+                        disabled={isPlateSaving}
+                        className="bg-black border border-cyber-green/50 rounded px-1.5 py-0.5 text-[10px] font-mono text-cyber-green w-24 outline-none uppercase"
+                      />
+                      {isPlateSaving && <span className="text-[8px] font-mono text-cyber-green animate-pulse">SAVING...</span>}
+                    </div>
+                  ) : (
+                    <div 
+                      className="flex gap-2 mt-1 flex-wrap cursor-pointer items-center" 
+                      title={isAdmin ? "雙擊修改車牌 / Double-click to edit plate" : ""}
+                      onDoubleClick={(e) => {
+                        if (isAdmin) {
+                          const currentPlate = userVehicles[0]?.plate || profile.plate || '';
+                          startEditPlate(profile.id, currentPlate, e);
+                        }
+                      }}
+                    >
+                      {userVehicles.length > 0 ? (
+                        userVehicles.map(v => (
+                          <span 
+                            key={v.id} 
+                            className="text-[8px] px-1.5 py-0.5 bg-cyber-green/10 hover:bg-cyber-green/20 text-cyber-green border border-cyber-green/20 rounded font-mono select-none transition-colors"
+                          >
+                            {v.plate}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[8px] px-1.5 py-0.5 bg-white/5 text-white/30 border border-white/10 rounded font-mono select-none">
+                          {profile.plate || '尚未配對車牌'}
+                        </span>
+                      )}
+                      {isAdmin && (
+                        <span className="text-[8px] text-white/20 self-center font-mono hover:text-cyber-green transition-colors pl-1">
+                          (雙擊修改)
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>

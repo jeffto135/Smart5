@@ -40,6 +40,7 @@ export default function App() {
   const [showUserAgreement, setShowUserAgreement] = useState(false);
   const [catchUpData, setCatchUpData] = useState<any>(null);
   
+  const [targetGroupBuyId, setTargetGroupBuyId] = useState<string | null>(null);
   const [activeWeatherWarnings, setActiveWeatherWarnings] = useState<string[]>([]);
   
   const [confirmModal, setConfirmModal] = useState<{
@@ -386,6 +387,7 @@ export default function App() {
         onUpdatePoll={evStore.updatePoll}
         onDeletePoll={evStore.deletePoll}
         onUpdateMemberRole={evStore.updateMemberRole}
+        onUpdateMemberPlate={evStore.adminUpdateMemberPlate}
         onDeleteMember={evStore.deleteMember}
         onClearActivities={evStore.clearAllActivities}
         onClearPolls={evStore.clearAllPolls}
@@ -654,6 +656,8 @@ export default function App() {
                 onUpdateGroupBuy={evStore.updateGroupBuy}
                 onDeleteGroupBuy={evStore.deleteGroupBuy}
                 onClose={() => setView('dashboard')}
+                initialTargetId={targetGroupBuyId}
+                onClearTargetId={() => setTargetGroupBuyId(null)}
               />
             </motion.div>
           ) : view === 'clubPerks' ? (
@@ -701,7 +705,9 @@ export default function App() {
                 onDeleteAll={evStore.clearAllNotifications}
                 onNavigate={(view, id) => {
                   setView(view as any);
-                  // Optionally select the item if needed, but for now just navigate
+                  if (view === 'groupBuy' && id) {
+                    setTargetGroupBuyId(id);
+                  }
                 }}
               />
             </motion.div>

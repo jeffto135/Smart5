@@ -467,7 +467,6 @@ export function useEVStore() {
     const q = query(
       collection(db, 'vehicleLogs'),
       where('userId', '==', vehicle.userId),
-      where('plateNumber', '==', vehicle.plate),
       orderBy('date', 'desc'),
       limit(50)
     );
@@ -481,7 +480,7 @@ export function useEVStore() {
     });
 
     return () => unsubscribe();
-  }, [vehicle?.plate, auth.currentUser?.uid]);
+  }, [vehicle?.id, vehicle?.userId, auth.currentUser?.uid]);
 
   const addVehicle = async (data: Partial<Vehicle>) => {
     if (!auth.currentUser) return;
@@ -517,8 +516,7 @@ export function useEVStore() {
       const logsRef = collection(db, 'vehicleLogs');
       const q = query(
         logsRef,
-        where('userId', '==', userId),
-        where('plateNumber', '==', plateNumber)
+        where('userId', '==', userId)
       );
 
       let snap;
@@ -1637,6 +1635,49 @@ export function useEVStore() {
     }
   };
 
+  const adminUpdateMemberPlate = async (userId: string, newPlate: string) => {
+    if (!isAdmin) {
+      throw new Error("權限不足：僅限最高管理員執行此動作 / UNAUTHORIZED");
+    }
+    try {
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+
+      // 1. Update user profile plate
+      const profileRef = doc(db, 'userProfiles', userId);
+      batch.update(profileRef, {
+        plate: newPlate,
+        updatedAt: serverTimestamp()
+      });
+
+      // 2. Fetch and update matching vehicle document(s) in vehicles collection
+      const vehiclesSnap = await getDocs(
+        query(collection(db, 'vehicles'), where('userId', '==', userId))
+      );
+      
+      vehiclesSnap.forEach((vDoc) => {
+        batch.update(vDoc.ref, {
+          plate: newPlate
+        });
+      });
+
+      await batch.commit();
+
+      // 📝 Audit log tracing
+      const profile = allProfiles.find(p => p.id === userId);
+      const oldPlate = profile?.plate || '未知車牌';
+      const operatorRole = 'admin';
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(operator, 'UPDATE_MEMBER_PLATE', 'userProfiles', `管理員修改了成員 ${profile?.displayName || userId} 的車牌從 ${oldPlate} 到 ${newPlate}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'userProfiles');
+    }
+  };
+
   const deleteMember = async (userId: string) => {
     if (!isAdmin) return;
     try {
@@ -1740,10 +1781,33 @@ export function useEVStore() {
     }
   };
 
-  const deleteGroupBuy = async (id: string) => {
+  const deleteGroupBuy = async (id: string, hardClean: boolean = false) => {
     if (!isSubAdmin) return;
     try {
-      await deleteDoc(doc(db, 'groupBuys', id));
+      const existingGb = groupBuys.find(g => g.id === id);
+      const title = existingGb?.title || '';
+
+      if (hardClean) {
+        await deleteDoc(doc(db, 'groupBuys', id));
+        // Method B: 連帶清理 notifications
+        const q = query(collection(db, "notifications"), where("relatedId", "==", id));
+        const querySnapshot = await getDocs(q);
+        for (const docSnap of querySnapshot.docs) {
+          await deleteDoc(doc(db, "notifications", docSnap.id));
+        }
+      } else {
+        // Method A: 軟刪除
+        await updateDoc(doc(db, 'groupBuys', id), { status: 'deleted' });
+      }
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(operator, 'DELETE_GROUP_BUY', 'groupBuys', `下架/刪除了團購項目（採用${hardClean ? '物理強刪 + 通知連帶清理' : '狀態軟刪除'}）：` + title);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'groupBuys');
     }
@@ -1957,6 +2021,7 @@ export function useEVStore() {
     deleteNotification,
     clearAllNotifications,
     updateMemberRole,
+    adminUpdateMemberPlate,
     deleteMember,
     clearAllActivities,
     clearAllPolls,

@@ -17,7 +17,7 @@ import {
   Calendar,
   AlertTriangle
 } from 'lucide-react';
-import { GroupBuy } from '../types';
+import { GroupBuy, UserProfile } from '../types';
 import { CyberCard } from './ui/CyberCard';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
@@ -26,8 +26,9 @@ interface AdminGroupBuyProps {
   groupBuys: GroupBuy[];
   onAddGroupBuy: (data: Partial<GroupBuy>) => Promise<any>;
   onUpdateGroupBuy: (id: string, data: Partial<GroupBuy>) => Promise<void>;
-  onDeleteGroupBuy: (id: string) => Promise<void>;
+  onDeleteGroupBuy: (id: string, hardClean?: boolean) => Promise<void>;
   isSubAdmin: boolean;
+  allProfiles?: UserProfile[];
 }
 
 export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
@@ -35,11 +36,14 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
   onAddGroupBuy,
   onUpdateGroupBuy,
   onDeleteGroupBuy,
-  isSubAdmin
+  isSubAdmin,
+  allProfiles = []
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGbId, setEditingGbId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteConfirmGb, setDeleteConfirmGb] = useState<{ id: string; title: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Form Fields
   const [title, setTitle] = useState('');
@@ -64,6 +68,10 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
     const minutes = String(now.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   }, []);
+
+  const visibleGroupBuys = useMemo(() => {
+    return groupBuys.filter(gb => gb.status !== 'deleted');
+  }, [groupBuys]);
 
   const handleOpenAdd = () => {
     setEditingGbId(null);
@@ -176,15 +184,8 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (window.confirm(`確定要刪除「${name}」團購項目嗎？此操作不可逆，將會抹除所有已登記車友的記錄！`)) {
-      try {
-        await onDeleteGroupBuy(id);
-        alert('刪除成功 / DELETED');
-      } catch (err: any) {
-        alert('刪除失敗: ' + (err.message || '未知錯誤'));
-      }
-    }
+  const handleDelete = (id: string, name: string) => {
+    setDeleteConfirmGb({ id, title: name });
   };
 
   const handleToggleStatus = async (id: string, currentStatus: string) => {
@@ -210,13 +211,13 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
         </CyberButton>
       </div>
 
-      {groupBuys.length === 0 ? (
+      {visibleGroupBuys.length === 0 ? (
         <div className="text-center py-20 opacity-30 font-mono text-sm uppercase tracking-widest border border-white/5 bg-white/[0.01] rounded-2xl">
           目前暫無團購數據 / NO GROUP BUYS
         </div>
       ) : (
         <div className="space-y-4">
-          {groupBuys.map((gb) => {
+          {visibleGroupBuys.map((gb) => {
             const totalQty = (gb.currentRegistrations || []).reduce((acc, curr) => acc + curr.qty, 0);
             const percentage = Math.round((totalQty / gb.targetQuantity) * 100);
             const isClosed = gb.status === 'closed';
@@ -329,20 +330,38 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                           <thead>
                             <tr className="border-b border-white/10 text-[9px] text-white/40 uppercase">
                               <th className="pb-1 text-center w-8">#</th>
-                              <th className="pb-1">聯絡信箱 / EMAIL</th>
+                              <th className="pb-1">👤 車友資訊 / MEMBER INFO (暱稱 • 車牌 • 手提)</th>
                               <th className="pb-1 text-center w-20">認購數 / QTY</th>
                               <th className="pb-1 text-right w-24">小計 / SUBTOTAL</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {gb.currentRegistrations.map((reg, index) => (
-                              <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                <td className="py-1.5 text-center text-white/30">{index + 1}</td>
-                                <td className="py-1.5 text-white/80 select-all">{reg.email || '未知信箱'}</td>
-                                <td className="py-1.5 text-center font-bold text-cyber-green">{reg.qty}</td>
-                                <td className="py-1.5 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
-                              </tr>
-                            ))}
+                            {gb.currentRegistrations.map((reg, index) => {
+                              const profile = (allProfiles || []).find(p => p.id === reg.userId);
+                              const displayName = profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶';
+                              const mobile = profile?.mobile || profile?.phone || profile?.phoneNumber || '-- (未填寫)';
+                              const plateNumber = profile?.plate;
+                              return (
+                                <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                  <td className="py-1.5 text-center text-white/30">{index + 1}</td>
+                                  <td className="py-1.5 select-all">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-white font-semibold">{displayName}</span>
+                                        {plateNumber && (
+                                          <span className="text-[8px] tracking-wider px-1 py-0.5 bg-cyber-green/10 text-cyber-green border border-cyber-green/20 rounded font-mono font-bold">
+                                            {plateNumber}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-white/40 text-[10px]">({mobile})</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-1.5 text-center font-bold text-cyber-green">{reg.qty}</td>
+                                  <td className="py-1.5 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -491,6 +510,101 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🟢 Deletion Dual-Track Dialog (軟刪除 vs 物理強刪) */}
+      <AnimatePresence>
+        {deleteConfirmGb && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md p-6 bg-[#161616] border border-red-500/30 rounded-2xl shadow-2xl relative overflow-hidden text-white"
+            >
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-amber-500" />
+              
+              <div className="flex gap-3 text-red-400 mb-4">
+                <AlertTriangle size={24} className="shrink-0" />
+                <div>
+                  <h4 className="font-mono font-bold tracking-wider text-sm uppercase">確認刪除團購項目？</h4>
+                  <p className="text-white/80 font-mono text-xs mt-1">項目：{deleteConfirmGb.title}</p>
+                </div>
+              </div>
+
+              <p className="text-white/65 font-mono text-[11px] leading-relaxed mb-6">
+                請選擇刪除策略。基於系統各板塊聯動完整性，建議採用狀態軟刪除：
+              </p>
+
+              <div className="space-y-3">
+                {/* Method A: Soft Delete */}
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    setIsDeleting(true);
+                    try {
+                      await onDeleteGroupBuy(deleteConfirmGb.id, false);
+                      alert('軟刪除成功！該項目已下架並於前台隱藏，歷史記錄得以保留。');
+                      setDeleteConfirmGb(null);
+                    } catch (err: any) {
+                      alert('刪除失敗: ' + (err.message || '未知錯誤'));
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                  className="w-full p-3 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 border border-amber-500/30 rounded-xl transition-all text-xs font-mono text-left text-amber-300 flex flex-col cursor-pointer"
+                >
+                  <span className="font-bold flex items-center gap-1.5 text-amber-400">
+                    🛡️ 方式 A：狀態軟刪除 (推薦)
+                  </span>
+                  <span className="text-[10px] text-white/50 mt-1">
+                    將狀態更新為 "deleted"。前台與本頁面完全隱藏此項目，但能保留已認購車友的所有數據。
+                  </span>
+                </button>
+
+                {/* Method B: Hard Delete with Cascade Cleanup */}
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    if (window.confirm("❗警告：物理強刪將會徹底抹除資料庫中的團購文件，並強制清理所有關聯的通知。此操作不可撤回！確定要繼續嗎？")) {
+                      setIsDeleting(true);
+                      try {
+                        await onDeleteGroupBuy(deleteConfirmGb.id, true);
+                        alert('物理強刪成功！團購項目已徹底清理，關聯通知已全數撤回。');
+                        setDeleteConfirmGb(null);
+                      } catch (err: any) {
+                        alert('刪除失敗: ' + (err.message || '未知錯誤'));
+                      } finally {
+                        setIsDeleting(false);
+                      }
+                    }
+                  }}
+                  className="w-full p-3 bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 border border-red-500/30 rounded-xl transition-all text-xs font-mono text-left text-red-300 flex flex-col cursor-pointer"
+                >
+                  <span className="font-bold flex items-center gap-1.5 text-red-400">
+                    🔥 方式 B：物理強刪 + 通知撤回 (強力清理)
+                  </span>
+                  <span className="text-[10px] text-white/50 mt-1">
+                    自資料庫硬性刪除此 document，並同步清理所有 relatedId 為此團購 ID 的推播通知。
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setDeleteConfirmGb(null)}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/10 rounded-lg text-xs font-mono text-white/80 transition-all cursor-pointer"
+                >
+                  取消 / CANCEL
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

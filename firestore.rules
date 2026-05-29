@@ -139,7 +139,7 @@ service cloud.firestore {
              data.price is number && data.price >= 0 &&
              data.targetQuantity is number && data.targetQuantity >= 1 &&
              data.currentRegistrations is list &&
-             data.status in ['active', 'closed'] &&
+             data.status in ['active', 'closed', 'deleted'] &&
              (data.minQuantity is number || data.minQuantity == null || !data.keys().hasAll(['minQuantity'])) &&
              (data.maxQuantity is number || data.maxQuantity == null || !data.keys().hasAll(['maxQuantity'])) &&
              (data.endDate is timestamp || data.endDate == null || !data.keys().hasAll(['endDate'])) &&
