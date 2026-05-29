@@ -74,6 +74,9 @@ export interface Activity {
   participants: string[]; // UID array
   status: 'open' | 'closed';
   createdAt: Timestamp;
+  hasCustomOptions?: boolean;
+  customOptionsTitle?: string;
+  customOptionsTemplate?: string[];
 }
 
 export interface ActivityRegistration {
@@ -87,6 +90,7 @@ export interface ActivityRegistration {
   status: 'registered' | 'cancelled';
   cancelReason?: string;
   lockoutUntil?: Timestamp;
+  selectedOption?: string;
 }
 
 export interface Feedback {

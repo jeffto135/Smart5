@@ -976,7 +976,7 @@ export function useEVStore() {
     }
   };
 
-  const registerForActivity = async (id: string, plate?: string) => {
+  const registerForActivity = async (id: string, plate?: string, selectedOption?: string) => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
     const activity = activities.find(a => a.id === id);
@@ -1022,7 +1022,8 @@ export function useEVStore() {
         plateNumber: plate || '未知',
         qrCodeUsed: false,
         attended: false,
-        status: 'registered'
+        status: 'registered',
+        selectedOption: selectedOption || ''
       };
 
       await Promise.all([

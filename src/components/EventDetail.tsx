@@ -19,7 +19,7 @@ interface EventDetailProps {
   isSubAdmin?: boolean;
   userId: string;
   onClose: () => void;
-  onRegister: (plate: string) => Promise<void>;
+  onRegister: (plate: string, selectedOption?: string) => Promise<void>;
   onCancelRegistration: (eventId: string, reason: string) => Promise<void>;
   onAdminRestore?: (eventId: string, userId: string) => Promise<void>;
   onDeleteRegistration?: (regId: string, userId: string, eventId: string) => Promise<void>;
@@ -46,6 +46,15 @@ export const EventDetail: React.FC<EventDetailProps> = ({
   const [cancelReason, setCancelReason] = React.useState('');
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [isActionLoading, setIsActionLoading] = React.useState(false);
+  const [userSelectedOption, setUserSelectedOption] = React.useState('');
+
+  React.useEffect(() => {
+    if (activity.hasCustomOptions && activity.customOptionsTemplate && activity.customOptionsTemplate.length > 0) {
+      setUserSelectedOption(activity.customOptionsTemplate[0]);
+    } else {
+      setUserSelectedOption('');
+    }
+  }, [activity, showJoinConfirm]);
   
   const isRegistered = activity.participants.includes(userId);
   const isFull = activity.participants.length >= activity.limit;
@@ -112,7 +121,7 @@ export const EventDetail: React.FC<EventDetailProps> = ({
   const handleRegister = async () => {
     setIsActionLoading(true);
     try {
-      await onRegister(userProfile?.plate || '');
+      await onRegister(userProfile?.plate || '', userSelectedOption);
       setShowJoinConfirm(false);
     } catch (error: any) {
       alert(error.message);
@@ -487,6 +496,34 @@ export const EventDetail: React.FC<EventDetailProps> = ({
         onCancel={() => setShowJoinConfirm(false)}
       >
         <div className="space-y-4">
+          {activity.hasCustomOptions && activity.customOptionsTemplate && activity.customOptionsTemplate.length > 0 && (
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3 font-sans">
+              <div>
+                <label className="text-xs font-mono font-bold text-cyber-green uppercase block">
+                  📋 {activity.customOptionsTitle || '自訂報名選項 / OPTIONS'}
+                </label>
+                <span className="text-[10px] text-white/40 font-mono">此問卷選項為活動管理員要求，報名後不可變更</span>
+              </div>
+              <div className="space-y-2">
+                {activity.customOptionsTemplate.map((opt, idx) => (
+                  <label 
+                    key={idx} 
+                    className="flex items-start gap-3 p-3 rounded-lg border border-white/10 hover:border-cyber-green/30 bg-white/[0.02] cursor-pointer transition-all select-none"
+                  >
+                    <input 
+                      type="radio" 
+                      name="custom-option" 
+                      value={opt} 
+                      checked={userSelectedOption === opt} 
+                      onChange={() => setUserSelectedOption(opt)} 
+                      className="mt-1 accent-cyber-green"
+                    />
+                    <span className="text-xs text-white/80 font-sans leading-relaxed">{opt}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="p-4 rounded-xl bg-cyber-green/[0.03] border border-cyber-green/20">
              <p className="text-sm text-cyber-green font-bold leading-relaxed mb-2 font-sans italic">
                ⚠️ 請仔細考慮才報名：

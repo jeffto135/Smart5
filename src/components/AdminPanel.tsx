@@ -56,6 +56,8 @@ import { AdminAuditLogs } from './AdminAuditLogs';
 import { Vehicle, LogEntry, Activity, Poll, UserProfile, ParkingLot, ActivityRegistration, GroupBuy, ClubPerk } from '../types';
 import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 
 const COLORS = ['#CCFF00', '#00F0FF', '#FF00F0', '#FFFF00', '#00FF00'];
 
@@ -282,6 +284,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [actLocation, setActLocation] = useState('');
   const [actLocationCoordinates, setActLocationCoordinates] = useState('');
   const [actLimit, setActLimit] = useState(20);
+  const [actHasCustomOptions, setActHasCustomOptions] = useState(false);
+  const [actCustomOptionsTitle, setActCustomOptionsTitle] = useState('');
+  const [actCustomOptionsTemplate, setActCustomOptionsTemplate] = useState('');
 
   // States for new Notification
   const [notifTitle, setNotifTitle] = useState('');
@@ -495,6 +500,107 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
   };
 
+  const handleExportPDF = () => {
+    const activity = selectedEntity?.data;
+    if (!activity) return;
+
+    const activityRegs = fleetData.registrations.filter(r => r.eventId === activity.id && r.status !== 'cancelled');
+    if (activityRegs.length === 0) {
+      alert('無報名車友資料可匯出 / NO ACTIVE REGISTRATIONS TO EXPORT');
+      return;
+    }
+
+    const element = document.createElement('div');
+    element.className = 'p-8 bg-[#0a0a0a] text-white font-sans';
+    element.style.width = '794px';
+    element.style.minHeight = '1123px';
+    element.style.boxSizing = 'border-box';
+    element.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+
+    element.innerHTML = `
+      <div style="border: 2px solid #a3e635; padding: 24px; position: relative; min-height: 1070px; display: flex; flex-direction: column; background-color: #0d0d0d; box-sizing: border-box;">
+        <!-- Header -->
+        <div style="border-bottom: 1px solid rgba(163,230,53,0.3); padding-bottom: 16px; margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: start;">
+            <div>
+              <h1 style="color: #a3e635; font-size: 22px; font-weight: 800; margin: 0; letter-spacing: 2px;">Smart #5 Owners Club</h1>
+              <p style="color: rgba(255,255,255,0.6); font-size: 11px; margin: 4px 0 0 0; text-transform: uppercase; font-family: monospace;">Activity Registration Roster</p>
+            </div>
+            <div style="text-align: right;">
+              <span style="background: rgba(163,230,53,0.1); border: 1px solid #a3e635; color: #a3e635; font-size: 9px; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-family: monospace;">CONFIDENTIAL</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Event Details Card -->
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 16px; border-radius: 8px; margin-bottom: 24px; box-sizing: border-box;">
+          <h2 style="color: #ffffff; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">${activity.title}</h2>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 11px;">
+            <div>
+              <strong style="color: #a3e635;">活動時間:</strong> 
+              <span style="color: rgba(255,255,255,0.8);">${activity.date}</span>
+            </div>
+            <div>
+              <strong style="color: #a3e635;">活動地點:</strong> 
+              <span style="color: rgba(255,255,255,0.8);">${activity.location}</span>
+            </div>
+            <div>
+              <strong style="color: #a3e635;">總報名數:</strong> 
+              <span style="color: rgba(255,255,255,0.8);">${activityRegs.length} / ${activity.limit} 人</span>
+            </div>
+            <div>
+              <strong style="color: #a3e635;">自訂問卷:</strong> 
+              <span style="color: rgba(255,255,255,0.8);">${activity.hasCustomOptions ? (activity.customOptionsTitle || '是') : '無'}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; margin-bottom: 24px;">
+          <thead>
+            <tr style="border-bottom: 2px solid #a3e635; background: rgba(163,230,53,0.05);">
+              <th style="padding: 10px 8px; text-align: left; color: #a3e635; font-family: monospace; width: 44px; box-sizing: border-box;">No.</th>
+              <th style="padding: 10px 8px; text-align: left; color: #a3e635; box-sizing: border-box;">👤 車友暱稱 / NAME</th>
+              <th style="padding: 10px 8px; text-align: left; color: #a3e635; width: 110px; box-sizing: border-box;">🚗 車牌號碼 / PLATE</th>
+              <th style="padding: 10px 8px; text-align: left; color: #a3e635; width: 120px; box-sizing: border-box;">📱 手提號碼 / MOBILE</th>
+              <th style="padding: 10px 8px; text-align: left; color: #a3e635; box-sizing: border-box;">⏱️ 報名自訂選項 / OPTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${activityRegs.map((reg, index) => {
+              const u = getUserDetails([reg.userId])[0] || { name: '未知車友', plate: '--', phone: '-- (Not provided)' };
+              return `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                  <td style="padding: 10px 8px; color: rgba(255,255,255,0.5); font-family: monospace; font-size: 10px; box-sizing: border-box;">${String(index + 1).padStart(2, '0')}</td>
+                  <td style="padding: 10px 8px; font-weight: bold; color: #ffffff; box-sizing: border-box;">${u.name}</td>
+                  <td style="padding: 10px 8px; color: #a3e635; font-weight: 500; font-family: monospace; box-sizing: border-box;">${u.plate || '--'}</td>
+                  <td style="padding: 10px 8px; color: rgba(255,255,255,0.8); font-family: monospace; box-sizing: border-box;">${u.phone || '-- (Not provided)'}</td>
+                  <td style="padding: 10px 8px; color: rgba(255,255,255,0.7); box-sizing: border-box;">${reg.selectedOption || '--'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <!-- Footer -->
+        <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: rgba(255,255,255,0.4); font-family: monospace;">
+          <span>Smart #5 Owners Club Internal Operations Document • Strictly Confidential</span>
+          <span>PAGE 1 OF 1</span>
+        </div>
+      </div>
+    `;
+
+    const opt = {
+      margin:       0,
+      filename:     `Event_Roster_${activity.title.replace(/\s+/g, '_')}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#0a0a0a' },
+      jsPDF:        { unit: 'px', format: [794, 1123], orientation: 'portrait' }
+    } as any;
+
+    html2pdf().from(element).set(opt).save();
+  };
+
   const handleExport = () => {
     const data = fleetData.logs.map(l => ({
       Date: format(l.timestamp.toDate(), 'yyyy-MM-dd HH:mm'),
@@ -546,7 +652,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         location: actLocation,
         locationCoordinates: actLocationCoordinates,
         limit: finalLimit,
-        status: 'open'
+        status: 'open',
+        hasCustomOptions: actHasCustomOptions,
+        customOptionsTitle: actHasCustomOptions ? actCustomOptionsTitle : '',
+        customOptionsTemplate: actHasCustomOptions ? actCustomOptionsTemplate.split(',').map(s => s.trim()).filter(Boolean) : []
       });
       alert('活動已發佈 / ACTIVITY PUBLISHED');
     } catch (error: any) {
@@ -564,6 +673,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setActLocation('');
         setActLocationCoordinates('');
         setActLimit(20);
+        setActHasCustomOptions(false);
+        setActCustomOptionsTitle('');
+        setActCustomOptionsTemplate('');
         setShowAddActivity(false);
         setEditingId(null);
       }, 100);
@@ -652,6 +764,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             setActLocation('');
             setActLocationCoordinates('');
             setActLimit(20);
+            setActHasCustomOptions(false);
+            setActCustomOptionsTitle('');
+            setActCustomOptionsTemplate('');
             setShowAddActivity(false);
           }, 100);
         }
@@ -743,6 +858,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setActLocation(activity.location);
     setActLocationCoordinates(activity.locationCoordinates || '');
     setActLimit(activity.limit);
+    setActHasCustomOptions(!!activity.hasCustomOptions);
+    setActCustomOptionsTitle(activity.customOptionsTitle || '');
+    setActCustomOptionsTemplate((activity.customOptionsTemplate || []).join(', '));
     setEditingId(activity.id);
     setShowAddActivity(true);
   };
@@ -1170,12 +1288,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <CyberInput label="地點名稱 (必填)" value={actLocation} onChange={e => setActLocation(e.target.value)} placeholder="例如: TKO Gateway" />
                       <CyberInput label="地點經緯度 (導航用 - 選填)" value={actLocationCoordinates} onChange={e => setActLocationCoordinates(e.target.value)} placeholder="例如: 22.3164,114.2694" />
                     </div>
+
+                    {/* Custom Question Section */}
+                    <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-mono font-bold text-white uppercase block">自訂車友報名問卷 / CUSTOM QUESTIONNAIRE</label>
+                          <span className="text-[10px] text-white/40 font-mono lowercase">啟用此開關可新增動態問卷選項</span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer select-none">
+                          <input 
+                            type="checkbox" 
+                            checked={actHasCustomOptions} 
+                            onChange={e => setActHasCustomOptions(e.target.checked)} 
+                            className="sr-only peer" 
+                          />
+                          <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyber-green"></div>
+                        </label>
+                      </div>
+
+                      {actHasCustomOptions && (
+                        <div className="space-y-3 pt-2 border-t border-white/5">
+                          <CyberInput 
+                            label="問卷標題 (問答說明，必填)" 
+                            value={actCustomOptionsTitle} 
+                            onChange={e => setActCustomOptionsTitle(e.target.value)} 
+                            placeholder="例如: 請選擇您預計到達及離開的時間" 
+                          />
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest ml-1">
+                              可供選擇的選項 (以英文逗號隔開 , 必填) / OPTIONS
+                            </label>
+                            <input 
+                              type="text"
+                              value={actCustomOptionsTemplate} 
+                              onChange={e => setActCustomOptionsTemplate(e.target.value)} 
+                              placeholder="例如: 16:30到達/19:00離開, 17:00到達/20:30離開, 自備車位"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50 transition-all font-sans"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex gap-2 pt-2">
                       <button onClick={() => { setShowAddActivity(false); setEditingId(null); }} className="flex-1 py-2 rounded bg-white/5 text-xs font-mono">取消</button>
                       <CyberButton 
                         onClick={() => {
                           if (!actTitle || !actStartDate || !actEndDate || !actLocation || !actDescription) {
                             alert('請填寫所有必填項目 / PLEASE FILL ALL REQUIRED FIELDS');
+                            return;
+                          }
+                          if (actHasCustomOptions && (!actCustomOptionsTitle.trim() || !actCustomOptionsTemplate.trim())) {
+                            alert('啟用自訂問卷時，請填寫問卷標題與選項 / FILL QUESTIONNAIRE FIELDS');
                             return;
                           }
                           editingId ? handleUpdateActivity(editingId, { 
@@ -1187,7 +1352,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             deadlineDate: actDeadlineDate, 
                             location: actLocation, 
                             locationCoordinates: actLocationCoordinates,
-                            limit: actLimit 
+                            limit: actLimit,
+                            hasCustomOptions: actHasCustomOptions,
+                            customOptionsTitle: actHasCustomOptions ? actCustomOptionsTitle : '',
+                            customOptionsTemplate: actHasCustomOptions ? actCustomOptionsTemplate.split(',').map(s => s.trim()).filter(Boolean) : []
                           }) : handleCreateActivity();
                         }} 
                         className="flex-1 text-xs py-2"
@@ -1472,8 +1640,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               className="space-y-6"
             >
               <AdminCheckIn 
-                activities={fleetData.activities.filter(a => a.status === 'open')} 
+                activities={fleetData.activities} 
                 registrations={fleetData.registrations}
+                allProfiles={allProfiles}
                 onCheckIn={handleAdminCheckIn}
               />
             </motion.div>
@@ -1751,6 +1920,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <span>報名名單 PARTICIPANTS</span>
                           <span>{selectedEntity.data.participants.length} / {selectedEntity.data.limit}</span>
                         </div>
+                        
+                        <button 
+                          onClick={handleExportPDF}
+                          className="w-full flex items-center justify-center gap-2 py-2 md:py-2.5 px-4 rounded-xl border border-cyber-green/20 hover:border-cyber-green bg-[#111827] text-cyber-green text-xs font-mono font-bold tracking-wider transition-all duration-300 hover:shadow-[0_0_15px_rgba(163,230,53,0.15)] mb-4 select-none cursor-pointer"
+                        >
+                          📄 一鍵匯出活動 PDF 報名明細 / EXPORT TO PDF
+                        </button>
                         {(() => {
                           const activityRegs = fleetData.registrations.filter(r => r.eventId === selectedEntity.data.id);
                           if (activityRegs.length === 0) {
