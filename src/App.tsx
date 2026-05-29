@@ -373,6 +373,7 @@ export default function App() {
         allProfiles={evStore.allProfiles}
         groupBuys={evStore.groupBuys}
         clubPerks={evStore.clubPerks}
+        auditLogs={evStore.auditLogs}
         isAdmin={evStore.isAdmin}
         isSubAdmin={evStore.isSubAdmin}
         isRoleLoading={evStore.profileLoading}

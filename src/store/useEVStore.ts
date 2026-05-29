@@ -25,6 +25,7 @@ import { db, auth } from '../lib/firebase';
 import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration, GroupBuy, GroupBuyRegistration, ClubPerk } from '../types';
 import { format } from 'date-fns';
 import { OperationType, handleFirestoreError } from '../lib/utils';
+import { createAuditLog } from '../utils/logger';
 
 export function useEVStore() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -38,6 +39,7 @@ export function useEVStore() {
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [loading, setLoading] = useState(true);
   const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [fleetData, setFleetData] = useState<{ 
     vehicles: Vehicle[], 
     logs: LogEntry[], 
@@ -321,6 +323,20 @@ export function useEVStore() {
       handleFirestoreError(error, OperationType.GET, 'clubPerks');
     });
   }, [auth.currentUser]);
+
+  // Sync AuditLogs - restricted to main Admin to avoid Firestore permission denied error for non-admins
+  useEffect(() => {
+    if (!auth.currentUser || !isAdmin) {
+      setAuditLogs([]);
+      return;
+    }
+    const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'));
+    return onSnapshot(q, (snap) => {
+      setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.warn("Audit logs subscription restricted or failed:", error);
+    });
+  }, [auth.currentUser, isAdmin]);
 
   // Sync Notifications
   useEffect(() => {
@@ -1606,6 +1622,16 @@ export function useEVStore() {
         role,
         updatedAt: serverTimestamp()
       });
+      // 📝 Audit log tracing
+      const profile = allProfiles.find(p => p.id === userId);
+      const memberPlate = profile?.plate || '未知車牌';
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(operator, 'APPROVE_MEMBER', 'users', '批准了車牌 ' + memberPlate + ' 的實名認證');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'userProfiles');
     }
@@ -1680,6 +1706,15 @@ export function useEVStore() {
         docRef.id,
         'groupBuy'
       );
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(operator, 'UPDATE_GROUP_BUY', 'groupBuys', '修改了團購：' + (data.title || ''));
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'groupBuys');
     }
@@ -1689,6 +1724,17 @@ export function useEVStore() {
     if (!isSubAdmin) return;
     try {
       await updateDoc(doc(db, 'groupBuys', id), data);
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      const existingGb = groupBuys.find(g => g.id === id);
+      const title = data.title || existingGb?.title || '';
+      await createAuditLog(operator, 'UPDATE_GROUP_BUY', 'groupBuys', '修改了團購：' + title);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'groupBuys');
     }
@@ -1721,6 +1767,16 @@ export function useEVStore() {
         googleMapsUrl: data.googleMapsUrl || '',
         createdAt: serverTimestamp(),
       });
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(operator, 'CREATE_PERK', 'clubPerks', '上架了新福利：' + (data.merchantName || ''));
+
       return docRef.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'clubPerks');
@@ -1733,6 +1789,17 @@ export function useEVStore() {
     }
     try {
       await updateDoc(doc(db, 'clubPerks', id), data);
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      const perk = clubPerks.find(p => p.id === id);
+      const merchantName = data.merchantName || perk?.merchantName || '';
+      await createAuditLog(operator, 'CREATE_PERK', 'clubPerks', '上架了新福利：' + merchantName);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'clubPerks');
     }
@@ -1843,6 +1910,7 @@ export function useEVStore() {
     activities,
     polls,
     groupBuys,
+    auditLogs,
     notifications,
     loading,
     isAdmin,

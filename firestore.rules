@@ -77,8 +77,8 @@ service cloud.firestore {
     function isValidActivity(data) {
       return data.title is string && data.title.size() <= 200 &&
              data.date is string &&
-             (data.eventStartDate is timestamp || !data.keys().hasAll(['eventStartDate'])) &&
-             (data.eventEndDate is timestamp || !data.keys().hasAll(['eventEndDate'])) &&
+             (data.eventStartDate is timestamp || data.eventStartDate == null || !data.keys().hasAll(['eventStartDate'])) &&
+             (data.eventEndDate is timestamp || data.eventEndDate == null || !data.keys().hasAll(['eventEndDate'])) &&
              data.location is string &&
              data.limit is number && data.limit >= 1 &&
              (data.deadlineDate is string || data.deadlineDate == null || !data.keys().hasAll(['deadlineDate'])) &&
@@ -140,9 +140,10 @@ service cloud.firestore {
              data.targetQuantity is number && data.targetQuantity >= 1 &&
              data.currentRegistrations is list &&
              data.status in ['active', 'closed'] &&
-             (data.minQuantity is number || !data.keys().hasAll(['minQuantity'])) &&
-             (data.maxQuantity is number || !data.keys().hasAll(['maxQuantity'])) &&
-             (data.endDate is timestamp || !data.keys().hasAll(['endDate'])) &&
+             (data.minQuantity is number || data.minQuantity == null || !data.keys().hasAll(['minQuantity'])) &&
+             (data.maxQuantity is number || data.maxQuantity == null || !data.keys().hasAll(['maxQuantity'])) &&
+             (data.endDate is timestamp || data.endDate == null || !data.keys().hasAll(['endDate'])) &&
+             (data.imageUrl is string || !data.keys().hasAll(['imageUrl'])) &&
              data.createdAt is timestamp;
     }
 
@@ -154,8 +155,8 @@ service cloud.firestore {
              data.discountDetail is string && data.discountDetail.size() <= 1000 &&
              data.contact is string && data.contact.size() <= 500 &&
              (data.expiryDate is string || !data.keys().hasAll(['expiryDate'])) &&
-             (data.originalPrice is number || !data.keys().hasAll(['originalPrice'])) &&
-             (data.discountPrice is number || !data.keys().hasAll(['discountPrice'])) &&
+             (data.originalPrice is number || data.originalPrice == null || !data.keys().hasAll(['originalPrice'])) &&
+             (data.discountPrice is number || data.discountPrice == null || !data.keys().hasAll(['discountPrice'])) &&
              (data.address is string || !data.keys().hasAll(['address'])) &&
              (data.googleMapsUrl is string || !data.keys().hasAll(['googleMapsUrl'])) &&
              data.createdAt is timestamp;
@@ -330,6 +331,13 @@ service cloud.firestore {
       allow create: if isSubAdmin() && isValidClubPerk(incoming());
       allow update: if isSubAdmin() && isValidClubPerk(incoming());
       allow delete: if isSubAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      // 🔒 只有最高管理員 admin 才能讀取日誌，任何人（包括 subAdmin）都絕對不能修改或刪除日誌
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
     }
   }
 }

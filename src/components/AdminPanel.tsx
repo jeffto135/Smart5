@@ -21,7 +21,8 @@ import {
   MapPin,
   Youtube,
   ShoppingBag,
-  Gift
+  Gift,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -51,6 +52,7 @@ import { AdminPerks } from './AdminPerks';
 import { AdminMemberApproval } from './AdminMemberApproval';
 import { AdminPushNotification } from './AdminPushNotification';
 import { AdminDataRecords } from './AdminDataRecords';
+import { AdminAuditLogs } from './AdminAuditLogs';
 import { Vehicle, LogEntry, Activity, Poll, UserProfile, ParkingLot, ActivityRegistration, GroupBuy, ClubPerk } from '../types';
 import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
@@ -102,6 +104,7 @@ interface AdminPanelProps {
   isSubAdmin: boolean;
   isRoleLoading?: boolean;
   onClose: () => void;
+  auditLogs?: any[];
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ 
@@ -110,6 +113,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   allProfiles,
   groupBuys = [],
   clubPerks = [],
+  auditLogs = [],
   isAdmin,
   isSubAdmin,
   isRoleLoading,
@@ -155,7 +159,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account' | 'checkin' | 'parking' | 'groupBuys' | 'clubPerks' | 'notifications'>('fleet');
+  const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'audit' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account' | 'checkin' | 'parking' | 'groupBuys' | 'clubPerks' | 'notifications'>('fleet');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showAddPoll, setShowAddPoll] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'activity' | 'poll', data: any } | null>(null);
@@ -166,6 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const tabs = [
       { id: 'fleet', label: '數據', icon: TrendingUp },
       { id: 'logs', label: '紀錄', icon: FileText },
+      { id: 'audit', label: '日誌', icon: Shield },
       { id: 'vehicles', label: '車輛', icon: Car },
       { id: 'activities', label: '活動', icon: Calendar },
       { id: 'checkin', label: '簽到', icon: ShieldCheck },
@@ -201,7 +206,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, [isAdmin, isSubAdmin]);
 
   const activeModule = useMemo(() => {
-    if (['fleet', 'logs', 'vehicles', 'members'].includes(activeTab)) return 'analytics';
+    if (['fleet', 'logs', 'audit', 'vehicles', 'members'].includes(activeTab)) return 'analytics';
     if (['activities', 'checkin', 'polls', 'notifications'].includes(activeTab)) return 'community';
     if (['groupBuys', 'clubPerks'].includes(activeTab)) return 'marketplace';
     if (['parking'].includes(activeTab)) return 'parking';
@@ -215,6 +220,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         return [
           { id: 'fleet', label: '數據圖表' },
           ...(!isOnlySubAdmin ? [{ id: 'logs', label: '營運紀錄' }] : []),
+          ...(!isOnlySubAdmin ? [{ id: 'audit', label: '系統日誌' }] : []),
           { id: 'vehicles', label: '車輛名單' },
           ...(!isOnlySubAdmin ? [{ id: 'members', label: '成員審批' }] : []),
         ];
@@ -245,8 +251,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Combined route guard syncing tab validations
   useEffect(() => {
     const isOnlySubAdmin = isSubAdmin && !isAdmin; // 🚀 關鍵修復：確保當前僅為 subAdmin 時才觸發安全防線攔截 (主 Admin 絕不受限)
-    if (isOnlySubAdmin && ['logs', 'members', 'notifications'].includes(activeTab)) {
-      if (['logs', 'members'].includes(activeTab)) {
+    if (isOnlySubAdmin && ['logs', 'audit', 'members', 'notifications'].includes(activeTab)) {
+      if (['logs', 'audit', 'members'].includes(activeTab)) {
         setActiveTab('fleet');
       } else if (activeTab === 'notifications') {
         setActiveTab('activities');
@@ -1503,6 +1509,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               onUpdateLog={onUpdateLog}
               onDeleteLog={onDeleteLog}
               onDeleteVehicle={onDeleteVehicle}
+              format={format}
+            />
+          )}
+
+          {activeTab === 'audit' && (
+            <AdminAuditLogs
+              userRole={isAdmin ? 'admin' : 'subAdmin'}
+              auditLogs={auditLogs}
               format={format}
             />
           )}
