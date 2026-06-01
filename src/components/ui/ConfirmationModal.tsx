@@ -12,6 +12,7 @@ export interface ConfirmationModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   variant?: 'danger' | 'info';
+  isLoading?: boolean;
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -22,7 +23,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   cancelText = '取消',
   onConfirm,
   onCancel,
-  variant = 'info'
+  variant = 'info',
+  isLoading = false
 }) => {
   return (
     <AnimatePresence>
@@ -65,13 +67,15 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               <div className="flex flex-col gap-3 w-full pt-4">
                 <CyberButton
                   onClick={onConfirm}
+                  disabled={isLoading}
                   className="w-full text-xs py-4 font-black uppercase italic"
                 >
-                  {confirmText} / CONFIRM
+                  {isLoading ? '⌛ 處理中，請勿重複點擊...' : `${confirmText} / CONFIRM`}
                 </CyberButton>
                 <button
                   onClick={onCancel}
-                  className="w-full py-4 rounded-xl bg-white/5 text-white/30 text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                  disabled={isLoading}
+                  className="w-full py-4 rounded-xl bg-white/5 text-white/30 text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5 disabled:opacity-40"
                 >
                   {cancelText} / CANCEL
                 </button>

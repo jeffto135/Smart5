@@ -310,9 +310,10 @@ export const AdminCheckIn: React.FC<AdminCheckInProps> = ({ onCheckIn, activitie
             <form onSubmit={handleManualCheckIn} className="flex gap-2">
               <input 
                 type="text"
+                autoCapitalize="characters"
                 placeholder="輸入車牌號碼 (例: LL885)"
                 value={manualPlate}
-                onChange={(e) => setManualPlate(e.target.value)}
+                onChange={(e) => setManualPlate(e.target.value.toUpperCase())}
                 disabled={!activeActivityId || isCheckingIn}
                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50 font-mono uppercase placeholder:text-white/20 disabled:opacity-30"
               />

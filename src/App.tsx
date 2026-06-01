@@ -20,6 +20,7 @@ import { CatchUpPrompt } from './components/CatchUpPrompt';
 import { ConfirmationModal } from './components/ui/ConfirmationModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
+import { PersonalInformationStatementModal } from './components/PersonalInformationStatementModal';
 import { HKWeather } from './components/HKWeather';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
@@ -38,6 +39,8 @@ export default function App() {
   const [showVehicleSelector, setShowVehicleSelector] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showUserAgreement, setShowUserAgreement] = useState(false);
+  const [showPicsStatement, setShowPicsStatement] = useState(false);
+  const [isAgreed, setIsAgreed] = useState(false);
   const [catchUpData, setCatchUpData] = useState<any>(null);
   
   const [targetGroupBuyId, setTargetGroupBuyId] = useState<string | null>(null);
@@ -319,35 +322,82 @@ export default function App() {
         </div>
 
         <CyberCard className="w-full max-w-sm border-cyber-line/50 shadow-2xl">
-          <div className="space-y-8">
+          <div className="space-y-6">
             <div className="text-xs uppercase tracking-[0.2em] text-white/50 leading-relaxed font-light">
               透過極簡的手動輸入，量化電動車帶來的<br />
               <span className="text-cyber-green cyber-text-glow font-bold">「省錢感」</span>與<span className="text-cyber-green cyber-text-glow font-bold">「成就感」</span>
             </div>
+
+            {/* 強制服務條款同意勾選框 */}
+            <div className="flex gap-2.5 items-start text-left bg-white/[0.02] border border-white/5 p-3.5 rounded-xl">
+              <input 
+                type="checkbox" 
+                id="login-agreement-checkbox"
+                checked={isAgreed}
+                onChange={(e) => setIsAgreed(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-white/10 bg-black text-[#A3E635] focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#A3E635]"
+              />
+              <label htmlFor="login-agreement-checkbox" className="text-[11px] leading-relaxed text-gray-300 select-none cursor-pointer">
+                我已充分閱讀、理解並無條件同意 Smart5 Owners 的
+                <button 
+                  type="button"
+                  onClick={() => setShowUserAgreement(true)}
+                  className="text-cyber-green hover:underline font-bold px-0.5"
+                >
+                  《用戶服務協議》
+                </button>
+                、
+                <button 
+                  type="button"
+                  onClick={() => setShowDisclaimer(true)}
+                  className="text-cyber-green hover:underline font-bold px-0.5"
+                >
+                  《版權及免責聲明》
+                </button>
+                及
+                <button 
+                  type="button"
+                  onClick={() => setShowPicsStatement(true)}
+                  className="text-cyber-green hover:underline font-bold px-0.5"
+                >
+                  《個人資料收集聲明》
+                </button>
+                。
+              </label>
+            </div>
+
             <CyberButton 
               onClick={handleLogin} 
-              className="w-full py-4 tracking-[0.3em]"
-              disabled={isLoggingIn}
+              className="w-full py-4 tracking-[0.2em] transition-all"
+              disabled={isLoggingIn || !isAgreed}
             >
-              {isLoggingIn ? '正在登錄...' : '開始同步我的數據'}
+              {isLoggingIn ? '正在登錄...' : '使用 Google 登入'}
             </CyberButton>
 
-            <p className="text-[10px] text-white/30 leading-relaxed max-w-[280px] mx-auto text-center">
-              點擊『開始同步我的數據』即表示您已同意
+            <div className="text-[10px] text-white/30 leading-relaxed max-w-[280px] mx-auto text-center flex flex-wrap justify-center gap-1.5 pt-1">
+              <span>快捷連結：</span>
               <button 
+                type="button"
                 onClick={() => setShowUserAgreement(true)}
-                className="text-cyber-green hover:underline mx-0.5 transition-all"
+                className="text-cyber-green/60 hover:text-cyber-green hover:underline transition-all"
               >
                 [用戶協議]
               </button>
-              與 
               <button 
+                type="button"
                 onClick={() => setShowDisclaimer(true)}
-                className="text-cyber-green hover:underline mx-0.5 transition-all"
+                className="text-cyber-green/60 hover:text-cyber-green hover:underline transition-all"
               >
-                [版權及免責聲明]
-              </button>。
-            </p>
+                [免責聲明]
+              </button>
+              <button 
+                type="button"
+                onClick={() => setShowPicsStatement(true)}
+                className="text-cyber-green/60 hover:text-cyber-green hover:underline transition-all"
+              >
+                [收集個人資料聲明]
+              </button>
+            </div>
           </div>
         </CyberCard>
         
@@ -623,6 +673,8 @@ export default function App() {
                 onAdminRestoreRegistration={evStore.adminRestoreRegistration}
                 onDeleteRegistration={evStore.deleteRegistration}
                 onClose={() => setView('dashboard')}
+                isLoading={evStore.loading}
+                onRefresh={evStore.refreshData}
               />
             </motion.div>
           ) : view === 'pollList' ? (
@@ -658,6 +710,8 @@ export default function App() {
                 onClose={() => setView('dashboard')}
                 initialTargetId={targetGroupBuyId}
                 onClearTargetId={() => setTargetGroupBuyId(null)}
+                isLoading={evStore.loading}
+                onRefresh={evStore.refreshData}
               />
             </motion.div>
           ) : view === 'clubPerks' ? (
@@ -674,6 +728,8 @@ export default function App() {
                 onUpdatePerk={evStore.updateClubPerk}
                 onDeletePerk={evStore.deleteClubPerk}
                 onClose={() => setView('dashboard')}
+                isLoading={evStore.loading}
+                onRefresh={evStore.refreshData}
               />
             </motion.div>
           ) : view === 'history' ? (
@@ -688,6 +744,7 @@ export default function App() {
                 vehicle={evStore.vehicle}
                 onLogClick={setEditingLog}
                 onClose={() => setView('dashboard')}
+                isLoading={evStore.loading}
               />
             </motion.div>
           ) : view === 'messages' ? (
@@ -778,6 +835,11 @@ export default function App() {
       <UserAgreementModal 
         isOpen={showUserAgreement}
         onClose={() => setShowUserAgreement(false)}
+      />
+
+      <PersonalInformationStatementModal 
+        isOpen={showPicsStatement}
+        onClose={() => setShowPicsStatement(false)}
       />
 
       <CatchUpPrompt 

@@ -97,6 +97,27 @@ export function useEVStore() {
     warmUpData();
   }, [auth.currentUser?.uid]);
 
+  const refreshData = async () => {
+    if (!auth.currentUser) return;
+    setLoading(true);
+    try {
+      const uid = auth.currentUser.uid;
+      await Promise.all([
+        getDocs(query(collection(db, 'vehicles'), where('userId', '==', uid), limit(10))),
+        getDocs(query(collection(db, 'notifications'), where('userId', '==', uid), limit(10))),
+        getDocs(query(collection(db, 'activities'), limit(10))),
+        getDocs(query(collection(db, 'polls'), limit(5))),
+        getDocs(query(collection(db, 'groupBuys'), limit(5))),
+        getDocs(query(collection(db, 'clubPerks'), limit(15)))
+      ]);
+      console.log("⚡️ [效能優化] 數據刷新預熱完成");
+    } catch (err) {
+      console.warn("[效能優化] 重新載入失敗:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Sync User Profile
   useEffect(() => {
     if (!auth.currentUser) {
@@ -2027,6 +2048,7 @@ export function useEVStore() {
     clearAllActivities,
     clearAllPolls,
     clearAllSystemNotifications,
-    addNotification
+    addNotification,
+    refreshData
   };
 }

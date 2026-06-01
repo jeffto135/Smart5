@@ -21,6 +21,7 @@ import { GroupBuy, UserProfile } from '../types';
 import { CyberCard } from './ui/CyberCard';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
+import { ConfirmationModal } from './ui/ConfirmationModal';
 
 interface AdminGroupBuyProps {
   groupBuys: GroupBuy[];
@@ -45,6 +46,20 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
   const [deleteConfirmGb, setDeleteConfirmGb] = useState<{ id: string; title: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant: 'danger' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    variant: 'info'
+  });
+
   // Form Fields
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -58,6 +73,7 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
 
   // Registrar List Visibility state per group buy
   const [auditedGbId, setAuditedGbId] = useState<string | null>(null);
+  const [subscriberSearch, setSubscriberSearch] = useState('');
 
   const minDateTimeStr = useMemo(() => {
     const now = new Date();
@@ -317,8 +333,19 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                     animate={{ opacity: 1, height: 'auto' }}
                     className="mt-4 p-4 bg-black/40 border border-[#A3E635]/20 rounded-xl space-y-3"
                   >
-                    <div className="text-[10px] font-mono font-bold text-[#A3E635] uppercase tracking-wider">
-                      👤 團購認購人明細 (誠信核實) / REGISTRANT DETAILS LIST
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2">
+                      <div className="text-[10px] font-mono font-bold text-[#A3E635] uppercase tracking-wider">
+                        👤 團購認購人明細 (誠信核實) / REGISTRANT DETAILS LIST
+                      </div>
+                      <div className="w-full sm:w-64">
+                        <input
+                          type="text"
+                          placeholder="搜尋車友姓名、車牌或電話..."
+                          value={subscriberSearch}
+                          onChange={(e) => setSubscriberSearch(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] font-mono text-cyber-green placeholder-white/30 outline-none focus:border-cyber-green/50"
+                        />
+                      </div>
                     </div>
                     {(!gb.currentRegistrations || gb.currentRegistrations.length === 0) ? (
                       <div className="text-center py-4 font-mono text-[11px] text-white/30 truncate">
@@ -336,32 +363,41 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                             </tr>
                           </thead>
                           <tbody>
-                            {gb.currentRegistrations.map((reg, index) => {
-                              const profile = (allProfiles || []).find(p => p.id === reg.userId);
-                              const displayName = profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶';
-                              const mobile = profile?.mobile || profile?.phone || profile?.phoneNumber || '-- (未填寫)';
-                              const plateNumber = profile?.plate;
-                              return (
-                                <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                  <td className="py-1.5 text-center text-white/30">{index + 1}</td>
-                                  <td className="py-1.5 select-all">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-white font-semibold">{displayName}</span>
-                                        {plateNumber && (
-                                          <span className="text-[8px] tracking-wider px-1 py-0.5 bg-cyber-green/10 text-cyber-green border border-cyber-green/20 rounded font-mono font-bold">
-                                            {plateNumber}
-                                          </span>
-                                        )}
+                            {gb.currentRegistrations
+                              .filter((reg) => {
+                                const profile = (allProfiles || []).find((p) => p.id === reg.userId);
+                                const displayName = (profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶').toLowerCase();
+                                const mobile = (profile?.mobile || profile?.phone || profile?.phoneNumber || '').toLowerCase();
+                                const plateNumber = (profile?.plate || '').toLowerCase();
+                                const search = subscriberSearch.toLowerCase();
+                                return displayName.includes(search) || mobile.includes(search) || plateNumber.includes(search);
+                              })
+                              .map((reg, index) => {
+                                const profile = (allProfiles || []).find(p => p.id === reg.userId);
+                                const displayName = profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶';
+                                const mobile = profile?.mobile || profile?.phone || profile?.phoneNumber || '-- (未填寫)';
+                                const plateNumber = profile?.plate;
+                                return (
+                                  <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                    <td className="py-1.5 text-center text-white/30">{index + 1}</td>
+                                    <td className="py-1.5 select-all">
+                                      <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-white font-semibold">{displayName}</span>
+                                          {plateNumber && (
+                                            <span className="text-[8px] tracking-wider px-1 py-0.5 bg-cyber-green/10 text-cyber-green border border-cyber-green/20 rounded font-mono font-bold">
+                                              {plateNumber}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="text-white/40 text-[10px]">({mobile})</span>
                                       </div>
-                                      <span className="text-white/40 text-[10px]">({mobile})</span>
-                                    </div>
-                                  </td>
-                                  <td className="py-1.5 text-center font-bold text-cyber-green">{reg.qty}</td>
-                                  <td className="py-1.5 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
-                                </tr>
-                              );
-                            })}
+                                    </td>
+                                    <td className="py-1.5 text-center font-bold text-cyber-green">{reg.qty}</td>
+                                    <td className="py-1.5 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
+                                  </tr>
+                                );
+                              })}
                           </tbody>
                         </table>
                       </div>
@@ -570,19 +606,26 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                 <button
                   type="button"
                   disabled={isDeleting}
-                  onClick={async () => {
-                    if (window.confirm("❗警告：物理強刪將會徹底抹除資料庫中的團購文件，並強制清理所有關聯的通知。此操作不可撤回！確定要繼續嗎？")) {
-                      setIsDeleting(true);
-                      try {
-                        await onDeleteGroupBuy(deleteConfirmGb.id, true);
-                        alert('物理強刪成功！團購項目已徹底清理，關聯通知已全數撤回。');
-                        setDeleteConfirmGb(null);
-                      } catch (err: any) {
-                        alert('刪除失敗: ' + (err.message || '未知錯誤'));
-                      } finally {
-                        setIsDeleting(false);
+                  onClick={() => {
+                    setConfirmModal({
+                      isOpen: true,
+                      variant: 'danger',
+                      title: '物理強制刪除團購',
+                      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+                      onConfirm: async () => {
+                        setIsDeleting(true);
+                        try {
+                          await onDeleteGroupBuy(deleteConfirmGb.id, true);
+                          alert('物理強刪成功！團購項目已徹底清理，關聯通知已全數撤回。');
+                          setDeleteConfirmGb(null);
+                        } catch (err: any) {
+                          alert('刪除失敗: ' + (err.message || '未知錯誤'));
+                        } finally {
+                          setIsDeleting(false);
+                          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                        }
                       }
-                    }
+                    });
                   }}
                   className="w-full p-3 bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 border border-red-500/30 rounded-xl transition-all text-xs font-mono text-left text-red-300 flex flex-col cursor-pointer"
                 >
@@ -610,6 +653,14 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
         )}
       </AnimatePresence>
 
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

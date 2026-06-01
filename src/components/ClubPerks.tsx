@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { ClubPerk } from '../types';
 import { CyberCard } from './ui/CyberCard';
+import { PullToRefresh } from './ui/PullToRefresh';
 
 interface ClubPerksProps {
   clubPerks: ClubPerk[];
@@ -19,13 +20,17 @@ interface ClubPerksProps {
   onUpdatePerk?: (id: string, data: Partial<ClubPerk>) => Promise<void>;
   onDeletePerk?: (id: string) => Promise<void>;
   onClose: () => void;
+  isLoading?: boolean;
+  onRefresh?: () => Promise<void>;
 }
 
 const CATEGORIES = ['汽車美容', '改裝配件', '汽車保險', '餐飲娛樂'] as const;
 
 export const ClubPerks: React.FC<ClubPerksProps> = ({
   clubPerks = [],
-  onClose
+  onClose,
+  isLoading = false,
+  onRefresh
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
 
@@ -50,8 +55,51 @@ export const ClubPerks: React.FC<ClubPerksProps> = ({
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pb-20">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center gap-4">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="p-2 -ml-2 text-white/40 hover:text-white transition-colors cursor-pointer"
+              id="perks_back_btn"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <div>
+              <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
+                車友福利 <span className="text-cyber-green">Club Perks</span>
+              </h2>
+              <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
+                Smart #5 Owners Club 專屬特約合作商戶福利
+              </p>
+            </div>
+          </div>
+        </div>
+        {/* Skeleton Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="p-6 rounded-3xl border border-white/10 bg-white/[0.02] space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="h-5 w-20 bg-zinc-800 animate-pulse rounded-full" />
+              </div>
+              <div className="h-6 w-3/4 bg-zinc-800 animate-pulse rounded-lg" />
+              <div className="h-10 w-32 bg-zinc-850 animate-pulse rounded-xl" />
+              <div className="h-16 w-full bg-zinc-800 animate-pulse rounded-xl" />
+              <div className="h-12 w-full bg-zinc-800 animate-pulse rounded-xl" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 pb-20">
+    <PullToRefresh onRefresh={onRefresh || (async () => {})}>
+      <div className="space-y-6 pb-20">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
@@ -202,5 +250,6 @@ export const ClubPerks: React.FC<ClubPerksProps> = ({
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 };

@@ -6,6 +6,7 @@ import { CyberCard } from './ui/CyberCard';
 import { CyberInput } from './ui/CyberInput';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { ConfirmationModal } from './ui/ConfirmationModal';
 
 interface AdminDataRecordsProps {
   type: 'logs' | 'vehicles';
@@ -19,6 +20,7 @@ interface AdminDataRecordsProps {
   onDeleteLog: (id: string) => Promise<void>;
   onDeleteVehicle: (id: string) => Promise<void>;
   format: (date: Date, pattern: string) => string;
+  privacyMode?: boolean;
 }
 
 export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
@@ -29,13 +31,28 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
   onUpdateLog,
   onDeleteLog,
   onDeleteVehicle,
-  format
+  format,
+  privacyMode = false
 }) => {
   // --- Common States & UI variables ---
   const [logSearch, setLogSearch] = useState('');
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [vehiclePage, setVehiclePage] = useState(1);
   const VEHICLES_PER_PAGE = 20;
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant: 'danger' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    variant: 'info'
+  });
 
   // --- Logs specific states ---
   const [expandedPlate, setExpandedPlate] = useState<string | null>(null);
@@ -107,31 +124,47 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
     setEditBatteryPercent(log.batteryPercent || 100);
   };
 
-  const handleUpdateLog = async (id: string) => {
+  const handleUpdateLog = (id: string) => {
     if (!checkAdminPermission('modify_core_records')) return;
-    if (confirm("確定要更新此項營運紀錄資料嗎？")) {
-      try {
-        await onUpdateLog(id, { 
-          odometer: editOdometer, 
-          cost: editCost,
-          batteryPercent: editBatteryPercent
-        });
-        setEditingLogId(null);
-      } catch (err) {
-        alert("資料更新失敗，請檢查系統配置。");
+    setConfirmModal({
+      isOpen: true,
+      variant: 'info',
+      title: '更新日誌紀錄',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+      onConfirm: async () => {
+        try {
+          await onUpdateLog(id, { 
+            odometer: editOdometer, 
+            cost: editCost,
+            batteryPercent: editBatteryPercent
+          });
+          setEditingLogId(null);
+        } catch (err) {
+          alert("資料更新失敗，請檢查系統配置。");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    }
+    });
   };
 
-  const handleDeleteLog = async (id: string) => {
+  const handleDeleteLog = (id: string) => {
     if (!checkAdminPermission('modify_core_records')) return;
-    if (confirm("📢 此動作不可逆，您確定要刪除這筆歷史車輛日誌嗎？\nARE YOU SURE YOU WANT TO DELETE THIS VEHICLE LOG?")) {
-      try {
-        await onDeleteLog(id);
-      } catch (err) {
-        alert("刪除日誌發生錯誤，請稍候再試。");
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: '永久刪除日誌',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+      onConfirm: async () => {
+        try {
+          await onDeleteLog(id);
+        } catch (err) {
+          alert("刪除日誌發生錯誤，請稍候再試。");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    }
+    });
   };
 
   // --- Vehicles update/delete handlers ---
@@ -145,34 +178,50 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
     setEditVehOdo(v.lastOdometer || 0);
   };
 
-  const handleUpdateVehicle = async (id: string) => {
+  const handleUpdateVehicle = (id: string) => {
     if (!checkAdminPermission('modify_core_records')) return;
-    if (confirm("確定保存此車輛的最新異動資料嗎？")) {
-      try {
-        const docRef = doc(db, 'vehicles', id);
-        await updateDoc(docRef, {
-          name: editVehName,
-          brand: editVehBrand,
-          model: editVehModel,
-          plate: editVehPlate,
-          lastOdometer: editVehOdo
-        });
-        setEditingVehicleId(null);
-      } catch (err) {
-        alert("更正車輛資料失敗，可能權限不足。");
+    setConfirmModal({
+      isOpen: true,
+      variant: 'info',
+      title: '更新車輛資料',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+      onConfirm: async () => {
+        try {
+          const docRef = doc(db, 'vehicles', id);
+          await updateDoc(docRef, {
+            name: editVehName,
+            brand: editVehBrand,
+            model: editVehModel,
+            plate: editVehPlate,
+            lastOdometer: editVehOdo
+          });
+          setEditingVehicleId(null);
+        } catch (err) {
+          alert("更正車輛資料失敗，可能權限不足。");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    }
+    });
   };
 
-  const handleDeleteVehicleWithGuard = async (id: string) => {
+  const handleDeleteVehicleWithGuard = (id: string) => {
     if (!checkAdminPermission('modify_core_records')) return;
-    if (confirm("📢 這將永久刪除該部車輛以及其同步關聯名冊，是否繼續？\nDELETE VEHICLE IN AIR BASE? THIS CANNOT BE UNDONE.")) {
-      try {
-        await onDeleteVehicle(id);
-      } catch (err) {
-        alert("清除車輛車宿失敗。");
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: '註銷永久刪除車輛',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+      onConfirm: async () => {
+        try {
+          await onDeleteVehicle(id);
+        } catch (err) {
+          alert("清除車輛車宿失敗。");
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    }
+    });
   };
 
   if (type === 'logs') {
@@ -217,7 +266,7 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                   {logs.length}
                 </div>
                 <div className="text-left">
-                  <div className="text-sm font-bold text-white">{plate}</div>
+                  <div className={`text-sm font-bold text-white ${privacyMode ? 'blur-md select-none transition-all duration-300 hover:blur-none' : ''}`}>{plate}</div>
                   <div className="text-[9px] font-mono text-white/30 uppercase tracking-widest">
                     最後紀錄: {logs[0].date || format(logs[0].timestamp.toDate(), 'yyyy-MM-dd')}
                   </div>
@@ -334,7 +383,9 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                                 className="w-full bg-white/10 rounded px-1 outline-none text-cyber-green border border-white/10 focus:border-cyber-green/50" 
                               />
                             ) : (
-                              `$${log.cost || 0}`
+                              <span className={privacyMode ? 'blur-md select-none transition-all duration-300 hover:blur-none' : ''}>
+                                ${log.cost || 0}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -422,8 +473,9 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                         <span className="text-[8px] text-white/40 uppercase font-mono">配置車牌</span>
                         <input 
                           type="text" 
+                          autoCapitalize="characters"
                           value={editVehPlate} 
-                          onChange={e => setEditVehPlate(e.target.value)} 
+                          onChange={e => setEditVehPlate(e.target.value.toUpperCase())} 
                           className="w-full bg-white/10 rounded px-2 py-1 text-xs text-white border border-white/15 focus:border-cyber-green/50"
                         />
                       </div>
@@ -458,13 +510,15 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                   ) : (
                     <div>
                       <div className="text-sm font-bold text-white flex items-center gap-2">
-                        {v.name}
+                        <span className={privacyMode ? 'blur-md select-none transition-all duration-300 hover:blur-none' : ''}>
+                          {v.name}
+                        </span>
                         <span className="text-[8px] px-1 py-0.2 bg-white/5 border border-white/10 text-white/50 rounded font-mono uppercase">
                           {(v.lastOdometer || 0).toLocaleString()} KM
                         </span>
                       </div>
                       <div className="text-[9px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
-                        {v.brand} {v.model} • {v.plate || '尚未編配車牌'}
+                        {v.brand} {v.model} • <span className={privacyMode ? 'blur-md select-none transition-all duration-300 hover:blur-none' : ''}>{v.plate || '尚未編配車牌'}</span>
                       </div>
                     </div>
                   )}
@@ -558,6 +612,15 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
           </button>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </motion.div>
   );
 };

@@ -19,9 +19,10 @@ interface AdminAuditLogsProps {
   userRole: 'admin' | 'subAdmin';
   auditLogs: AuditLog[];
   format: (date: Date, pattern: string) => string;
+  privacyMode?: boolean;
 }
 
-export const AdminAuditLogs: React.FC<AdminAuditLogsProps> = ({ userRole, auditLogs, format }) => {
+export const AdminAuditLogs: React.FC<AdminAuditLogsProps> = ({ userRole, auditLogs, format, privacyMode = false }) => {
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const LOGS_PER_PAGE = 25;
@@ -115,9 +116,11 @@ export const AdminAuditLogs: React.FC<AdminAuditLogsProps> = ({ userRole, auditL
                       {formatTimestamp(log.timestamp)}
                     </td>
                     <td className="py-3 px-4 text-cyber-green truncate max-w-[180px]" title={log.operatorEmail}>
-                      {log.operatorEmail || 'system'}
+                      <span className={privacyMode ? 'blur-md select-none transition-all duration-300 hover:blur-none' : ''}>
+                        {log.operatorEmail || 'system'}
+                      </span>
                     </td>
-                    <td className="py-3 px-4 border-l border-white/5">
+                    <td className="py-3 px-4 border-l border-white/5 font-sans">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold border ${
                         log.operatorRole === 'admin'
                           ? 'bg-red-500/10 text-red-400 border-red-500/20'
@@ -131,8 +134,10 @@ export const AdminAuditLogs: React.FC<AdminAuditLogsProps> = ({ userRole, auditL
                         {log.actionType}
                       </span>
                     </td>
-                    <td className="py-3 px-4 border-l border-white/5 text-white/90 break-words max-w-md">
-                      {log.description}
+                    <td className="py-3 px-4 border-l border-white/5 text-white/90 break-words max-w-md font-sans">
+                      <span className={privacyMode ? 'blur-md select-none transition-all duration-300 hover:blur-none' : ''}>
+                        {log.description}
+                      </span>
                     </td>
                   </tr>
                 ))

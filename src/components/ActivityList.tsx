@@ -6,6 +6,7 @@ import { CyberButton } from './ui/CyberButton';
 import { CyberCard } from './ui/CyberCard';
 import { ConfirmationModal } from './ui/ConfirmationModal';
 import { EventDetail } from './EventDetail';
+import { PullToRefresh } from './ui/PullToRefresh';
 
 interface ActivityListProps {
   activities: Activity[];
@@ -20,6 +21,8 @@ interface ActivityListProps {
   onAdminRestoreRegistration: (eventId: string, userId: string) => Promise<void>;
   onDeleteRegistration?: (regId: string, userId: string, eventId: string) => Promise<void>;
   onClose: () => void;
+  isLoading?: boolean;
+  onRefresh?: () => Promise<void>;
 }
 
 export const ActivityList: React.FC<ActivityListProps> = ({ 
@@ -34,11 +37,14 @@ export const ActivityList: React.FC<ActivityListProps> = ({
   onCancelRegistration,
   onAdminRestoreRegistration,
   onDeleteRegistration,
-  onClose 
+  onClose,
+  isLoading = false,
+  onRefresh
 }) => {
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [registerLoading, setRegisterLoading] = useState(false);
 
   const { active, past } = React.useMemo(() => {
     const now = new Date();
@@ -82,12 +88,50 @@ export const ActivityList: React.FC<ActivityListProps> = ({
 
   const executeRegister = async () => {
     if (!confirmingId) return;
-    await onRegister(confirmingId, userProfile?.plate || '');
-    setConfirmingId(null);
+    setRegisterLoading(true);
+    try {
+      await onRegister(confirmingId, userProfile?.plate || '');
+      setConfirmingId(null);
+    } catch (err) {
+      console.error(err);
+      alert('報名失敗，請稍後再試！');
+    } finally {
+      setRegisterLoading(false);
+    }
   };
 
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pb-20">
+        <div className="flex items-center gap-4 mb-4">
+          <button onClick={onClose} className="p-2 -ml-2 text-white/40 hover:text-white transition-colors">
+            <ChevronLeft size={24} />
+          </button>
+          <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">活動報名 <span className="text-cyber-green">Events</span></h2>
+        </div>
+        {/* Skeleton items list */}
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="p-6 rounded-3xl border border-white/10 bg-white/[0.02] space-y-4">
+              <div className="flex justify-between items-start">
+                <div className="h-6 w-1/2 bg-zinc-850 animate-pulse rounded-lg" />
+                <div className="h-5 w-20 bg-zinc-800 animate-pulse rounded-full" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-4 w-1/3 bg-zinc-800 animate-pulse rounded" />
+                <div className="h-4 w-2/3 bg-zinc-800 animate-pulse rounded" />
+              </div>
+              <div className="h-10 w-full bg-zinc-808 animate-pulse rounded-xl" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 pb-20">
+    <PullToRefresh onRefresh={onRefresh || (async () => {})}>
+      <div className="space-y-6 pb-20">
       <div className="flex items-center gap-4 mb-4">
         <button onClick={onClose} className="p-2 -ml-2 text-white/40 hover:text-white transition-colors">
           <ChevronLeft size={24} />
@@ -290,7 +334,9 @@ export const ActivityList: React.FC<ActivityListProps> = ({
         variant="info"
         onConfirm={executeRegister}
         onCancel={() => setConfirmingId(null)}
+        isLoading={registerLoading}
       />
     </div>
+    </PullToRefresh>
   );
 };

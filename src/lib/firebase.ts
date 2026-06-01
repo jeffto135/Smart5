@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { initializeFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, signInWithPopup, getRedirectResult, signOut } from "firebase/auth";
 import { getMessaging, isSupported } from "firebase/messaging";
 
@@ -18,12 +18,21 @@ console.log("📡 [基地確認] 系統已進駐現役新專案:", firebaseConfi
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// 🟢 替換原有的 getFirestore()，開啟底層離線緩存功能，並鎖定具名資料庫 ID
-const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-}, "ai-studio-fe9cab21-2eab-4d27-9a68-02891525e6a8");
+// 🟢 初始化具名資料庫 ID
+const db = initializeFirestore(app, {}, "ai-studio-fe9cab21-2eab-4d27-9a68-02891525e6a8");
+
+// 🟢 啟用 enableIndexedDbPersistence 以確保本地持久化快取 (Data Persistence)
+if (typeof window !== "undefined") {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === "failed-precondition") {
+      console.warn("Firestore tab synchronization active or multiple tabs open.");
+    } else if (err.code === "unimplemented") {
+      console.warn("Firestore persistence is not supported in this browser.");
+    } else {
+      console.warn("Firestore enableIndexedDbPersistence error:", err);
+    }
+  });
+}
 
 const auth = getAuth(app);
 

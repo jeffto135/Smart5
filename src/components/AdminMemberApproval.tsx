@@ -22,6 +22,7 @@ interface AdminMemberApprovalProps {
   onUpdateMemberPlate?: (id: string, plate: string) => Promise<void>;
   onDeleteMember: (id: string) => Promise<void>;
   format: (date: Date, pattern: string) => string;
+  privacyMode?: boolean;
 }
 
 export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
@@ -40,7 +41,8 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
   onUpdateMemberRole,
   onUpdateMemberPlate,
   onDeleteMember,
-  format
+  format,
+  privacyMode = false
 }) => {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingPlateValue, setEditingPlateValue] = useState<string>('');
@@ -108,6 +110,7 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
       </div>
       {pagedProfiles.map(profile => {
         const userVehicles = vehicles.filter(v => v.userId === profile.id);
+        const blurClass = privacyMode ? "blur-md select-none transition-all duration-300 hover:blur-none" : "";
         return (
           <CyberCard key={profile.id} className="bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer" onClick={() => setSelectedMember(profile)}>
             <div className="flex justify-between items-center">
@@ -121,7 +124,9 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
                 </div>
                 <div>
                   <div className="text-sm font-bold text-white flex items-center gap-2">
-                    {profile.displayName && profile.displayName !== '匿名用戶' ? profile.displayName : (profile.phoneNumber || '匿名用戶')}
+                    <span className={blurClass}>
+                      {profile.displayName && profile.displayName !== '匿名用戶' ? profile.displayName : (profile.phoneNumber || '匿名用戶')}
+                    </span>
                     {profile.role !== 'member' && (
                       <span className="text-[8px] px-1 bg-cyber-green/20 text-cyber-green border border-cyber-green/30 rounded font-mono uppercase">
                         {profile.role}
@@ -129,7 +134,9 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
                     )}
                   </div>
                   <div className="text-[9px] font-mono text-white/30 uppercase truncate max-w-[150px]">
-                    {profile.email || profile.phoneNumber} • 加入於 {profile.joinedAt ? format(profile.joinedAt.toDate(), 'yyyy-MM-dd') : '未知'}
+                    <span className={blurClass}>
+                      {profile.email || profile.phoneNumber}
+                    </span> • 加入於 {profile.joinedAt ? format(profile.joinedAt.toDate(), 'yyyy-MM-dd') : '未知'}
                   </div>
                   {editingUserId === profile.id ? (
                     <div className="mt-1 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -166,13 +173,13 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
                         userVehicles.map(v => (
                           <span 
                             key={v.id} 
-                            className="text-[8px] px-1.5 py-0.5 bg-cyber-green/10 hover:bg-cyber-green/20 text-cyber-green border border-cyber-green/20 rounded font-mono select-none transition-colors"
+                            className={`text-[8px] px-1.5 py-0.5 bg-cyber-green/10 hover:bg-cyber-green/20 text-cyber-green border border-cyber-green/20 rounded font-mono select-none transition-colors ${blurClass}`}
                           >
                             {v.plate}
                           </span>
                         ))
                       ) : (
-                        <span className="text-[8px] px-1.5 py-0.5 bg-white/5 text-white/30 border border-white/10 rounded font-mono select-none">
+                        <span className={`text-[8px] px-1.5 py-0.5 bg-white/5 text-white/30 border border-white/10 rounded font-mono select-none ${blurClass}`}>
                           {profile.plate || '尚未配對車牌'}
                         </span>
                       )}
@@ -200,9 +207,7 @@ export const AdminMemberApproval: React.FC<AdminMemberApprovalProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm("📢 您確定要將此名成員停權並踢出車會嗎？\nARE YOU SURE YOU WANT TO BAN/KICK THIS MEMBER?")) {
-                        onDeleteMember(profile.id);
-                      }
+                      onDeleteMember(profile.id);
                     }}
                     className="p-1.5 bg-red-500/10 hover:bg-red-500/30 border border-red-500/20 hover:border-red-500/50 rounded-lg text-red-500 transition-colors text-[9px] font-bold font-mono uppercase flex items-center gap-1"
                     title="停權 / 踢出車會"

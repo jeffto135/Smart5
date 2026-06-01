@@ -4,6 +4,7 @@ import { GroupBuy } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
 import { CyberButton } from './ui/CyberButton';
+import { PullToRefresh } from './ui/PullToRefresh';
 
 interface GroupBuyMarketplaceProps {
   groupBuys: GroupBuy[];
@@ -17,6 +18,8 @@ interface GroupBuyMarketplaceProps {
   onClose: () => void;
   initialTargetId?: string | null;
   onClearTargetId?: () => void;
+  isLoading?: boolean;
+  onRefresh?: () => Promise<void>;
 }
 
 export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
@@ -26,7 +29,9 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
   onRegister,
   onClose,
   initialTargetId,
-  onClearTargetId
+  onClearTargetId,
+  isLoading = false,
+  onRefresh
 }) => {
   // Modal State for user subscription
   const [selectedGb, setSelectedGb] = useState<GroupBuy | null>(null);
@@ -99,8 +104,58 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pb-20">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center gap-4">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="p-2 -ml-2 text-white/40 hover:text-white transition-colors"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <div>
+              <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
+                團購市集 <span className="text-cyber-green">Group Buy</span>
+              </h2>
+              <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
+                100% 官方控管優質福利市集 / Authentic Accessories Marketplace
+              </p>
+            </div>
+          </div>
+        </div>
+        {/* Skeleton pulse blocks */}
+        <div className="space-y-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="p-6 rounded-3xl border border-white/10 bg-white/[0.02] space-y-4">
+              <div className="flex justify-between items-start gap-4">
+                <div className="space-y-2 flex-1">
+                  <div className="h-6 w-3/4 bg-zinc-800 animate-pulse rounded-lg" />
+                  <div className="h-4 w-1/2 bg-zinc-800 animate-pulse rounded-md" />
+                </div>
+                <div className="h-8 w-24 bg-zinc-800 animate-pulse rounded-xl" />
+              </div>
+              <div className="h-32 bg-zinc-800 animate-pulse rounded-2xl w-full" />
+              <div className="space-y-2">
+                <div className="h-3 bg-zinc-800 animate-pulse rounded w-full animate-pulse" />
+                <div className="flex justify-between">
+                  <div className="h-4 w-16 bg-zinc-800 animate-pulse rounded" />
+                  <div className="h-4 w-16 bg-zinc-800 animate-pulse rounded" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 pb-20">
+    <PullToRefresh onRefresh={onRefresh || (async () => {})}>
+      <div className="space-y-6 pb-20">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
@@ -518,7 +573,7 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                     disabled={regLoading}
                     className="text-xs py-2.5"
                   >
-                    {regLoading ? '處理中...' : qty === 0 ? '取消認購 / REMOVE' : '確定認購 / SUBMIT'}
+                    {regLoading ? '⌛ 處理中，請勿重複點擊...' : qty === 0 ? '取消認購 / REMOVE' : '確定認購 / SUBMIT'}
                   </CyberButton>
                 </div>
               </div>
@@ -565,5 +620,6 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
       </AnimatePresence>
 
     </div>
+    </PullToRefresh>
   );
 };

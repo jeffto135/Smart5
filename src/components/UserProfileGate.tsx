@@ -13,6 +13,14 @@ interface UserProfileGateProps {
 }
 
 export const UserProfileGate: React.FC<UserProfileGateProps> = ({ user, userProfile, profileLoading, onUpdateProfile, children }) => {
+  const formatPhone = (val: string) => {
+    const cleaned = val.replace(/\D/g, '');
+    if (cleaned.length <= 4) {
+      return cleaned;
+    }
+    return `${cleaned.slice(0, 4)} ${cleaned.slice(4, 8)}`;
+  };
+
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -79,10 +87,11 @@ export const UserProfileGate: React.FC<UserProfileGateProps> = ({ user, userProf
                   <Phone size={18} className="text-cyber-green/50" />
                   <input
                     type="tel"
+                    inputMode="tel"
                     required
-                    placeholder="手機號碼 (例如: 98765432)"
+                    placeholder="手機號碼 (例如: 9876 5432)"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(formatPhone(e.target.value))}
                     className="flex-1 bg-transparent border-none outline-none text-white font-mono placeholder:text-white/20"
                   />
                 </div>
@@ -91,7 +100,7 @@ export const UserProfileGate: React.FC<UserProfileGateProps> = ({ user, userProf
               <CyberButton 
                 type="submit" 
                 className="w-full py-4 h-auto text-sm" 
-                disabled={saving || phone.length < 8}
+                disabled={saving || phone.replace(/\s/g, '').length < 8}
                 glow
               >
                 {saving ? (

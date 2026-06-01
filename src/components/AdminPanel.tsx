@@ -19,6 +19,8 @@ import {
   MessageSquare,
   ShieldCheck,
   MapPin,
+  Eye,
+  EyeOff,
   Youtube,
   ShoppingBag,
   Gift,
@@ -164,6 +166,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }
 
   const [activeTab, setActiveTab] = useState<'fleet' | 'logs' | 'audit' | 'vehicles' | 'activities' | 'polls' | 'members' | 'account' | 'checkin' | 'parking' | 'groupBuys' | 'clubPerks' | 'notifications'>('fleet');
+  const [privacyMode, setPrivacyMode] = useState(false);
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showAddPoll, setShowAddPoll] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<{ type: 'activity' | 'poll', data: any } | null>(null);
@@ -807,7 +810,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       variant: 'danger',
       title: '刪除活動',
-      message: '此操作無法撤銷，確定要永久刪除嗎？',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
       onConfirm: async () => {
         try {
           await onDeleteActivity(id);
@@ -826,7 +829,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       variant: 'danger',
       title: '刪除投票',
-      message: '此操作無法撤銷，確定要永久刪除嗎？',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
       onConfirm: async () => {
         try {
           await onDeletePoll(id);
@@ -880,7 +883,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       variant: 'danger',
       title: '刪除紀錄',
-      message: '此操作無法撤銷，確定要永久刪除嗎？',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
       onConfirm: async () => {
         try {
           await onDeleteLog(id);
@@ -898,7 +901,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       variant: 'info',
       title: '更新紀錄',
-      message: '確定要更新此項資料嗎？',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
       onConfirm: async () => {
         try {
           await onUpdateLog(id, data);
@@ -916,7 +919,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       variant: 'danger',
       title: '刪除車輛',
-      message: '此操作無法撤銷，確定要永久刪除嗎？',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
       onConfirm: async () => {
         try {
           await onDeleteVehicle(id);
@@ -935,7 +938,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       isOpen: true,
       variant: 'danger',
       title: '刪除成員',
-      message: '此操作無法撤銷，確定要永久刪除嗎？',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
       onConfirm: async () => {
         try {
           await onDeleteMember(id);
@@ -1066,6 +1069,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
         <div className="flex gap-4 items-center">
+          {activeModule === 'analytics' && (
+            <button
+              onClick={() => setPrivacyMode(!privacyMode)}
+              className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                privacyMode 
+                  ? 'bg-red-500/10 border-red-500 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)] animate-pulse' 
+                  : 'bg-cyber-green/10 border-cyber-green/30 text-cyber-green/70 hover:text-cyber-green hover:border-cyber-green'
+              }`}
+              title={privacyMode ? "隱私遮罩已開啟" : "切換隱私遮罩"}
+            >
+              {privacyMode ? <EyeOff size={14} /> : <Eye size={14} />}
+              <span>{privacyMode ? '防窺已開 SHIELD' : '隱私防窺 PRIVATE'}</span>
+            </button>
+          )}
+
           {isAdmin && (
             <button 
               onClick={handleExport}
@@ -1150,13 +1168,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <>
                     <CyberCard className="bg-cyber-green/5 border-cyber-green/20">
                       <div className="text-[10px] font-mono text-cyber-green/60 uppercase tracking-widest">車隊總里程</div>
-                      <div className="text-2xl font-mono font-black text-white mt-1">
+                      <div className={`text-2xl font-mono font-black text-white mt-1 ${privacyMode ? 'blur-md select-none transition-all hover:blur-none' : ''}`}>
                         {stats.totalMileage.toLocaleString()} <span className="text-xs opacity-50">KM</span>
                       </div>
                     </CyberCard>
                     <CyberCard className="bg-cyber-green/5 border-cyber-green/20">
                       <div className="text-[10px] font-mono text-cyber-green/60 uppercase tracking-widest">總節省成本</div>
-                      <div className="text-2xl font-mono font-black text-cyber-green mt-1">
+                      <div className={`text-2xl font-mono font-black text-cyber-green mt-1 ${privacyMode ? 'blur-md select-none transition-all hover:blur-none' : ''}`}>
                         ${stats.totalSavings.toLocaleString()}
                       </div>
                     </CyberCard>
@@ -1681,6 +1699,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               onDeleteLog={onDeleteLog}
               onDeleteVehicle={onDeleteVehicle}
               format={format}
+              privacyMode={privacyMode}
             />
           )}
 
@@ -1689,6 +1708,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               userRole={isAdmin ? 'admin' : 'subAdmin'}
               auditLogs={auditLogs}
               format={format}
+              privacyMode={privacyMode}
             />
           )}
 
@@ -1740,6 +1760,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               onUpdateMemberPlate={onUpdateMemberPlate}
               onDeleteMember={onDeleteMember}
               format={format}
+              privacyMode={privacyMode}
             />
           )}
 
@@ -1753,6 +1774,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               onDeleteLog={onDeleteLog}
               onDeleteVehicle={onDeleteVehicle}
               format={format}
+              privacyMode={privacyMode}
             />
           )}
 
@@ -1951,13 +1973,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <div className="flex items-center gap-2">
                                   {isCancelled ? (
                                     <button 
-                                      onClick={async () => {
-                                        if (window.confirm('確定要手動恢復此成員的報名嗎？ RESTORE THIS PARTICIPANT?')) {
-                                          await onAdminRestoreRegistration(selectedEntity.data.id, reg.userId);
-                                          // Update local state is tricky here because data comes from props, 
-                                          // but fleetData should update via some parent trigger or listener.
-                                          // For now, we assume the prop update is enough or reload.
-                                        }
+                                      onClick={() => {
+                                        setConfirmModal({
+                                          isOpen: true,
+                                          variant: 'info',
+                                          title: '恢復成員報名',
+                                          message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+                                          onConfirm: async () => {
+                                            try {
+                                              await onAdminRestoreRegistration(selectedEntity.data.id, reg.userId);
+                                            } catch (error: any) {
+                                              alert('恢復成員失敗: ' + (error.message || '未知錯誤'));
+                                            } finally {
+                                              setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                            }
+                                          }
+                                        });
                                       }}
                                       className="px-2 py-1 bg-cyber-green/10 border border-cyber-green/30 text-[9px] font-mono text-cyber-green rounded hover:bg-cyber-green hover:text-black transition-all"
                                     >
@@ -1965,14 +1996,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     </button>
                                   ) : (
                                     <button 
-                                      onClick={async () => {
-                                        if (window.confirm('確定要移出此成員嗎？ REMOVE THIS PARTICIPANT?')) {
-                                          const updatedParticipants = selectedEntity.data.participants.filter((p: string) => p !== user.uid);
-                                          await onUpdateActivity(selectedEntity.data.id, { participants: updatedParticipants });
-                                          // Also mark registration as cancelled via updateDoc if needed, 
-                                          // but for now we follow the existing pattern for removal.
-                                          // The user specifically asked for "手動加回" for "cancelled" users.
-                                        }
+                                      onClick={() => {
+                                        setConfirmModal({
+                                          isOpen: true,
+                                          variant: 'danger',
+                                          title: '移除參會成員',
+                                          message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+                                          onConfirm: async () => {
+                                            try {
+                                              const updatedParticipants = selectedEntity.data.participants.filter((p: string) => p !== user.uid);
+                                              await onUpdateActivity(selectedEntity.data.id, { participants: updatedParticipants });
+                                            } catch (error: any) {
+                                              alert('移除失敗: ' + (error.message || '未知錯誤'));
+                                            } finally {
+                                              setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                            }
+                                          }
+                                        });
                                       }}
                                       className="p-2 text-red-500/0 group-hover:text-red-500/60 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
                                     >

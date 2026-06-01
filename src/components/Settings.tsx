@@ -10,6 +10,7 @@ import { HK_EV_MODELS } from '../constants';
 import { DisclaimerModal } from './DisclaimerModal';
 import { UserAgreementModal } from './UserAgreementModal';
 import { AdminConductModal } from './AdminConductModal';
+import { PersonalInformationStatementModal } from './PersonalInformationStatementModal';
 import { ParkingLeafletMap } from './ParkingLeafletMap';
 import { MembershipCard } from './MembershipCard';
 
@@ -39,6 +40,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false);
   const [showUserAgreementModal, setShowUserAgreementModal] = useState(false);
   const [showAdminConductModal, setShowAdminConductModal] = useState(false);
+  const [showPicsModal, setShowPicsModal] = useState(false);
   const [showParkingMap, setShowParkingMap] = useState(false);
   
   // Modal states for form
@@ -522,6 +524,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
             </button>
 
             <button 
+              onClick={() => setShowPicsModal(true)}
+              className="group block w-full text-left"
+            >
+              <CyberCard className="bg-white/[0.02] hover:border-cyber-green/30 transition-colors py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyber-green/10 border border-cyber-green/20 flex items-center justify-center">
+                      <ShieldCheck className="text-cyber-green" size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-white/90">個人資料收集聲明 (PICS)</span>
+                  </div>
+                  <ChevronRight size={14} className="text-white/20 group-hover:text-cyber-green transition-colors" />
+                </div>
+              </CyberCard>
+            </button>
+
+            <button 
               onClick={() => setShowAdminConductModal(true)}
               className="group block w-full text-left"
             >
@@ -573,9 +592,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                   <CyberInput
                     label="車牌號碼"
                     value={plate}
-                    onChange={(e) => setPlate(e.target.value)}
+                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
                     placeholder="例如：AA1234"
                     prefix="ID"
+                    autoCapitalize="characters"
                   />
 
                   <div className="space-y-2">
@@ -965,6 +985,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       <AdminConductModal
         isOpen={showAdminConductModal}
         onClose={() => setShowAdminConductModal(false)}
+      />
+
+      <PersonalInformationStatementModal
+        isOpen={showPicsModal}
+        onClose={() => setShowPicsModal(false)}
       />
 
       {/* Parking Map Sub-page */}

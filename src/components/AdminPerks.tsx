@@ -17,6 +17,7 @@ import { ClubPerk } from '../types';
 import { CyberCard } from './ui/CyberCard';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
+import { ConfirmationModal } from './ui/ConfirmationModal';
 
 interface AdminPerksProps {
   clubPerks: ClubPerk[];
@@ -36,6 +37,20 @@ export const AdminPerks: React.FC<AdminPerksProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerkId, setEditingPerkId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant: 'danger' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    variant: 'info'
+  });
 
   // Form Fields
   const [merchantName, setMerchantName] = useState('');
@@ -134,14 +149,22 @@ export const AdminPerks: React.FC<AdminPerksProps> = ({
   };
 
   const handleDelete = async (id: string, merchant: string) => {
-    if (window.confirm(`確定要下架並刪除「${merchant}」的特惠項目嗎？此操作不可逆！`)) {
-      try {
-        await onDeletePerk(id);
-        alert('成功下架該優惠 / REMOVED');
-      } catch (err: any) {
-        alert('操作失敗: ' + (err.message || '未知錯誤'));
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: '下架商戶優惠',
+      message: '⚠️ 確定執行此操作嗎？此動作將同步寫入系統日誌。',
+      onConfirm: async () => {
+        try {
+          await onDeletePerk(id);
+          alert('成功下架該優惠 / REMOVED');
+        } catch (err: any) {
+          alert('操作失敗: ' + (err.message || '未知錯誤'));
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    }
+    });
   };
 
   return (
@@ -399,6 +422,14 @@ export const AdminPerks: React.FC<AdminPerksProps> = ({
         )}
       </AnimatePresence>
 
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

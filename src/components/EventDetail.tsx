@@ -494,6 +494,7 @@ export const EventDetail: React.FC<EventDetailProps> = ({
         confirmText="確認報名"
         onConfirm={handleRegister}
         onCancel={() => setShowJoinConfirm(false)}
+        isLoading={isActionLoading}
       >
         <div className="space-y-4">
           {activity.hasCustomOptions && activity.customOptionsTemplate && activity.customOptionsTemplate.length > 0 && (

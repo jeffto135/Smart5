@@ -20,9 +20,10 @@ interface LogsHistoryProps {
   vehicle: Vehicle | null;
   onLogClick: (log: LogEntry) => void;
   onClose: () => void;
+  isLoading?: boolean;
 }
 
-export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogClick, onClose }) => {
+export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogClick, onClose, isLoading = false }) => {
   const [cols, setCols] = useState<1 | 2>(2);
 
   // 📊 模組三：按日期歸總（Group by Date）後的本月數據按日期升序排列
@@ -99,6 +100,54 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
       };
     }).sort((a, b) => a.date.localeCompare(b.date));
   }, [logs, vehicle]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 pb-20">
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center gap-4">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="p-2 -ml-2 text-white/40 hover:text-white transition-colors"
+            >
+              <ArrowLeft size={24} />
+            </button>
+            <div>
+              <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
+                營運紀錄 <span className="text-cyber-green">Logs</span>
+              </h2>
+              <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
+                充電與行駛用電力度數據日誌
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Skeleton Grid for logs */}
+        <div className={`grid ${cols === 2 ? 'grid-cols-2' : 'grid-cols-1'} gap-6`}>
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="p-6 rounded-3xl border border-white/10 bg-white/[0.02] space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="h-4 w-32 bg-zinc-800 animate-pulse rounded-md" />
+                <div className="h-5 w-16 bg-zinc-800 animate-pulse rounded-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="space-y-2">
+                  <div className="h-3 w-16 bg-zinc-800 animate-pulse rounded" />
+                  <div className="h-6 w-24 bg-zinc-805 animate-pulse rounded-md" />
+                </div>
+                <div className="space-y-2 text-right">
+                  <div className="h-3 w-16 bg-zinc-800 animate-pulse rounded ml-auto" />
+                  <div className="h-6 w-24 bg-zinc-805 animate-pulse rounded-md ml-auto" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
