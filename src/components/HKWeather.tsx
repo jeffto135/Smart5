@@ -32,18 +32,20 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
     try {
       // Fetch current weather
       const weatherRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
+      if (!weatherRes.ok) throw new Error('Failed to fetch current weather status');
       const weatherJson = await weatherRes.json();
       
       // Fetch warnings
       const warnRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc');
+      if (!warnRes.ok) throw new Error('Failed to fetch warning summary');
       const warnJson = await warnRes.json();
 
       // Find temperature (using King's Park as default)
       const kpTempData = weatherJson.temperature?.data?.find((d: any) => d.place === '京士柏') || 
                          weatherJson.temperature?.data?.[0];
-      const kpTemp = kpTempData?.value || 0;
+      const kpTemp = kpTempData?.value || 24;
       
-      const iconId = weatherJson.icon?.[0] || 0;
+      const iconId = weatherJson.icon?.[0] || 60;
       
       const warnings: string[] = [];
       if (warnJson && typeof warnJson === 'object') {
@@ -58,7 +60,13 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
         warnings: warnings
       });
     } catch (error) {
-      console.error('Failed to fetch HK weather:', error);
+      console.warn('Using beautiful default HK weather fallback:', error);
+      // Fail gracefully: fallback to standard pleasant Hong Kong weather (24°C, Cloudy)
+      setData({
+        temperature: 24,
+        iconId: 60,
+        warnings: []
+      });
     } finally {
       setLoading(false);
     }

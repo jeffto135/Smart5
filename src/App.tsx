@@ -42,6 +42,15 @@ export default function App() {
   const [showPicsStatement, setShowPicsStatement] = useState(false);
   const [isAgreed, setIsAgreed] = useState(false);
   const [catchUpData, setCatchUpData] = useState<any>(null);
+
+  // Dynamic month formatting helper
+  const getCurrentMonthFormat = () => {
+    const d = new Date();
+    const monthNum = d.getMonth() + 1;
+    const monthStr = monthNum < 10 ? `0${monthNum}` : `${monthNum}`;
+    return `${d.getFullYear()}-${monthStr}`;
+  };
+  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthFormat());
   
   const [targetGroupBuyId, setTargetGroupBuyId] = useState<string | null>(null);
   const [activeWeatherWarnings, setActiveWeatherWarnings] = useState<string[]>([]);
@@ -631,6 +640,8 @@ export default function App() {
                 onPollClick={() => setView('pollList')}
                 onGroupBuyClick={() => setView('groupBuy')}
                 onClubPerksClick={() => setView('clubPerks')}
+                selectedMonth={selectedMonth}
+                onSelectMonth={setSelectedMonth}
               />
             </motion.div>
           ) : view === 'entry' ? (
@@ -745,6 +756,8 @@ export default function App() {
                 onLogClick={setEditingLog}
                 onClose={() => setView('dashboard')}
                 isLoading={evStore.loading}
+                selectedMonth={selectedMonth}
+                onSelectMonth={setSelectedMonth}
               />
             </motion.div>
           ) : view === 'messages' ? (

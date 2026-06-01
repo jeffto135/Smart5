@@ -7,9 +7,10 @@ interface CyberCardProps {
   title?: string;
   icon?: React.ReactNode;
   onClick?: () => void;
+  action?: React.ReactNode;
 }
 
-export const CyberCard: React.FC<CyberCardProps> = ({ children, className, title, icon, onClick }) => {
+export const CyberCard: React.FC<CyberCardProps> = ({ children, className, title, icon, onClick, action }) => {
   return (
     <div 
       onClick={onClick}
@@ -19,10 +20,13 @@ export const CyberCard: React.FC<CyberCardProps> = ({ children, className, title
         className
       )}
     >
-      {(title || icon) && (
-        <div className="flex items-center gap-3 mb-4">
-          {icon && <div className="text-cyber-green cyber-text-glow">{icon}</div>}
-          {title && <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">{title}</h3>}
+      {(title || icon || action) && (
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            {icon && <div className="text-cyber-green cyber-text-glow">{icon}</div>}
+            {title && <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">{title}</h3>}
+          </div>
+          {action && <div className="relative z-20 shrink-0">{action}</div>}
         </div>
       )}
       <div className="relative z-10">{children}</div>

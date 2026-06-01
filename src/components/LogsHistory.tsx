@@ -14,6 +14,7 @@ import {
   Legend, 
   ResponsiveContainer 
 } from 'recharts';
+import { MonthDropdown } from './MonthDropdown';
 
 interface LogsHistoryProps {
   logs: LogEntry[];
@@ -21,15 +22,34 @@ interface LogsHistoryProps {
   onLogClick: (log: LogEntry) => void;
   onClose: () => void;
   isLoading?: boolean;
+  selectedMonth: string;
+  onSelectMonth: (month: string) => void;
 }
 
-export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogClick, onClose, isLoading = false }) => {
+export const LogsHistory: React.FC<LogsHistoryProps> = ({ 
+  logs, 
+  vehicle, 
+  onLogClick, 
+  onClose, 
+  isLoading = false,
+  selectedMonth,
+  onSelectMonth
+}) => {
   const [cols, setCols] = useState<1 | 2>(2);
+
+  // 1. Filter logs for the selected month to render
+  const filteredLogs = React.useMemo(() => {
+    return logs.filter(log => {
+      if (selectedMonth === 'all') return true;
+      const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
+      return d.startsWith(selectedMonth);
+    });
+  }, [logs, selectedMonth]);
 
   // 📊 模組三：按日期歸總（Group by Date）後的本月數據按日期升序排列
   const chartData = React.useMemo(() => {
-    // 1. Sort all logs chronologically (ascending date) in-memory to compute correct odoDiff
-    const sortedAllLogs = [...logs].sort((a, b) => {
+    // 1. Sort all filtered logs chronologically (ascending date) in-memory to compute correct odoDiff
+    const sortedAllLogs = [...filteredLogs].sort((a, b) => {
       const dateCompare = (a.date || "").localeCompare(b.date || "");
       if (dateCompare !== 0) return dateCompare;
       const aOdo = Number(a.odo ?? a.odometer ?? 0);
@@ -49,21 +69,11 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
       }
     }
 
-    // 2. Filter for current month's logs
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    const currentMonthLogs = sortedAllLogs.filter(log => {
-      const logDate = log.timestamp.toDate();
-      return logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear;
-    });
-
-    // 3. Group by date
+    // 2. Group by date
     const groups: { [date: string]: { driveEnergy: number; chargeEnergy: number } } = {};
     const batteryCapacity = vehicle?.batteryCapacity || 100;
 
-    currentMonthLogs.forEach(log => {
+    sortedAllLogs.forEach(log => {
       const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
       // Format as MM-DD for brevity in XAxis
       let formattedDate = d;
@@ -89,7 +99,7 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
       }
     });
 
-    // 4. Transform into array and sort chronologically (ascending date)
+    // 3. Transform into array and sort chronologically (ascending date)
     return Object.entries(groups).map(([date, data]) => {
       const driveKwh = parseFloat(((data.driveEnergy / 100) * batteryCapacity).toFixed(2));
       const chargeKwh = parseFloat(((data.chargeEnergy / 100) * batteryCapacity).toFixed(2));
@@ -99,7 +109,7 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
         dayTotalChargeEnergy: chargeKwh,
       };
     }).sort((a, b) => a.date.localeCompare(b.date));
-  }, [logs, vehicle]);
+  }, [filteredLogs, vehicle]);
 
   if (isLoading) {
     return (
@@ -152,7 +162,7 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
+        <h2 className="text-2xl font-mono font-bold uppercase tracking-tight font-sans">
           歷史紀錄
         </h2>
         <div className="flex gap-1 p-1 bg-white/5 rounded-lg border border-white/10">
@@ -173,12 +183,17 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
 
       {/* 📊 模組三：全月用電與充電曲線圖 */}
       <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/40 font-bold">Dynamic Energy Composed Track</span>
-            <h3 className="text-md font-bold uppercase tracking-wide text-white mt-0.5">本月用電與充電對比</h3>
+        <div className="flex justify-between items-center mb-4 gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <div>
+              <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/40 font-bold">Dynamic Energy Composed Track</span>
+              <h3 className="text-md font-bold uppercase tracking-wide text-white mt-0.5">
+                {selectedMonth === 'all' ? '歷史' : '本月'}用電與充電對比
+              </h3>
+            </div>
+            <MonthDropdown selectedMonth={selectedMonth} onSelectMonth={onSelectMonth} />
           </div>
-          <span className="text-[10px] font-mono text-cyber-green bg-cyber-green/10 border border-cyber-green/20 px-2 py-0.5 rounded uppercase font-bold">
+          <span className="text-[10px] font-mono text-cyber-green bg-cyber-green/10 border border-cyber-green/20 px-2 py-0.5 rounded uppercase font-bold shrink-0">
             kWh 雙軸
           </span>
         </div>
@@ -273,8 +288,12 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
           <div className="col-span-2 text-center py-20 opacity-30 uppercase tracking-[0.3em] font-mono text-sm">
             目前沒有紀錄
           </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="col-span-2 text-center py-20 opacity-30 uppercase tracking-[0.2em] font-mono text-sm">
+            本月尚無用車及充電數據
+          </div>
         ) : (
-          logs.map((log) => (
+          filteredLogs.map((log) => (
             <motion.button
               key={log.id}
               whileHover={{ scale: 1.01 }}
@@ -289,12 +308,23 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({ logs, vehicle, onLogCl
                   <span className="opacity-40">
                     {format(log.timestamp.toDate(), 'HH:mm')}
                   </span>
-                  {log.isCharging && (
-                    <span className="text-[8px] bg-cyber-green text-black px-1 rounded font-bold">⚡️ 補能</span>
-                  )}
                 </div>
-                <div className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${log.isCharging ? 'text-cyber-green border-cyber-green' : 'text-white/60 border-white/10'}`}>
-                  {log.batteryPercent}% BATT
+                
+                <div className="flex flex-col items-end justify-start gap-1">
+                  {/* 1. 黃色補能標籤：僅在充電紀錄時渲染，獨立一行 */}
+                  {log.isCharging && (
+                    <span className="bg-[#A3E635] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5 animate-pulse">
+                      ⚡ 補能
+                    </span>
+                  )}
+
+                  {/* 2. 電量框：強制鎖死寬度，確保不論有沒有補能標籤，尺寸都跟其他卡片 100% 一致 */}
+                  <div className={`w-[68px] h-[36px] flex flex-col items-center justify-center rounded-md border text-[11px] font-bold leading-tight ${
+                    log.isCharging ? 'border-[#A3E635] text-[#A3E635]' : 'border-zinc-700 text-zinc-400'
+                  }`}>
+                    <div>{log.batteryPercent}%</div>
+                    <div className="text-[9px] opacity-80 font-mono">BATT</div>
+                  </div>
                 </div>
               </div>
               

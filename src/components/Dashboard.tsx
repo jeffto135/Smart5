@@ -13,6 +13,7 @@ import { motion } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
 import { LogEntry, Vehicle, Activity, Poll, GroupBuy } from '../types';
 import { format } from 'date-fns';
+import { MonthDropdown } from './MonthDropdown';
 
 interface DashboardProps {
   logs: LogEntry[];
@@ -26,6 +27,8 @@ interface DashboardProps {
   onPollClick: () => void;
   onGroupBuyClick: () => void;
   onClubPerksClick: () => void;
+  selectedMonth: string;
+  onSelectMonth: (month: string) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
@@ -39,7 +42,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onActivityClick,
   onPollClick,
   onGroupBuyClick,
-  onClubPerksClick
+  onClubPerksClick,
+  selectedMonth,
+  onSelectMonth
 }) => {
   const [expandedDates, setExpandedDates] = useState<{ [date: string]: boolean }>({});
 
@@ -48,10 +53,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }));
   };
 
+  // Filter logs based on high-tech frontend month filter in the top bar
+  const filteredMonthLogs = useMemo(() => {
+    return logs.filter(log => {
+      if (selectedMonth === 'all') return true;
+      const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
+      return d.startsWith(selectedMonth);
+    });
+  }, [logs, selectedMonth]);
+
   // Group logs by date
   const groupedLogs = useMemo(() => {
     // 1. Sort ALL logs chronologically (ascending date and odo) in-memory to safely compute odoDiff client-side as fallback/guarantee.
-    const sortedAllLogs = [...logs].sort((a, b) => {
+    const sortedAllLogs = [...filteredMonthLogs].sort((a, b) => {
       const dateCompare = (a.date || "").localeCompare(b.date || "");
       if (dateCompare !== 0) return dateCompare;
       const aOdo = Number(a.odo ?? a.odometer ?? 0);
@@ -153,7 +167,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         records: dayRecords
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
-  }, [logs, vehicle]);
+  }, [filteredMonthLogs, vehicle]);
 
   // Check for new content
   const hasNewActivity = useMemo(() => {
@@ -188,7 +202,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let totalBatteryConsumed = 0;
 
     // Sort full logs ascending globally to accurately pass down memory computed odoDiff to stats
-    const sortedLogsAsc = [...logs].sort((a, b) => {
+    const sortedLogsAsc = [...filteredMonthLogs].sort((a, b) => {
       const dateCompare = (a.date || "").localeCompare(b.date || "");
       if (dateCompare !== 0) return dateCompare;
       const aOdo = Number(a.odo ?? a.odometer ?? 0);
@@ -231,10 +245,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }));
 
     // Monthly stats calculation
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
     let monthlyDistance = 0;
     let monthlyBatteryConsumed = 0;
     let monthlyCost = 0;
@@ -255,15 +265,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         totalBatteryConsumed += diffVal;
       }
 
-      // Filter for current month
-      const logDate = log.timestamp.toDate();
-      if (logDate.getMonth() === currentMonth && logDate.getFullYear() === currentYear) {
-        monthlyDistance += distance;
-        if (isDrive) {
-          monthlyBatteryConsumed += diffVal;
-        }
-        monthlyCost += cost;
+      // Filter accumulation (already prefiltered or all)
+      monthlyDistance += distance;
+      if (isDrive) {
+        monthlyBatteryConsumed += diffVal;
       }
+      monthlyCost += cost;
     });
 
     const avgEfficiencyPerc = totalDistance > 0 ? (totalBatteryConsumed / totalDistance * 100) : 0;
@@ -287,6 +294,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       else if (recentEfficiency < baseValue * 0.95) trend = 'down';
     }
 
+    const currentMonthLabel = selectedMonth === 'all'
+      ? '全體歷史'
+      : (() => {
+          try {
+            const [y, m] = selectedMonth.split('-');
+            return `${y}年${Number(m)}月`;
+          } catch (e) {
+            return selectedMonth;
+          }
+        })();
+
     return {
       totalSavings: totalSavings.toFixed(0),
       avgEfficiency: avgEfficiencyStr,
@@ -295,11 +313,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
       monthlyBattery: monthlyBatteryConsumed.toFixed(0),
       monthlyKwh: ((monthlyBatteryConsumed / 100) * (vehicle?.batteryCapacity || 60)).toFixed(1),
       monthlyCost: monthlyCost.toLocaleString(),
-      currentMonthLabel: format(now, 'MMMM yyyy'),
+      currentMonthLabel,
       chartData,
       trend
     };
-  }, [logs, vehicle]);
+  }, [filteredMonthLogs, vehicle, selectedMonth]);
 
   // 🧠 模組二：智能用車提醒與續航估算 (EV Smart Insights)
   const smartInsights = useMemo(() => {
@@ -586,7 +604,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Chart Section */}
-      <CyberCard title="電量趨勢" className="min-h-[280px]">
+      <CyberCard title="電量趨勢" className="min-h-[280px]" action={<MonthDropdown selectedMonth={selectedMonth} onSelectMonth={onSelectMonth} />}>
         {stats.chartData.length > 0 ? (
           <div className="h-48 w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
