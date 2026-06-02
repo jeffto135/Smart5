@@ -55,6 +55,9 @@ export interface UserProfile {
   photoURL?: string;
   displayName?: string;
   plate?: string;
+  licensePlate?: string;
+  mobile?: string;
+  status?: string;
   selectedVehicleId?: string | null;
   joinedAt?: Timestamp;
   updatedAt: Timestamp;

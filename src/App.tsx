@@ -41,6 +41,7 @@ export default function App() {
   const [showUserAgreement, setShowUserAgreement] = useState(false);
   const [showPicsStatement, setShowPicsStatement] = useState(false);
   const [isAgreed, setIsAgreed] = useState(false);
+  const [invitationCode, setInvitationCode] = useState('');
   const [catchUpData, setCatchUpData] = useState<any>(null);
 
   // Dynamic month formatting helper
@@ -314,6 +315,9 @@ export default function App() {
   }
 
   if (!user) {
+    const isCodeCorrect = invitationCode.trim() === "SMART5_REG_OWNERS";
+    const canSubmitGoogle = isCodeCorrect && isAgreed;
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center space-y-12">
         <div className="space-y-4">
@@ -337,50 +341,88 @@ export default function App() {
               <span className="text-cyber-green cyber-text-glow font-bold">「省錢感」</span>與<span className="text-cyber-green cyber-text-glow font-bold">「成就感」</span>
             </div>
 
-            {/* 強制服務條款同意勾選框 */}
-            <div className="flex gap-2.5 items-start text-left bg-white/[0.02] border border-white/5 p-3.5 rounded-xl">
-              <input 
-                type="checkbox" 
-                id="login-agreement-checkbox"
-                checked={isAgreed}
-                onChange={(e) => setIsAgreed(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-white/10 bg-black text-[#A3E635] focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#A3E635]"
-              />
-              <label htmlFor="login-agreement-checkbox" className="text-[11px] leading-relaxed text-gray-300 select-none cursor-pointer">
-                我已充分閱讀、理解並無條件同意 Smart5 Owners 的
-                <button 
-                  type="button"
-                  onClick={() => setShowUserAgreement(true)}
-                  className="text-cyber-green hover:underline font-bold px-0.5"
-                >
-                  《用戶服務協議》
-                </button>
-                、
-                <button 
-                  type="button"
-                  onClick={() => setShowDisclaimer(true)}
-                  className="text-cyber-green hover:underline font-bold px-0.5"
-                >
-                  《版權及免責聲明》
-                </button>
-                及
-                <button 
-                  type="button"
-                  onClick={() => setShowPicsStatement(true)}
-                  className="text-cyber-green hover:underline font-bold px-0.5"
-                >
-                  《個人資料收集聲明》
-                </button>
-                。
+            {/* 【階段一：邀請碼攔截】 */}
+            <div className="space-y-2 text-left">
+              <label className="text-[10px] font-mono font-bold tracking-widest text-[#A3E635] uppercase">
+                [ 🔒 請輸入 Smart #5 車會官方群組邀請碼 ]
               </label>
+              <div className="relative flex items-center gap-2 px-3 py-3 bg-white/5 border border-white/10 rounded-xl focus-within:border-cyber-green/50 transition-all">
+                <input
+                  type="text"
+                  placeholder="請輸入官方群組暗號 / INVITATION CODE"
+                  value={invitationCode}
+                  onChange={(e) => setInvitationCode(e.target.value)}
+                  className="flex-1 bg-transparent border-none outline-none text-white font-mono text-xs placeholder:text-white/20 tracking-wider"
+                />
+              </div>
+              
+              {invitationCode.trim() !== "" && !isCodeCorrect && (
+                <p className="text-[11px] text-red-400 font-mono leading-relaxed">
+                  ❌ 邀請碼不正確，本系統僅限 Smart #5 實名車主使用。
+                </p>
+              )}
             </div>
 
+            {/* 【階段二：法律與保安條款勾選】 (當邀請碼正確時解鎖) */}
+            <AnimatePresence>
+              {isCodeCorrect && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0, y: 10 }}
+                  animate={{ opacity: 1, height: 'auto', y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: 10 }}
+                  className="space-y-4"
+                >
+                  <div className="flex gap-2.5 items-start text-left bg-white/[0.02] border border-white/5 p-3.5 rounded-xl">
+                    <input 
+                      type="checkbox" 
+                      id="login-agreement-checkbox"
+                      checked={isAgreed}
+                      onChange={(e) => setIsAgreed(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-white/10 bg-black text-[#A3E635] focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#A3E635]"
+                    />
+                    <label htmlFor="login-agreement-checkbox" className="text-[11px] leading-relaxed text-gray-300 select-none cursor-pointer">
+                      我已充分閱讀、理解並無條件同意 Smart5 Owners 的
+                      <button 
+                        type="button"
+                        onClick={() => setShowUserAgreement(true)}
+                        className="text-cyber-green hover:underline font-bold px-0.5"
+                      >
+                        《用戶服務協議 v2.0》
+                      </button>
+                      、
+                      <button 
+                        type="button"
+                        onClick={() => setShowDisclaimer(true)}
+                        className="text-cyber-green hover:underline font-bold px-0.5"
+                      >
+                        《版權及免責聲明》
+                      </button>
+                      及
+                      <button 
+                        type="button"
+                        onClick={() => setShowPicsStatement(true)}
+                        className="text-cyber-green hover:underline font-bold px-0.5"
+                      >
+                        《個人資料收集聲明 v2.0》
+                      </button>
+                      。
+                    </label>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* 【階段三：解鎖 Google 授權註冊】 */}
             <CyberButton 
               onClick={handleLogin} 
-              className="w-full py-4 tracking-[0.2em] transition-all"
-              disabled={isLoggingIn || !isAgreed}
+              className={`w-full py-4 tracking-[0.2em] transition-all font-mono font-bold text-xs ${
+                canSubmitGoogle 
+                  ? 'bg-cyber-green text-black border-cyber-green shadow-[0_0_15px_rgba(163,230,53,0.3)] hover:scale-[1.02]' 
+                  : 'bg-white/5 text-white/30 border-white/10 opacity-50 cursor-not-allowed'
+              }`}
+              disabled={isLoggingIn || !canSubmitGoogle}
             >
-              {isLoggingIn ? '正在登錄...' : '使用 Google 登入'}
+              {isLoggingIn ? '正在登錄...' : '🏎️ 開始同步我的數據 (Google 登入)'}
             </CyberButton>
 
             <div className="text-[10px] text-white/30 leading-relaxed max-w-[280px] mx-auto text-center flex flex-wrap justify-center gap-1.5 pt-1">
@@ -448,6 +490,8 @@ export default function App() {
         onUpdateMemberRole={evStore.updateMemberRole}
         onUpdateMemberPlate={evStore.adminUpdateMemberPlate}
         onDeleteMember={evStore.deleteMember}
+        onApprovePendingMember={evStore.approvePendingMember}
+        onRejectPendingMember={evStore.rejectPendingMember}
         onClearActivities={evStore.clearAllActivities}
         onClearPolls={evStore.clearAllPolls}
         onUpdateRegistration={evStore.updateRegistration}

@@ -126,9 +126,9 @@ export function useEVStore() {
       return;
     }
     setProfileLoading(true);
-    const unsub = onSnapshot(doc(db, 'userProfiles', auth.currentUser.uid), (snap) => {
-      const profileData = snap.data();
+    const unsub = onSnapshot(doc(db, 'userProfiles', auth.currentUser.uid), async (snap) => {
       if (snap.exists()) {
+        const profileData = snap.data();
         const profile = { id: snap.id, ...profileData } as UserProfile;
         setUserProfile(profile);
         
@@ -136,10 +136,34 @@ export function useEVStore() {
         if (profile.selectedVehicleId && profile.selectedVehicleId !== selectedVehicleId) {
           setSelectedVehicleId(profile.selectedVehicleId);
         }
+        setProfileLoading(false);
       } else {
-        setUserProfile(null);
+        // If profile doesn't exist, initialize it
+        try {
+          const isPrimaryAdmin = auth.currentUser.email === 'jeffto135@gmail.com';
+          const initialProfile = {
+            id: auth.currentUser.uid,
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email || '',
+            displayName: auth.currentUser.displayName || '',
+            photoURL: auth.currentUser.photoURL || '',
+            role: isPrimaryAdmin ? 'admin' : 'member',
+            status: isPrimaryAdmin ? 'approved' : 'pending_verification',
+            licensePlate: '',
+            plate: '',
+            mobile: '',
+            phoneNumber: '',
+            selectedVehicleId: null,
+            joinedAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          };
+          await setDoc(doc(db, 'userProfiles', auth.currentUser.uid), initialProfile);
+          // Wait for the next onSnapshot trigger to set userProfile
+        } catch (err) {
+          console.error("Failed to initialize user profile on auth change:", err);
+          setProfileLoading(false);
+        }
       }
-      setProfileLoading(false);
     }, (error) => {
       console.warn("Profile fetch failed:", error);
       setProfileLoading(false);
@@ -1709,6 +1733,46 @@ export function useEVStore() {
     }
   };
 
+  const approvePendingMember = async (userId: string) => {
+    if (!isSubAdmin) return;
+    try {
+      await updateDoc(doc(db, 'userProfiles', userId), {
+        status: 'approved',
+        updatedAt: serverTimestamp()
+      });
+      // 📝 Audit log tracing
+      const profile = allProfiles.find(p => p.id === userId);
+      const memberPlate = profile?.plate || profile?.licensePlate || '未知車牌';
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(operator, 'APPROVE_MEMBER', 'users', '批准了車籍 ' + memberPlate + ' 的實名認證');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'userProfiles');
+    }
+  };
+
+  const rejectPendingMember = async (userId: string) => {
+    if (!isSubAdmin) return;
+    try {
+      const profile = allProfiles.find(p => p.id === userId);
+      const memberPlate = profile?.plate || profile?.licensePlate || '未知車牌';
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await deleteDoc(doc(db, 'userProfiles', userId));
+      await createAuditLog(operator, 'REJECT_MEMBER', 'userProfiles', `拒絕了車籍 ${memberPlate} （${profile?.displayName || userId}） 的實名認證申請`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'userProfiles');
+    }
+  };
+
   const clearAllActivities = async () => {
     if (!isAdmin) return;
     try {
@@ -2045,6 +2109,8 @@ export function useEVStore() {
     updateMemberRole,
     adminUpdateMemberPlate,
     deleteMember,
+    approvePendingMember,
+    rejectPendingMember,
     clearAllActivities,
     clearAllPolls,
     clearAllSystemNotifications,

@@ -86,6 +86,8 @@ interface AdminPanelProps {
   onUpdateMemberRole: (userId: string, role: string) => Promise<void>;
   onUpdateMemberPlate?: (userId: string, plate: string) => Promise<void>;
   onDeleteMember: (userId: string) => Promise<void>;
+  onApprovePendingMember?: (userId: string) => Promise<void>;
+  onRejectPendingMember?: (userId: string) => Promise<void>;
   onClearActivities: () => Promise<void>;
   onClearPolls: () => Promise<void>;
   onUpdateRegistration: (regId: string, data: Partial<ActivityRegistration>) => Promise<void>;
@@ -133,6 +135,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateMemberRole,
   onUpdateMemberPlate,
   onDeleteMember,
+  onApprovePendingMember,
+  onRejectPendingMember,
   onClearActivities,
   onClearPolls,
   onUpdateRegistration,
@@ -1759,6 +1763,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               onUpdateMemberRole={onUpdateMemberRole}
               onUpdateMemberPlate={onUpdateMemberPlate}
               onDeleteMember={onDeleteMember}
+              onApprovePendingMember={onApprovePendingMember}
+              onRejectPendingMember={onRejectPendingMember}
               format={format}
               privacyMode={privacyMode}
             />

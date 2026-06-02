@@ -240,9 +240,15 @@ service cloud.firestore {
       allow update: if (isOwner(userId) || isSubAdmin()) && isValidProfile(incoming()) && 
                       (isSubAdmin() ? true : incoming().role == existing().role) &&
                       (isSubAdmin() ? true : incoming().joinedAt == existing().joinedAt) &&
-                      (isAdmin() ? true : incoming().diff(existing()).affectedKeys().hasOnly([
-                        'phoneNumber', 'displayName', 'photoURL', 'plate', 'selectedVehicleId', 'updatedAt'
-                      ]));
+                      (incoming().role == existing().role || isAdmin()) &&
+                      (isAdmin() ? true : (
+                        incoming().diff(existing()).affectedKeys().hasOnly([
+                          'phoneNumber', 'displayName', 'photoURL', 'plate', 'selectedVehicleId', 'updatedAt'
+                        ]) || (
+                          existing().status == 'pending_verification' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                        )
+                      ));
       allow delete: if isOwner(userId) || isAdmin();
     }
 
