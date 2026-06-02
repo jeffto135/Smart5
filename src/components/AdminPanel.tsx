@@ -197,8 +197,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (isAdmin) return tabs;
 
     if (isSubAdmin) {
-      // Sub-admins can see fleet summary (limited), vehicles, activities, polls, notifications, account, plus checkin, parking, groupBuys, and clubPerks
-      return tabs.filter(t => ['fleet', 'vehicles', 'activities', 'polls', 'notifications', 'account', 'checkin', 'parking', 'groupBuys', 'clubPerks'].includes(t.id));
+      // Sub-admins can see fleet summary (limited), vehicles, activities, polls, notifications, account, plus checkin, parking, groupBuys, clubPerks, and members
+      return tabs.filter(t => ['fleet', 'vehicles', 'activities', 'polls', 'notifications', 'account', 'checkin', 'parking', 'groupBuys', 'clubPerks', 'members'].includes(t.id));
     }
     
     return [{ id: 'account', label: '帳戶', icon: User }];
@@ -233,7 +233,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           ...(!isOnlySubAdmin ? [{ id: 'logs', label: '營運紀錄' }] : []),
           ...(!isOnlySubAdmin ? [{ id: 'audit', label: '系統日誌' }] : []),
           { id: 'vehicles', label: '車輛名單' },
-          ...(!isOnlySubAdmin ? [{ id: 'members', label: '成員審批' }] : []),
+          { id: 'members', label: '成員審批' },
         ];
       case 'community':
         return [
@@ -262,8 +262,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Combined route guard syncing tab validations
   useEffect(() => {
     const isOnlySubAdmin = isSubAdmin && !isAdmin; // 🚀 關鍵修復：確保當前僅為 subAdmin 時才觸發安全防線攔截 (主 Admin 絕不受限)
-    if (isOnlySubAdmin && ['logs', 'audit', 'members', 'notifications'].includes(activeTab)) {
-      if (['logs', 'audit', 'members'].includes(activeTab)) {
+    if (isOnlySubAdmin && ['logs', 'audit', 'notifications'].includes(activeTab)) {
+      if (['logs', 'audit'].includes(activeTab)) {
         setActiveTab('fleet');
       } else if (activeTab === 'notifications') {
         setActiveTab('activities');
