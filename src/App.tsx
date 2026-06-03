@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, signInWithGoogle, logout, handleRedirectResult } from './lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, signInWithGoogle, logout, handleRedirectResult, db } from './lib/firebase';
+import { getDynamicInvitationCode } from './utils/codeGenerator';
 import { useEVStore } from './store/useEVStore';
 import { Dashboard } from './components/Dashboard';
 import { LogEntryForm } from './components/LogEntryForm';
@@ -42,6 +44,7 @@ export default function App() {
   const [showPicsStatement, setShowPicsStatement] = useState(false);
   const [isAgreed, setIsAgreed] = useState(false);
   const [invitationCode, setInvitationCode] = useState('');
+  const [isUsingMasterKey, setIsUsingMasterKey] = useState(false);
   const [catchUpData, setCatchUpData] = useState<any>(null);
 
   // Dynamic month formatting helper
@@ -131,7 +134,19 @@ export default function App() {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     try {
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      if (result && result.user) {
+        const userUid = result.user.uid;
+        const userDoc = await getDoc(doc(db, "userProfiles", userUid));
+        const userData = userDoc.data();
+        
+        // 🔒 核心安全防線：如果用戶使用了萬能應急鑰匙，但其資料庫角色不是最高 'admin'
+        if (isUsingMasterKey && (!userData || userData.role !== 'admin')) {
+          await logout();
+          alert("⚠️ 權限拒絕：此萬能應急鑰匙僅限最高管理員 (主 Admin) 之綁定帳戶使用。次級管理員或普通會員請使用當期兩週隨機碼登記/登入。");
+          return;
+        }
+      }
     } catch (error: any) {
       console.error('Login error:', error);
       if (error.code === 'auth/unauthorized-domain') {
@@ -315,7 +330,9 @@ export default function App() {
   }
 
   if (!user) {
-    const isCodeCorrect = invitationCode.trim() === "SMART5_REG_OWNERS";
+    const MASTER_ADMIN_KEY = "Smart5_Effortless_Admin!";
+    const currentCarOwnerCode = getDynamicInvitationCode();
+    const isCodeCorrect = invitationCode.trim() === currentCarOwnerCode || invitationCode.trim() === MASTER_ADMIN_KEY;
     const canSubmitGoogle = isCodeCorrect && isAgreed;
 
     return (
@@ -351,7 +368,11 @@ export default function App() {
                   type="text"
                   placeholder="請輸入官方群組暗號 / INVITATION CODE"
                   value={invitationCode}
-                  onChange={(e) => setInvitationCode(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setInvitationCode(val);
+                    setIsUsingMasterKey(val.trim() === MASTER_ADMIN_KEY);
+                  }}
                   className="flex-1 bg-transparent border-none outline-none text-white font-mono text-xs placeholder:text-white/20 tracking-wider"
                 />
               </div>

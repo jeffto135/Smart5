@@ -41,6 +41,7 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
               <button 
                 onClick={onClose}
                 className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                id="close-modal-button"
               >
                 <X size={20} className="text-white/60" />
               </button>
@@ -48,29 +49,63 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-8 text-gray-300 leading-relaxed font-sans scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              {/* Section 01 */}
               <section className="space-y-3">
                 <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
                   <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">01</span>
-                  ⚖️ 接受條款、法律效力與角色定義 (Acceptance & Role Definitions)
+                  ⚖️ 接受條款、法律效力與分級授權架構 (Acceptance & Role Definitions)
                 </h3>
                 <p className="text-sm text-gray-300">
-                  <strong className="text-white">協議成立：</strong>歡迎使用 Smart5 Owners 專屬數據管理系統（以下簡稱「本服務」或「本系統」）。本系統由 <strong className="text-white">Effortless Production Limited</strong>（以下簡稱「本會」）獨立開發、營運，並授權提供技術與品牌支持。當您點擊 <strong className="text-[#A3E635]">「開始同步我的數據」</strong>、完成註冊程序、或以任何形式（包括但不限於 PWA 行動應用程式、網頁端、管理後台系統）存取及使用本服務時，即表示您已滿法定年齡，且已充分閱讀、理解並無條件同意受本協議所有條款、<strong className="text-white">[版權及免責聲明]</strong> 以及相關隱私政策之法律約束。如果您不同意本協議或其後續修改之任何部分，請立即停止使用本服務並退出系統。
+                  <strong className="text-white">協議成立：</strong>歡迎使用 Smart5 Owners 專屬數據管理系統（以下簡稱「本服務」或「本系統」）。本系統由 <strong className="text-white">Effortless Production Limited</strong>（以下簡稱「本會」）獨立開發、營運，並授權提供技術與品牌支持。當您點擊 <strong className="text-[#A3E635]">「開始同步我的數據」</strong>、完成註冊程序、或以任何形式（包括但不限於 PWA 行動應用程式、網頁端、管理後台系統）存取及使用本服務時，即表示您已滿法定年齡，且已充分閱讀、理解並無條件同意受本協議所有條款、<strong className="text-white">[版權及免責聲明]</strong> 以及相關隱私政策之法律約束。
                 </p>
                 <div className="text-sm text-gray-300 space-y-2 mt-2 pt-2 border-t border-white/5">
-                  <p className="font-semibold text-white">管理角色與權限知悉：</p>
-                  <p>用戶理解並同意，本系統設有嚴格的分級管理權限架構：</p>
+                  <p className="font-semibold text-white">管理角色與權限分流知悉（Sub Admin 審核放權）：</p>
+                  <p>用戶理解並同意，本系統為確保 600 多位會員之日常行政效率，設有嚴格的分級管理權限與物理屏蔽架構：</p>
                   <ul className="list-disc list-inside pl-2 space-y-1.5 text-white/80">
-                    <li><strong className="text-white">最高管理員（主 Admin）：</strong>擁有全系統最高生殺大權，有權查閱及人手更改所有歷史紀錄、變更用戶角色，並全權管理、審批及處置（包括停權或踢出）所有成員。</li>
-                    <li><strong className="text-white">次級管理員（Sub Admin）：</strong>由主 Admin 授權之籌委會幹事，負責日常行政、活動簽到、團購及福利資料錄入，其操作範圍受系統自動遮蔽與權限鎖定保護。</li>
+                    <li><strong className="text-white">最高管理員（主 Admin）：</strong>擁有全系統最高生殺與變更權，有權查閱及人手更改所有歷史紀錄、變更用戶角色，並全權處置所有成員。主 Admin 擁有專屬使用「終極萬能應急鑰匙」破閘登入之最高權限。</li>
+                    <li><strong className="text-white">次級管理員（Sub Admin）：</strong>由主 Admin 授權之籌委會幹事，獲賦權共同處理新會員之「待審核名單」（包括點擊批准或拒絕實名申請）。然而，Sub Admin 對於「已核准成員名單」之存取受到系統底層物理屏蔽與唯讀（Read-Only）鎖定，僅能查閱姓名、手提電話及車牌號碼以作線下交收用途，絕對無權查閱會員之 Email、UID、亦絕對無權更改任何成員之底層用車數據或變更系統角色。</li>
                   </ul>
-                  <p className="text-xs text-white/60">用戶同意，其於本系統內的所有數據及狀態（包括車牌、實名卡狀態等），主 Admin 擁有最終的審查與技術修正權。</p>
+                  <p className="text-xs text-white/60">用戶同意，凡經由主 Admin 或 Sub Admin 依權限執行之審核、技術修正，在系統判定上均具備最終約束力。</p>
                 </div>
               </section>
 
+              {/* Section 02 */}
               <section className="space-y-3">
                 <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
                   <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">02</span>
-                  🛡️ 服務內容、帳戶安全與底層 UID 綁定機制 (Service & Account Security)
+                  🛡️ 前置邀請碼大閘、隨機更換與萬能鑰匙防線 (Pre-auth Gate & Master Key Guard)
+                </h3>
+                <ul className="space-y-3 text-sm text-gray-300">
+                  <li className="flex gap-2 items-start">
+                    <span className="text-[#A3E635] inline-block mt-1">✓</span>
+                    <span>
+                      <strong className="text-white">前置邀請碼大閘 (Pre-auth Guard)：</strong>為維護資料庫之純淨、防範不相干之第三方網路電郵寫入 Firebase Authentication，本系統於 Google 授權登入程序之前，設有強制性「前置邀請碼大閘」。未輸入正確當期邀請碼或應急鑰匙之訪客，系統將全面封鎖其呼叫 Google 登入接口之權限。
+                    </span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <span className="text-[#A3E635] inline-block mt-1">✓</span>
+                    <span>
+                      <strong className="text-white">兩週動態隨機更換機制：</strong>用戶知悉並同意，供車友登記之官方群組邀請碼採用「時間戳記純前端自迭代演算法」，每兩星期（14天）會自動強制刷新為一串全新且隨機之英數組合。舊有邀請碼一經逾期即時自動作廢。用戶有責任向管理團隊獲取當期最新邀請碼，不得因邀請碼過期自動刷新而主張系統故障。
+                    </span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <span className="text-[#A3E635] inline-block mt-1">✓</span>
+                    <span>
+                      <strong className="text-white font-semibold">主 Admin 專屬萬能應急鑰匙與二階段安全攔截：</strong>本系統底層硬編碼寫有一串僅供系統維護及主 Admin 登出/忘記隨機碼時使用之「萬能應急鑰匙」。用戶嚴格知悉並承諾：
+                      <ul className="list-disc list-inside pl-2 mt-1.5 space-y-1 text-white/80">
+                        <li>此萬能應急鑰匙僅限最高管理員（主 Admin）之綁定 Google 帳戶方可合法解鎖並長驅直入。</li>
+                        <li><strong className="text-white">「二階段身分攔截」：</strong>若任何普通會員、次級管理員（Sub Admin）或外部第三方透過任何途徑竊取、猜測並嘗試使用該「萬能應急鑰匙」解鎖前置大閘，系統將在 Google 授權成功的一瞬間進行底層角色審計。一旦偵測到其 Firestore 內置角色非最高 'admin'，系統將於 0.05 秒內無情執行強制登出（Sign Out）並全渠道踢回大閘之外。此機制為本系統之最高防禦底線，用戶不得對此自動攔截機制提出異議。</li>
+                      </ul>
+                    </span>
+                  </li>
+                </ul>
+              </section>
+
+              {/* Section 03 */}
+              <section className="space-y-3">
+                <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
+                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">03</span>
+                  🔒 服務內容、帳戶安全與底層 UID 綁定機制 (Service & Account Security)
                 </h3>
                 <ul className="space-y-3 text-sm text-gray-300">
                   <li className="flex gap-2 items-start">
@@ -82,7 +117,7 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
                   <li className="flex gap-2 items-start">
                     <span className="text-[#A3E635] inline-block mt-1">✓</span>
                     <span>
-                      <strong className="text-white">不變性 UID 綁定（核心防禦）：</strong>為根治因用戶自願或在現實中變更車牌號碼（而車輛本體不變）所引致的數據崩潰，本系統底層採用「用戶不變性唯一識別碼（UID / Foreign Key）」作為歷史紀錄之唯一關聯依據。車牌號碼僅作為前台文字渲染與實名核實用途。用戶理解並同意，變更車牌號碼必須經由主 Admin 於後台核實審批；變更後，其過往所有用電紀錄、慳電排行榜數據、團購訂單等，將基於 UID 唯一性而 100% 完好保留，不會因更換車牌而抹除。
+                      <strong className="text-white">不變性 UID 綁定（換牌免責）：</strong>為根治因用戶自願或在現實中變更車牌號碼（而車輛本體不變）所引致的數據崩潰，本系統底層採用「用戶不變性唯一識別碼（UID / Foreign Key）」作為歷史紀錄之唯一關聯依據。車牌號碼僅作為前台文字渲染與實名核實用途。用戶理解並同意，變更車牌號碼必須經由主 Admin 於後台核實審批；變更後，其過往所有用電紀錄、慳電排行榜數據、團購訂單等，將基於 UID 唯一性而 100% 完好保留，不會因更換車牌而抹除。
                     </span>
                   </li>
                   <li className="flex gap-2 items-start">
@@ -100,9 +135,10 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
                 </ul>
               </section>
 
+              {/* Section 04 */}
               <section className="space-y-3">
                 <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
-                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">03</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">04</span>
                   🚫 團購限時鎖死、活動報名與公平性規範 (Code of Conduct & Group Buy Regulations)
                 </h3>
                 <ul className="space-y-3 text-sm text-gray-300">
@@ -130,37 +166,32 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
                       <strong className="text-white">現場掃描簽到連動：</strong>於活動現場，管理團隊將使用相機掃描用戶電子實名卡之 QR Code 進行簽到。掃描成功後，系統後台將即時動態變更用戶狀態為「已出席」，並會彈窗向 Admin 即時展示該用戶填寫的抵達/離開時間等選項，以便即時調度。用戶不得偽造、冒用他人 QR Code 進行虛假簽到。
                     </span>
                   </li>
-                  <li className="flex gap-2 items-start">
-                    <span className="text-[#A3E635] inline-block mt-1">✓</span>
-                    <span>
-                      <strong className="text-white">違法限制與商業禁制令：</strong>用戶不得利用本系統傳播任何違反中華人民共和國香港特別行政區法律之言論。未經本會雙重書面授權，任何個人或機構禁止將本系統內之任何數據、排名、團購價格、商戶折扣、圖表及程式碼用於任何商業營利、廣告投放或媒體轉載。
-                    </span>
-                  </li>
                 </ul>
               </section>
 
+              {/* Section 05 */}
               <section className="space-y-3">
                 <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
-                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">04</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">05</span>
                   🔐 數據所有權、盲測隱私與全自動審計日誌 (Data Privacy & Audit Logs)
                 </h3>
                 <ul className="space-y-3 text-sm text-gray-300">
                   <li className="flex gap-2 items-start">
                     <span className="text-[#A3E635] inline-block mt-1">✓</span>
                     <span>
-                      <strong className="text-white">數據授權與去識別化：</strong>用戶主動上傳之車輛原始數據（行程日誌、用電紀錄等）所有權仍歸用戶所有。但用戶在此授予本系統一項全球性、免費、永久且不可撤銷之使用授權，允許本系統將數據進行「去識別化（De-identification）」處理後，用於生成全車會之大數據統計報告或優化演算法。
+                      <strong className="text-white">數據授權與去識別化：</strong>用戶主動上傳之車輛原始數據（行程日誌、用電紀錄等）所有權仍歸用戶所有。但用戶在此授予本系統一項全球性、免費、永久且不可撤銷之使用授權，允許本系統將數據進行「去識別化（De-identification）」處理後，用於生成全車會之大數據統計報告 or 優化演算法。
                     </span>
                   </li>
                   <li className="flex gap-2 items-start">
                     <span className="text-[#A3E635] inline-block mt-1">✓</span>
                     <span>
-                      <strong className="text-white">全自動操作審計日誌系統 (Audit Log System)：</strong>為確保 600 多位會員之數據安全並防止越權操作，本系統後台設有全自動安全黑盒子監控機制。當任何管理員（Admin / Sub Admin）執行新增團購、修改商戶福利、審批成員狀態或變更數據時，系統會底層自動寫入一條不可串改、不可刪除的 auditLogs 流水紀錄（包含操作者 Email、時間、動作、變更內容描述）。此「系統日誌」專頁僅限最高管理員（主 Admin）查閱，用作終極安全審計。
+                      <strong className="text-white">全自動操作審計日誌系統 (Audit Log System)：</strong>為確保 600 多位會員之數據安全並防止越權操作，本系統後台設有全自動安全黑盒子監控機制。當任何管理員（包括主 Admin 及獲授權之 Sub Admin）在後台執行新增團購、修改商戶福利、審批/拒絕成員狀態或變更數據時，系統底層均會全自動寫入一條包含操作者真實 Email、確切時間軸、執行動作與詳細描述之 auditLogs 流水紀錄。此日誌具有不可串改、不可刪除性，僅限最高管理員（主 Admin）專頁查閱，用作終極安全審計與追責憑證。
                     </span>
                   </li>
                   <li className="flex gap-2 items-start">
                     <span className="text-[#A3E635] inline-block mt-1">✓</span>
                     <span>
-                      <strong className="text-white">隱私條例與盲測管理：</strong>本系統嚴格遵守香港《個人資料（私隱）條例》（第486章，PDPO）。管理團隊採取「盲測管理操守」，將用戶的電子郵件、電話號碼與真實用車細節進行物理與邏輯隔離。
+                      <strong className="text-white font-semibold">隱私條例與盲測管理：</strong>本系統嚴格遵守香港《個人資料（私隱）條例》（第486章，PDPO）。管理團隊採取「盲測管理操守」，將用戶的電子郵件、電話號碼與真實用車細節進行物理與邏輯隔離。
                     </span>
                   </li>
                   <li className="flex gap-2 items-start">
@@ -172,22 +203,24 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
                 </ul>
               </section>
 
+              {/* Section 06 */}
               <section className="space-y-3">
                 <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
-                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">05</span>
-                  🛑 服務變更、不可抗力與技術免責 (Service Disruption & Offline Handling)
+                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">06</span>
+                  🛑 服務變更、月份過濾、不可抗力與技術免責 (Service Disruption & Offline Handling)
                 </h3>
                 <p className="text-sm text-gray-300">
-                  <strong className="text-white">服務優化與重構權：</strong>本會保留隨時根據技術演進、社群反饋或安全性考量，在不提前通知的情況下，對現有功能進行重構、打磨、優化（如實裝骨架屏、緩存加速、地圖點聚合等）或暫停部分功能之權利。
+                  <strong className="text-white">服務優化、月份過濾與重構權：</strong>本會保留隨時根據技術演進、社群反饋或安全性考量，在不提前通知的情況下，對現有功能進行重構、打磨、優化（如實裝前端下拉式月份數據過濾器、骨架屏、緩存加速、地圖點聚合等）或暫停部分功能之權利。
                 </p>
                 <p className="text-sm text-gray-300">
                   <strong className="text-white">離線容錯與網絡中斷免責：</strong>本系統建立於國際雲端架構之上，惟香港部分地下停車場或山區訊號較弱，系統設有本地快取（Data Persistence）與網絡狀態監聽。當用戶處於弱網 or 斷網狀態時，系統將自動提示並切換至離線唯讀模式，期間所引致的數據同步延遲、提交失敗、或因雲端服務商（Google Firebase / Vercel）底層故障導致之數據損失，本會及開發團隊概不承擔任何法律、經濟或賠償責任。
                 </p>
               </section>
 
+              {/* Section 07 */}
               <section className="space-y-3 pb-4">
                 <h3 className="text-[#A3E635] font-mono font-bold flex items-center gap-2 text-md">
-                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">06</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded border border-[#A3E635]/30">07</span>
                   🏛️ 法律管轄與爭議解決 (Governing Law & Jurisdiction)
                 </h3>
                 <p className="text-sm text-gray-300">
@@ -201,7 +234,7 @@ export const UserAgreementModal: React.FC<UserAgreementModalProps> = ({ isOpen, 
 
             {/* Footer */}
             <div className="p-6 border-t border-white/10 flex justify-end bg-white/[0.02]">
-              <CyberButton onClick={onClose} variant="ghost" className="px-8">
+              <CyberButton onClick={onClose} variant="ghost" className="px-8" id="agree-modal-close">
                 妥當
               </CyberButton>
             </div>

@@ -56,6 +56,7 @@ import { AdminPushNotification } from './AdminPushNotification';
 import { AdminDataRecords } from './AdminDataRecords';
 import { AdminAuditLogs } from './AdminAuditLogs';
 import { Vehicle, LogEntry, Activity, Poll, UserProfile, ParkingLot, ActivityRegistration, GroupBuy, ClubPerk } from '../types';
+import { getDynamicInvitationCode } from '../utils/codeGenerator';
 import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 // @ts-ignore
@@ -1154,6 +1155,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 {subTab.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {(activeModule === 'analytics' || activeTab === 'members') && (isAdmin || isSubAdmin) && (
+          <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between text-xs font-mono select-all gap-3 animate-fadeIn">
+            <span className="leading-relaxed">
+              📢 營運工具：本兩週車友登記邀請碼為【 <strong className="text-yellow-400 select-all font-black">{getDynamicInvitationCode()}</strong> 】。如群組車友欲登記，請提供此碼（每兩星期自動更新）。
+            </span>
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(getDynamicInvitationCode());
+                alert("邀請碼已成功複製到剪貼簿！ / COPIED");
+              }}
+              className="px-3 py-1.5 bg-yellow-500/20 text-yellow-300 font-bold hover:bg-yellow-500/30 active:scale-95 rounded-lg border border-yellow-500/30 text-[10px] transition-all whitespace-nowrap cursor-pointer"
+            >
+              複製 / COPY
+            </button>
           </div>
         )}
 
