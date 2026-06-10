@@ -26,6 +26,7 @@ import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, Parking
 import { format } from 'date-fns';
 import { OperationType, handleFirestoreError } from '../lib/utils';
 import { createAuditLog } from '../utils/logger';
+import { getPickupPin } from '../utils/pin';
 
 export function useEVStore() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -2004,7 +2005,8 @@ export function useEVStore() {
             updatedRegs[existingIdx] = {
               ...updatedRegs[existingIdx],
               qty: quantity,
-              updatedAt: Timestamp.now()
+              updatedAt: Timestamp.now(),
+              pickupPin: getPickupPin(gbId, uid)
             };
           }
         } else {
@@ -2014,7 +2016,8 @@ export function useEVStore() {
               userId: uid,
               email: email,
               qty: quantity,
-              updatedAt: Timestamp.now()
+              updatedAt: Timestamp.now(),
+              pickupPin: getPickupPin(gbId, uid)
             });
           }
         }
@@ -2041,13 +2044,124 @@ export function useEVStore() {
       const gbObj = groupBuys.find(g => g.id === gbId);
       const gbTitle = gbObj ? gbObj.title : '團購項目';
       await addNotification({
-        userId: auth.currentUser.uid,
-        title: '團購登記成功 / REGISTRATION COMPLETED',
-        message: quantity > 0 ? `您已登記「${gbTitle}」共 ${quantity} 套。` : `您已取消「${gbTitle}」的登記。`,
-        type: 'success'
+         userId: auth.currentUser.uid,
+         title: '團購登記成功 / REGISTRATION COMPLETED',
+         message: quantity > 0 ? `您已登記「${gbTitle}」共 ${quantity} 套。` : `您已取消「${gbTitle}」的登記。`,
+         type: 'success'
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'groupBuys');
+    }
+  };
+
+  const updateGroupBuyPickupStatus = async (gbId: string, targetUserId: string, pickupStatus: 'pending' | 'picked_up', customAuditMsg?: string) => {
+    if (!isSubAdmin) {
+      throw new Error("無權限執行此操作 / Unauthorized");
+    }
+    try {
+      let gbTitle = '團購項目';
+      let qty = 0;
+
+      await runTransaction(db, async (transaction) => {
+        const gbDocRef = doc(db, 'groupBuys', gbId);
+        const gbSnap = await transaction.get(gbDocRef);
+        if (!gbSnap.exists()) {
+          throw new Error('團購項目不存在 / GROUP BUY DOES NOT EXIST');
+        }
+
+        const gbData = gbSnap.data() as GroupBuy;
+        gbTitle = gbData.title || '團購項目';
+        const currentRegs = gbData.currentRegistrations || [];
+        const existingIdx = currentRegs.findIndex(r => r.userId === targetUserId);
+
+        if (existingIdx === -1) {
+          throw new Error('找不到該車友的登記紀錄 / REGISTRATION NOT FOUND');
+        }
+
+        qty = currentRegs[existingIdx].qty;
+        let updatedRegs = [...currentRegs];
+        updatedRegs[existingIdx] = {
+          ...updatedRegs[existingIdx],
+          pickupStatus: pickupStatus,
+          updatedAt: Timestamp.now()
+        };
+
+        transaction.update(gbDocRef, {
+          currentRegistrations: updatedRegs
+        });
+      });
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      const logMessage = customAuditMsg || `確認車友線下簽收團購「${gbTitle}」（買家 UID: ${targetUserId}, 數量: ${qty} 套, 狀態: ${pickupStatus === 'picked_up' ? '已提取' : '未提取'}）`;
+      await createAuditLog(
+        operator, 
+        'UPDATE_GROUP_BUY_PICKUP', 
+        'groupBuys', 
+        logMessage
+      );
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'groupBuys');
+      throw error;
+    }
+  };
+
+  const updateGroupBuyPaymentStatus = async (gbId: string, targetUserId: string, paymentStatus: 'unpaid' | 'paid') => {
+    if (!isSubAdmin) {
+      throw new Error("無權限執行此操作 / Unauthorized");
+    }
+    try {
+      let gbTitle = '團購項目';
+
+      await runTransaction(db, async (transaction) => {
+        const gbDocRef = doc(db, 'groupBuys', gbId);
+        const gbSnap = await transaction.get(gbDocRef);
+        if (!gbSnap.exists()) {
+          throw new Error('團購項目不存在 / GROUP BUY DOES NOT EXIST');
+        }
+
+        const gbData = gbSnap.data() as GroupBuy;
+        gbTitle = gbData.title || '團購項目';
+        const currentRegs = gbData.currentRegistrations || [];
+        const existingIdx = currentRegs.findIndex(r => r.userId === targetUserId);
+
+        if (existingIdx === -1) {
+          throw new Error('找不到該車友的登記紀錄 / REGISTRATION NOT FOUND');
+        }
+
+        let updatedRegs = [...currentRegs];
+        updatedRegs[existingIdx] = {
+          ...updatedRegs[existingIdx],
+          paymentStatus: paymentStatus,
+          updatedAt: Timestamp.now()
+        };
+
+        transaction.update(gbDocRef, {
+          currentRegistrations: updatedRegs
+        });
+      });
+
+      // 📝 Audit log tracing
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(
+        operator, 
+        'UPDATE_GROUP_BUY_PAYMENT', 
+        'groupBuys', 
+        `修改團購「${gbTitle}」款項狀態（買家 UID: ${targetUserId}, 狀態: ${paymentStatus === 'paid' ? '已付款' : '未付款'}）`
+      );
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'groupBuys');
+      throw error;
     }
   };
 
@@ -2098,6 +2212,8 @@ export function useEVStore() {
     updateGroupBuy,
     deleteGroupBuy,
     registerGroupBuy,
+    updateGroupBuyPickupStatus,
+    updateGroupBuyPaymentStatus,
     clubPerks,
     addClubPerk,
     updateClubPerk,

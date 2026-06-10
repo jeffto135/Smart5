@@ -100,6 +100,8 @@ interface AdminPanelProps {
   onAddGroupBuy: (data: Partial<GroupBuy>) => Promise<any>;
   onUpdateGroupBuy: (id: string, data: Partial<GroupBuy>) => Promise<void>;
   onDeleteGroupBuy: (id: string) => Promise<void>;
+  onUpdateGroupBuyPickupStatus?: (gbId: string, targetUserId: string, status: 'pending' | 'picked_up', customAuditMsg?: string) => Promise<void>;
+  onUpdateGroupBuyPaymentStatus?: (gbId: string, targetUserId: string, status: 'unpaid' | 'paid') => Promise<void>;
   onAddPerk: (data: Omit<ClubPerk, 'id' | 'createdAt'>) => Promise<any>;
   onUpdatePerk: (id: string, data: Partial<ClubPerk>) => Promise<void>;
   onDeletePerk: (id: string) => Promise<void>;
@@ -149,6 +151,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddGroupBuy,
   onUpdateGroupBuy,
   onDeleteGroupBuy,
+  onUpdateGroupBuyPickupStatus,
+  onUpdateGroupBuyPaymentStatus,
   onAddPerk,
   onUpdatePerk,
   onDeletePerk,
@@ -1901,6 +1905,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 onDeleteGroupBuy={onDeleteGroupBuy}
                 isSubAdmin={isSubAdmin}
                 allProfiles={allProfiles}
+                updateGroupBuyPickupStatus={onUpdateGroupBuyPickupStatus || (async () => {})}
+                updateGroupBuyPaymentStatus={onUpdateGroupBuyPaymentStatus || (async () => {})}
               />
             </motion.div>
           )}

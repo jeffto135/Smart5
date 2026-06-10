@@ -54,7 +54,7 @@ export default function App() {
     const monthStr = monthNum < 10 ? `0${monthNum}` : `${monthNum}`;
     return `${d.getFullYear()}-${monthStr}`;
   };
-  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthFormat());
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
   
   const [targetGroupBuyId, setTargetGroupBuyId] = useState<string | null>(null);
   const [activeWeatherWarnings, setActiveWeatherWarnings] = useState<string[]>([]);
@@ -524,6 +524,8 @@ export default function App() {
         onAddGroupBuy={evStore.addGroupBuy}
         onUpdateGroupBuy={evStore.updateGroupBuy}
         onDeleteGroupBuy={evStore.deleteGroupBuy}
+        onUpdateGroupBuyPickupStatus={evStore.updateGroupBuyPickupStatus}
+        onUpdateGroupBuyPaymentStatus={evStore.updateGroupBuyPaymentStatus}
         onAddPerk={evStore.addClubPerk}
         onUpdatePerk={evStore.updateClubPerk}
         onDeletePerk={evStore.deleteClubPerk}

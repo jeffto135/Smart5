@@ -184,6 +184,9 @@ export interface GroupBuyRegistration {
   email: string;
   qty: number;
   updatedAt: any; // Timestamp or similar
+  pickupStatus?: 'pending' | 'picked_up';
+  paymentStatus?: 'unpaid' | 'paid';
+  pickupPin?: string;
 }
 
 export interface GroupBuy {

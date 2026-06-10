@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { auth } from '../lib/firebase';
 import { 
   Plus, 
   Edit2, 
@@ -15,13 +16,17 @@ import {
   ShoppingBag, 
   Archive,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  QrCode,
+  Copy,
+  FileSpreadsheet
 } from 'lucide-react';
-import { GroupBuy, UserProfile } from '../types';
+import { GroupBuy, UserProfile, GroupBuyRegistration } from '../types';
 import { CyberCard } from './ui/CyberCard';
 import { CyberInput } from './ui/CyberInput';
 import { CyberButton } from './ui/CyberButton';
 import { ConfirmationModal } from './ui/ConfirmationModal';
+import { AdminPickupScanner } from './AdminPickupScanner';
 
 interface AdminGroupBuyProps {
   groupBuys: GroupBuy[];
@@ -30,6 +35,8 @@ interface AdminGroupBuyProps {
   onDeleteGroupBuy: (id: string, hardClean?: boolean) => Promise<void>;
   isSubAdmin: boolean;
   allProfiles?: UserProfile[];
+  updateGroupBuyPickupStatus: (gbId: string, targetUserId: string, status: 'pending' | 'picked_up', customAuditMsg?: string) => Promise<void>;
+  updateGroupBuyPaymentStatus: (gbId: string, targetUserId: string, status: 'unpaid' | 'paid') => Promise<void>;
 }
 
 export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
@@ -38,8 +45,12 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
   onUpdateGroupBuy,
   onDeleteGroupBuy,
   isSubAdmin,
-  allProfiles = []
+  allProfiles = [],
+  updateGroupBuyPickupStatus,
+  updateGroupBuyPaymentStatus
 }) => {
+  const [adminSubTab, setAdminSubTab] = useState<'list' | 'scanner'>('list');
+  const [pickupFilter, setPickupFilter] = useState<'all' | 'pending' | 'picked_up'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGbId, setEditingGbId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -214,10 +225,113 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
     }
   };
 
+  const handleCopyContacts = (regs: GroupBuyRegistration[], gbTitle: string) => {
+    const unclaimed = regs.filter(r => r.pickupStatus !== 'picked_up');
+    if (unclaimed.length === 0) {
+      alert('所有人都已提取！沒有未提取的成員。');
+      return;
+    }
+    const lines = unclaimed.map((reg, index) => {
+      const profile = (allProfiles || []).find(p => p.id === reg.userId);
+      const displayName = profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶';
+      const mobile = profile?.mobile || profile?.phone || profile?.phoneNumber || '未填寫';
+      const plateNumber = profile?.plate || '無車牌';
+      return `${index + 1}. ${displayName} (車牌: ${plateNumber}) | 電話: ${mobile} | (${reg.qty}套)`;
+    });
+    const text = `【未提取成員名單】團購項目: ${gbTitle}\n` + lines.join('\n');
+    navigator.clipboard.writeText(text);
+    alert('📋 未提取名單（含車牌及電話）已複製到剪貼簿！');
+  };
+
+  const handleDownloadCSV = (regs: GroupBuyRegistration[], gbTitle: string) => {
+    const unclaimed = regs.filter(r => r.pickupStatus !== 'picked_up');
+    if (unclaimed.length === 0) {
+      alert('所有人都已提取！沒有未提取的成員。');
+      return;
+    }
+    
+    // UTF-8 BOM so Excel opens traditional Chinese correctly
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    csvContent += "序號,車友暱稱,車牌號碼,手提電話,訂購數量,付款狀態,取件狀態\n";
+    
+    unclaimed.forEach((reg, index) => {
+      const profile = (allProfiles || []).find(p => p.id === reg.userId);
+      const displayName = profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶';
+      const mobile = profile?.mobile || profile?.phone || profile?.phoneNumber || '未填寫';
+      const plateNumber = profile?.plate || '無';
+      const payStatusText = reg.paymentStatus === 'paid' ? '已付款' : '未付款';
+      const statusText = reg.pickupStatus === 'picked_up' ? '已提取' : '未提取';
+      csvContent += `"${index + 1}","${displayName}","${plateNumber}","${mobile}","${reg.qty}","${payStatusText}","${statusText}"\n`;
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `團購_${gbTitle}_未提取名單.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleManualSignOff = (gb: GroupBuy, reg: GroupBuyRegistration, displayName: string, plateNumber: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: '✍️ 手動人手簽收確認',
+      message: `您確定要手動為車友「${displayName}」（車牌：${plateNumber}）進行人手簽收提貨嗎？本操作將直接變更狀態為已提貨，且系統將無條件自動寫入審計日誌。`,
+      variant: 'info',
+      onConfirm: async () => {
+        try {
+          const operatorEmail = auth.currentUser?.email || '未知管理員';
+          const auditMsg = `Admin [${operatorEmail}] 透過後台列表為車牌 [${plateNumber}] 執行人手簽收`;
+          await updateGroupBuyPickupStatus(gb.id, reg.userId, 'picked_up', auditMsg);
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+          alert('🟢 人手簽收成功，已更新狀態並記錄審計日誌！');
+        } catch (e: any) {
+          alert('❌ 手動簽收失敗: ' + e.message);
+        }
+      }
+    });
+  };
+
   return (
     <div className="space-y-6">
-      {/* Tab controls */}
-      <div className="flex justify-between items-center">
+      {/* Sub tabs for Management vs Scanner */}
+      <div className="flex border border-white/5 p-1 bg-black/40 rounded-xl max-w-sm gap-1 self-start">
+        <button
+          onClick={() => setAdminSubTab('list')}
+          className={`flex-grow py-1.5 px-3 rounded-lg text-[10px] font-bold font-mono transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 select-none ${
+            adminSubTab === 'list' 
+              ? 'bg-cyber-green text-black shadow-[0_0_10px_rgba(204,255,0,0.25)]' 
+              : 'text-white/50 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <ShoppingBag size={12} />
+          <span>管理清單 / PROJECTS</span>
+        </button>
+        <button
+          onClick={() => setAdminSubTab('scanner')}
+          className={`flex-grow py-1.5 px-3 rounded-lg text-[10px] font-bold font-mono transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 select-none ${
+            adminSubTab === 'scanner' 
+              ? 'bg-cyber-green text-black shadow-[0_0_10px_rgba(204,255,0,0.25)]' 
+              : 'text-white/50 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <QrCode size={12} />
+          <span>相機掃描 / SCANNER</span>
+        </button>
+      </div>
+
+      {adminSubTab === 'scanner' ? (
+        <AdminPickupScanner
+          groupBuys={groupBuys}
+          allProfiles={allProfiles}
+          updateGroupBuyPickupStatus={updateGroupBuyPickupStatus}
+          updateGroupBuyPaymentStatus={updateGroupBuyPaymentStatus}
+        />
+      ) : (
+        <>
+          {/* Tab controls */}
+          <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-mono font-bold uppercase tracking-widest text-white/50">團購項目列表</h3>
           <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest mt-1">管理官方募集大貨/配件</p>
@@ -331,22 +445,75 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="mt-4 p-4 bg-black/40 border border-[#A3E635]/20 rounded-xl space-y-3"
+                    className="mt-4 p-4 bg-black/40 border border-[#A3E635]/20 rounded-xl space-y-3 overflow-hidden"
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2">
-                      <div className="text-[10px] font-mono font-bold text-[#A3E635] uppercase tracking-wider">
-                        👤 團購認購人明細 (誠信核實) / REGISTRANT DETAILS LIST
+                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono font-bold text-[#A3E635] uppercase tracking-wider block">
+                          👤 團購領取與結算名單 / REGISTRANT SETTLEMENT LIST
+                        </span>
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          <button
+                            onClick={() => setPickupFilter('all')}
+                            className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-colors ${
+                              pickupFilter === 'all' 
+                                ? 'bg-cyber-green text-black' 
+                                : 'bg-white/5 text-white/50 hover:bg-white/10'
+                            }`}
+                          >
+                            全部 ({gb.currentRegistrations?.length || 0})
+                          </button>
+                          <button
+                            onClick={() => setPickupFilter('pending')}
+                            className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-colors ${
+                              pickupFilter === 'pending' 
+                                ? 'bg-amber-400 text-black' 
+                                : 'bg-white/5 text-white/50 hover:bg-white/10'
+                            }`}
+                          >
+                            未提取 ({gb.currentRegistrations?.filter(r => r.pickupStatus !== 'picked_up').length || 0})
+                          </button>
+                          <button
+                            onClick={() => setPickupFilter('picked_up')}
+                            className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer transition-colors ${
+                              pickupFilter === 'picked_up' 
+                                ? 'bg-green-500 text-white' 
+                                : 'bg-white/5 text-white/50 hover:bg-white/10'
+                            }`}
+                          >
+                            已提取 ({gb.currentRegistrations?.filter(r => r.pickupStatus === 'picked_up').length || 0})
+                          </button>
+                        </div>
                       </div>
-                      <div className="w-full sm:w-64">
+
+                      {/* Search & Exporters */}
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="text"
-                          placeholder="搜尋車友姓名、車牌或電話..."
+                          placeholder="篩選暱稱/車牌/電話..."
                           value={subscriberSearch}
                           onChange={(e) => setSubscriberSearch(e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] font-mono text-cyber-green placeholder-white/30 outline-none focus:border-cyber-green/50"
+                          className="bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] font-mono text-cyber-green placeholder-white/30 outline-none focus:border-cyber-green/50 w-full sm:w-40"
                         />
+                        <button
+                          onClick={() => handleCopyContacts(gb.currentRegistrations || [], gb.title)}
+                          className="p-1 px-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[9px] font-mono text-white flex items-center gap-1 active:scale-95 transition-all cursor-pointer select-none"
+                          title="複製未提取成員聯絡資訊"
+                        >
+                          <Copy size={11} />
+                          <span>複製通聯</span>
+                        </button>
+                        <button
+                          onClick={() => handleDownloadCSV(gb.currentRegistrations || [], gb.title)}
+                          className="p-1 px-2.5 bg-cyber-green/10 hover:bg-cyber-green/20 border border-cyber-green/25 rounded text-[9px] font-mono text-cyber-green flex items-center gap-1 active:scale-95 transition-all cursor-pointer select-none"
+                          title="下載未提取 CSV"
+                        >
+                          <FileSpreadsheet size={11} />
+                          <span>導出 CSV</span>
+                        </button>
                       </div>
                     </div>
+
                     {(!gb.currentRegistrations || gb.currentRegistrations.length === 0) ? (
                       <div className="text-center py-4 font-mono text-[11px] text-white/30 truncate">
                         目前尚無任何車友登記 / NO RESERVATIONS REGISTERED
@@ -357,13 +524,25 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                           <thead>
                             <tr className="border-b border-white/10 text-[9px] text-white/40 uppercase">
                               <th className="pb-1 text-center w-8">#</th>
-                              <th className="pb-1">👤 車友資訊 / MEMBER INFO (暱稱 • 車牌 • 手提)</th>
-                              <th className="pb-1 text-center w-20">認購數 / QTY</th>
-                              <th className="pb-1 text-right w-24">小計 / SUBTOTAL</th>
+                              <th className="pb-1">👤 車友資訊 (暱稱 • 車牌 • 手提)</th>
+                              <th className="pb-1 text-center w-12">QTY</th>
+                              <th className="pb-1 text-right w-16">TOTAL</th>
+                              <th className="pb-1 text-center w-16">PAY</th>
+                              <th className="pb-1 text-center w-16">PICK</th>
+                              <th className="pb-1 text-center w-24">手動簽收 / MANUAL</th>
                             </tr>
                           </thead>
                           <tbody>
                             {gb.currentRegistrations
+                              .filter((reg) => {
+                                if (pickupFilter === 'pending') {
+                                  return reg.pickupStatus !== 'picked_up';
+                                }
+                                if (pickupFilter === 'picked_up') {
+                                  return reg.pickupStatus === 'picked_up';
+                                }
+                                return true;
+                              })
                               .filter((reg) => {
                                 const profile = (allProfiles || []).find((p) => p.id === reg.userId);
                                 const displayName = (profile?.displayName || profile?.username || reg.email?.split('@')[0] || '未知用戶').toLowerCase();
@@ -379,8 +558,8 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                                 const plateNumber = profile?.plate;
                                 return (
                                   <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                    <td className="py-1.5 text-center text-white/30">{index + 1}</td>
-                                    <td className="py-1.5 select-all">
+                                    <td className="py-2 text-center text-white/30">{index + 1}</td>
+                                    <td className="py-2 select-all">
                                       <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className="text-white font-semibold">{displayName}</span>
@@ -393,8 +572,47 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
                                         <span className="text-white/40 text-[10px]">({mobile})</span>
                                       </div>
                                     </td>
-                                    <td className="py-1.5 text-center font-bold text-cyber-green">{reg.qty}</td>
-                                    <td className="py-1.5 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
+                                    <td className="py-2 text-center font-bold text-cyber-green">{reg.qty}</td>
+                                    <td className="py-2 text-right text-white/50">HKD ${reg.qty * gb.price}</td>
+                                    {/* PAY / 款項核准 */}
+                                    <td className="py-2 text-center">
+                                      <button
+                                        onClick={() => updateGroupBuyPaymentStatus(gb.id, reg.userId, reg.paymentStatus === 'paid' ? 'unpaid' : 'paid')}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border transition-all cursor-pointer ${
+                                          reg.paymentStatus === 'paid'
+                                            ? 'bg-green-500/15 text-green-400 border-green-500/20 hover:bg-green-500 hover:text-black'
+                                            : 'bg-amber-500/15 text-amber-400 border-amber-500/20 hover:bg-amber-500 hover:text-black'
+                                        }`}
+                                      >
+                                        {reg.paymentStatus === 'paid' ? '已付款' : '未付款'}
+                                      </button>
+                                    </td>
+                                    {/* PICK / 物資簽收 */}
+                                    <td className="py-2 text-center">
+                                      <button
+                                        onClick={() => updateGroupBuyPickupStatus(gb.id, reg.userId, reg.pickupStatus === 'picked_up' ? 'pending' : 'picked_up')}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border transition-all cursor-pointer ${
+                                          reg.pickupStatus === 'picked_up'
+                                            ? 'bg-cyber-green/15 text-cyber-green border-cyber-green/20 hover:bg-cyber-green hover:text-black'
+                                            : 'bg-red-500/15 text-red-400 border-red-500/20 hover:bg-red-500 hover:text-white'
+                                        }`}
+                                      >
+                                        {reg.pickupStatus === 'picked_up' ? '已提貨' : '未提貨'}
+                                      </button>
+                                    </td>
+                                    {/* ✍️ 手動人手簽收按鈕 */}
+                                    <td className="py-2 text-center">
+                                      {reg.pickupStatus !== 'picked_up' ? (
+                                        <button
+                                          onClick={() => handleManualSignOff(gb, reg, displayName, plateNumber || '無')}
+                                          className="px-2 py-0.5 bg-cyber-green text-black hover:bg-cyber-green/80 rounded text-[9px] font-mono font-bold transition-all cursor-pointer inline-flex items-center gap-1 shadow-[0_0_8px_rgba(204,255,0,0.15)] active:scale-95"
+                                        >
+                                          ✍️ 手動簽收
+                                        </button>
+                                      ) : (
+                                        <span className="text-[9px] text-[#A3E635] font-mono font-bold flex items-center justify-center gap-0.5">🟢 已完成</span>
+                                      )}
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -409,6 +627,8 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
           })}
         </div>
       )}
+    </>
+  )}
 
       {/* Add / Edit modal */}
       <AnimatePresence>

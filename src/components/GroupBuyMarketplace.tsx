@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, Plus, Minus, Tag, Clock, Check, AlertTriangle, Users, CheckCircle, ShoppingBag, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, Plus, Minus, Tag, Clock, Check, AlertTriangle, Users, CheckCircle, ShoppingBag, CheckCircle2, QrCode } from 'lucide-react';
 import { GroupBuy } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
 import { CyberButton } from './ui/CyberButton';
 import { PullToRefresh } from './ui/PullToRefresh';
+import { GroupBuyReceipt } from './GroupBuyReceipt';
 
 interface GroupBuyMarketplaceProps {
   groupBuys: GroupBuy[];
@@ -38,6 +39,11 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
   const [qty, setQty] = useState<number>(1);
   const [regLoading, setRegLoading] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
+  const [showReceipts, setShowReceipts] = useState<Record<string, boolean>>({});
+
+  const toggleReceipt = (id: string) => {
+    setShowReceipts(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Compute active group buys (non-deleted)
   const activeGroupBuys = useMemo(() => {
@@ -423,12 +429,30 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
 
                         {/* Subscription Buttons */}
                         {isLocked ? (
-                          <button
-                            disabled
-                            className="py-2.5 px-6 rounded-xl bg-white/5 text-white/20 border border-white/5 text-xs font-mono font-bold cursor-not-allowed select-none"
-                          >
-                            🔒 已截止 / LOCK
-                          </button>
+                          hasRegistered ? (
+                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                              <button
+                                disabled
+                                className="py-2.5 px-4 rounded-xl bg-white/5 text-white/35 border border-white/5 text-xs font-mono font-bold cursor-not-allowed select-none text-center"
+                              >
+                                🔒 認購截止 / LOCKED
+                              </button>
+                              <button
+                                onClick={() => toggleReceipt(gb.id)}
+                                className="py-2.5 px-4 rounded-xl bg-cyber-green text-black hover:bg-cyber-green/80 text-xs font-mono font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <QrCode size={13} />
+                                <span>{showReceipts[gb.id] ? '隱藏電子憑證' : '查看電子憑證'}</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              disabled
+                              className="py-2.5 px-6 rounded-xl bg-white/5 text-white/20 border border-white/5 text-xs font-mono font-bold cursor-not-allowed select-none"
+                            >
+                              🔒 已截止 / LOCK
+                            </button>
+                          )
                         ) : isSoldOut ? (
                           <button
                             disabled
@@ -448,6 +472,16 @@ export const GroupBuyMarketplace: React.FC<GroupBuyMarketplaceProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {showReceipts[gb.id] && userReg && (
+                    <div className="mt-4 border-t border-white/5 pt-4">
+                      <GroupBuyReceipt 
+                        groupBuy={gb} 
+                        registration={userReg} 
+                        userId={userId} 
+                      />
+                    </div>
+                  )}
                 </CyberCard>
               </motion.div>
             );
