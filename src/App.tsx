@@ -405,26 +405,41 @@ export default function App() {
                       我已充分閱讀、理解並無條件同意 Smart5 Owners 的
                       <button 
                         type="button"
-                        onClick={() => setShowUserAgreement(true)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowUserAgreement(true);
+                        }}
                         className="text-cyber-green hover:underline font-bold px-0.5"
+                        id="open-user-agreement-btn"
                       >
-                        《用戶服務協議 v2.0》
+                        《用戶服務協議》
                       </button>
                       、
                       <button 
                         type="button"
-                        onClick={() => setShowDisclaimer(true)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowDisclaimer(true);
+                        }}
                         className="text-cyber-green hover:underline font-bold px-0.5"
+                        id="open-disclaimer-btn"
                       >
                         《版權及免責聲明》
                       </button>
                       及
                       <button 
                         type="button"
-                        onClick={() => setShowPicsStatement(true)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowPicsStatement(true);
+                        }}
                         className="text-cyber-green hover:underline font-bold px-0.5"
+                        id="open-pics-btn"
                       >
-                        《個人資料收集聲明 v2.0》
+                        《個人資料收集聲明》
                       </button>
                       。
                     </label>
