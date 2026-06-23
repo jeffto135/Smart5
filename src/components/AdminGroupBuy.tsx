@@ -185,19 +185,28 @@ export const AdminGroupBuy: React.FC<AdminGroupBuyProps> = ({
         description,
         price: Number(price),
         targetQuantity: Number(targetQuantity),
-        minQuantity: minQuantity !== '' ? Number(minQuantity) : undefined,
-        maxQuantity: maxQuantity !== '' ? Number(maxQuantity) : undefined,
+        minQuantity: minQuantity !== '' && minQuantity !== undefined && minQuantity !== null ? Number(minQuantity) : 0,
+        maxQuantity: maxQuantity !== '' && maxQuantity !== undefined && maxQuantity !== null ? Number(maxQuantity) : 0,
         endDate: new Date(endDate),
-        imageUrl: imageUrl || undefined,
+        imageUrl: imageUrl || "",
         status
       };
 
+      // 🌟 安全防禦防線：確保絕對不會傳入 undefined 導致 Firestore 報錯
+      const cleanPayload = JSON.parse(JSON.stringify(payload, (key, value) => {
+        if (value === undefined) return null;
+        return value;
+      }));
+
+      // Convert date back to a real Date object since stringify converts it to a string
+      cleanPayload.endDate = new Date(endDate);
+
       if (editingGbId) {
-        await onUpdateGroupBuy(editingGbId, payload);
+        await onUpdateGroupBuy(editingGbId, cleanPayload);
         alert('修改成功 / GROUP BUY ITEM UPDATED');
       } else {
         await onAddGroupBuy({
-          ...payload,
+          ...cleanPayload,
           currentRegistrations: []
         });
         alert('上架成功 / GROUP BUY ITEM PUBLISHED');

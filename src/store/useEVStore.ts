@@ -518,7 +518,27 @@ export function useEVStore() {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const logList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LogEntry));
+      const logList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          odometer: Number(data.odo ?? data.odometer ?? 0),
+          batteryPercent: Number(data.soc ?? data.batteryPercent ?? 100)
+        } as LogEntry;
+      });
+
+      // 🚀 [Client-side Sorting] Guarantee chronological descending order
+      logList.sort((a, b) => {
+        const aTime = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp ? new Date(a.timestamp as any).getTime() : 0);
+        const bTime = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp ? new Date(b.timestamp as any).getTime() : 0);
+        if (bTime !== aTime) return bTime - aTime;
+        
+        const aOdo = a.odo ?? a.odometer ?? 0;
+        const bOdo = b.odo ?? b.odometer ?? 0;
+        return bOdo - aOdo;
+      });
+
       setLogs(logList);
     }, (error) => {
       // Don't crash on log fetch errors, just log it
@@ -1851,7 +1871,15 @@ export function useEVStore() {
   const updateGroupBuy = async (id: string, data: Partial<GroupBuy>) => {
     if (!isSubAdmin) return;
     try {
-      await updateDoc(doc(db, 'groupBuys', id), data);
+      // 🌟 Clean up undefined fields from payload to prevent Firestore write error
+      const updateData = { ...data };
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key as keyof typeof updateData] === undefined) {
+          delete updateData[key as keyof typeof updateData];
+        }
+      });
+
+      await updateDoc(doc(db, 'groupBuys', id), updateData);
 
       // 📝 Audit log tracing
       const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
