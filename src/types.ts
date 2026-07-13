@@ -61,6 +61,10 @@ export interface UserProfile {
   selectedVehicleId?: string | null;
   joinedAt?: Timestamp;
   updatedAt: Timestamp;
+  lastMaintenanceKM?: number;
+  lastMaintenanceDate?: Timestamp | null;
+  licenseExpiryDate?: Timestamp | null;
+  insuranceExpiryDate?: Timestamp | null;
 }
 
 export interface Activity {

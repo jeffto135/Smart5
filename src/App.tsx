@@ -716,6 +716,8 @@ export default function App() {
                 activities={evStore.activities}
                 polls={evStore.polls}
                 groupBuys={evStore.groupBuys}
+                userProfile={evStore.userProfile}
+                onRecordMaintenance={evStore.recordMaintenance}
                 onLogClick={setEditingLog}
                 onViewAll={() => setView('history')}
                 onActivityClick={() => setView('activityList')}

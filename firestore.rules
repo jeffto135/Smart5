@@ -70,6 +70,10 @@ service cloud.firestore {
              (data.joinedAt is timestamp || !data.keys().hasAll(['joinedAt'])) &&
              (data.plate is string || !data.keys().hasAll(['plate'])) &&
              (data.selectedVehicleId is string || data.selectedVehicleId == null || !data.keys().hasAll(['selectedVehicleId'])) &&
+             (data.lastMaintenanceKM is number || !data.keys().hasAll(['lastMaintenanceKM'])) &&
+             (data.lastMaintenanceDate is timestamp || data.lastMaintenanceDate == null || !data.keys().hasAll(['lastMaintenanceDate'])) &&
+             (data.licenseExpiryDate is timestamp || data.licenseExpiryDate == null || !data.keys().hasAll(['licenseExpiryDate'])) &&
+             (data.insuranceExpiryDate is timestamp || data.insuranceExpiryDate == null || !data.keys().hasAll(['insuranceExpiryDate'])) &&
              data.updatedAt == request.time;
     }
 
@@ -243,7 +247,8 @@ service cloud.firestore {
                       (incoming().role == existing().role || isAdmin()) &&
                       (isAdmin() ? true : (
                         incoming().diff(existing()).affectedKeys().hasOnly([
-                          'phoneNumber', 'displayName', 'photoURL', 'plate', 'selectedVehicleId', 'updatedAt'
+                          'phoneNumber', 'displayName', 'photoURL', 'plate', 'selectedVehicleId', 'updatedAt',
+                          'lastMaintenanceKM', 'lastMaintenanceDate', 'licenseExpiryDate', 'insuranceExpiryDate'
                         ]) || (
                           existing().status == 'pending_verification' &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
@@ -252,9 +257,17 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    match /userProfiles/{userId}/maintenance_logs/{logId} {
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isSubAdmin());
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
       allow write, create, update: if isOwner(userId);
+    }
+
+    match /users/{userId}/maintenance_logs/{logId} {
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isSubAdmin());
     }
 
     match /users/{userId}/tokens/{tokenId} {

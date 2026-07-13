@@ -11,9 +11,12 @@ import {
 import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag, Gift } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
-import { LogEntry, Vehicle, Activity, Poll, GroupBuy } from '../types';
+import { LogEntry, Vehicle, Activity, Poll, GroupBuy, UserProfile } from '../types';
 import { format } from 'date-fns';
 import { MonthDropdown } from './MonthDropdown';
+import { auth, db } from '../lib/firebase';
+import { doc, setDoc, updateDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
+import { MaintenanceHistoryModal } from './MaintenanceHistoryModal';
 
 interface DashboardProps {
   logs: LogEntry[];
@@ -21,6 +24,8 @@ interface DashboardProps {
   activities: Activity[];
   polls: Poll[];
   groupBuys: GroupBuy[];
+  userProfile: UserProfile | null;
+  onRecordMaintenance?: (actualKM: number, actualDate: string, remarks?: string) => Promise<void>;
   onLogClick: (log: LogEntry) => void;
   onViewAll: () => void;
   onActivityClick: () => void;
@@ -37,6 +42,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   activities,
   polls,
   groupBuys = [],
+  userProfile,
+  onRecordMaintenance,
   onLogClick, 
   onViewAll,
   onActivityClick,
@@ -47,6 +54,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSelectMonth
 }) => {
   const [expandedDates, setExpandedDates] = useState<{ [date: string]: boolean }>({});
+  
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [actualKM, setActualKM] = useState('');
+  const [actualDate, setActualDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [remarks, setRemarks] = useState('');
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [showAdminReminderModal, setShowAdminReminderModal] = useState(false);
+  const [reminderModalType, setReminderModalType] = useState<'license' | 'insurance' | 'both'>('both');
+  const [tempLicenseDate, setTempLicenseDate] = useState('');
+  const [tempInsuranceDate, setTempInsuranceDate] = useState('');
+  const [isUpdatingReminder, setIsUpdatingReminder] = useState(false);
 
   const toggleDate = (date: string, e: React.MouseEvent) => {
     // Prevent event bubbling if necessary, but keep it simple
@@ -325,9 +345,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const lastSoc = lastLog?.batteryPercent ?? vehicle?.lastBatteryPercent ?? 100;
     const lastOdo = lastLog ? Number(lastLog.odo ?? lastLog.odometer ?? 0) : Number(vehicle?.lastOdometer ?? 0);
 
-    // Maintenance Threshold Check (odo % 10000 >= 9500 or odo % 10000 <= 500)
-    const odoMod = lastOdo % 10000;
-    const showMaintenanceWarning = lastOdo > 0 && (odoMod >= 9500 || odoMod <= 500);
+    const currentODO = lastOdo;
+    const lastMaintenanceKM = userProfile?.lastMaintenanceKM ?? 0;
+    
+    let lastMaintenanceDate = new Date();
+    if (userProfile?.lastMaintenanceDate) {
+      if (typeof userProfile.lastMaintenanceDate.toDate === 'function') {
+        lastMaintenanceDate = userProfile.lastMaintenanceDate.toDate();
+      } else {
+        lastMaintenanceDate = new Date(userProfile.lastMaintenanceDate as any);
+      }
+    } else if (userProfile?.joinedAt) {
+      if (typeof userProfile.joinedAt.toDate === 'function') {
+        lastMaintenanceDate = userProfile.joinedAt.toDate();
+      } else {
+        lastMaintenanceDate = new Date(userProfile.joinedAt as any);
+      }
+    } else if (vehicle?.createdAt) {
+      if (typeof vehicle.createdAt.toDate === 'function') {
+        lastMaintenanceDate = vehicle.createdAt.toDate();
+      } else {
+        lastMaintenanceDate = new Date(vehicle.createdAt as any);
+      }
+    }
+
+    const today = new Date();
+
+    // 1️⃣ 計算里程差
+    const nextMaintenanceKM = lastMaintenanceKM + 10000;
+    const isKmDue = (nextMaintenanceKM - currentODO) <= 800 && (nextMaintenanceKM - currentODO) > -200;
+
+    // 2️⃣ 計算時間差 (天數)
+    const diffTime = Math.abs(today.getTime() - lastMaintenanceDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    // 🌟 當距離上次保養超過 335 天 (即大約 11 個月)，或已經過期
+    const isTimeDue = diffDays >= 335; 
+
+    // 🚀 雙軌並行：任一條件滿足即顯示提示框
+    const showMaintenanceWarning = lastOdo > 0 && (isKmDue || isTimeDue);
+
+    // 💡 提示框內文動態渲染原因：
+    const reminderReason = isTimeDue && !isKmDue 
+      ? `[ 📅 時間定期保養提示 ] 距離上次檢查已接近 1 年 (已達 ${diffDays} 天)` 
+      : `[ 🔧 里程里程碑提示 ] 距離下一次 10,000 公里保養 (下一次保養里程目標：${nextMaintenanceKM.toLocaleString()} KM)`;
 
     // Extract Logs in last 7 days
     const sevenDaysAgo = new Date();
@@ -386,11 +446,136 @@ export const Dashboard: React.FC<DashboardProps> = ({
       lastSoc,
       lastOdo,
       showMaintenanceWarning,
+      reminderReason,
       remainingRange,
       avg7DaysEfficiency,
       isEstimatedByOfficial
     };
-  }, [logs, vehicle]);
+  }, [logs, vehicle, userProfile]);
+
+  // 🚗 Vehicle Annual Admin Reminder Logic
+  const vehicleReminders = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const licExpiry = userProfile?.licenseExpiryDate;
+    const insExpiry = userProfile?.insuranceExpiryDate;
+
+    const licExpiryDate = licExpiry?.toDate ? licExpiry.toDate() : (licExpiry ? new Date(licExpiry as any) : null);
+    const insExpiryDate = insExpiry?.toDate ? insExpiry.toDate() : (insExpiry ? new Date(insExpiry as any) : null);
+
+    // 1️⃣ 續牌（路票）計算
+    let showLicReminder = false;
+    let licDaysLeft = 0;
+    if (licExpiryDate) {
+      const expiryCopy = new Date(licExpiryDate);
+      expiryCopy.setHours(0, 0, 0, 0);
+      const diff = expiryCopy.getTime() - today.getTime();
+      licDaysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      // 🌟 提前 60 天跳出提示
+      showLicReminder = licDaysLeft <= 60;
+    }
+
+    // 2️⃣ 續保（保險）計算
+    let showInsReminder = false;
+    let insDaysLeft = 0;
+    if (insExpiryDate) {
+      const expiryCopy = new Date(insExpiryDate);
+      expiryCopy.setHours(0, 0, 0, 0);
+      const diff = expiryCopy.getTime() - today.getTime();
+      insDaysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      // 🌟 提前 45 天跳出提示
+      showInsReminder = insDaysLeft <= 45;
+    }
+
+    const hasMissingDates = !licExpiryDate || !insExpiryDate;
+
+    return {
+      licExpiryDate,
+      insExpiryDate,
+      showLicReminder,
+      licDaysLeft,
+      showInsReminder,
+      insDaysLeft,
+      hasMissingDates
+    };
+  }, [userProfile]);
+
+  const openReminderModal = (type: 'license' | 'insurance' | 'both') => {
+    setReminderModalType(type);
+    
+    let licVal = '';
+    let insVal = '';
+    
+    if (vehicleReminders.licExpiryDate) {
+      licVal = format(vehicleReminders.licExpiryDate, 'yyyy-MM-dd');
+    }
+    if (vehicleReminders.insExpiryDate) {
+      insVal = format(vehicleReminders.insExpiryDate, 'yyyy-MM-dd');
+    }
+
+    if (type === 'license') {
+      if (vehicleReminders.licExpiryDate) {
+        const nextYear = new Date(vehicleReminders.licExpiryDate);
+        nextYear.setFullYear(nextYear.getFullYear() + 1);
+        licVal = format(nextYear, 'yyyy-MM-dd');
+      } else {
+        const nextYear = new Date();
+        nextYear.setFullYear(nextYear.getFullYear() + 1);
+        licVal = format(nextYear, 'yyyy-MM-dd');
+      }
+    }
+
+    if (type === 'insurance') {
+      if (vehicleReminders.insExpiryDate) {
+        const nextYear = new Date(vehicleReminders.insExpiryDate);
+        nextYear.setFullYear(nextYear.getFullYear() + 1);
+        insVal = format(nextYear, 'yyyy-MM-dd');
+      } else {
+        const nextYear = new Date();
+        nextYear.setFullYear(nextYear.getFullYear() + 1);
+        insVal = format(nextYear, 'yyyy-MM-dd');
+      }
+    }
+
+    setTempLicenseDate(licVal);
+    setTempInsuranceDate(insVal);
+    setShowAdminReminderModal(true);
+  };
+
+  const handleUpdateReminderDates = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auth.currentUser) return;
+    setIsUpdatingReminder(true);
+    try {
+      const uid = auth.currentUser.uid;
+      const userProfilesRef = doc(db, 'userProfiles', uid);
+      const usersRef = doc(db, 'users', uid);
+
+      const updateData: any = {
+        updatedAt: serverTimestamp(),
+        licenseExpiryDate: tempLicenseDate ? Timestamp.fromDate(new Date(tempLicenseDate + 'T00:00:00')) : null,
+        insuranceExpiryDate: tempInsuranceDate ? Timestamp.fromDate(new Date(tempInsuranceDate + 'T00:00:00')) : null,
+      };
+
+      // Update userProfiles
+      await updateDoc(userProfilesRef, updateData);
+
+      // Update users doc (gracefully if it fails)
+      try {
+        await updateDoc(usersRef, updateData);
+      } catch (err) {
+        console.warn('Failed to update users collection:', err);
+      }
+
+      alert('更新成功！ / UPDATED SUCCESSFULLY');
+      setShowAdminReminderModal(false);
+    } catch (err: any) {
+      alert('更新失敗：' + (err.message || '未知錯誤'));
+    } finally {
+      setIsUpdatingReminder(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -400,15 +585,97 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="p-4 rounded-2xl bg-cyber-green/10 border-2 border-cyber-green text-cyber-green flex items-start gap-3 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
+            className="p-4 rounded-2xl bg-cyber-green/10 border-2 border-cyber-green text-cyber-green flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
           >
-            <span className="text-lg">🛠️</span>
-            <div className="space-y-1">
-              <h4 className="text-xs font-bold uppercase tracking-wider font-mono">保養里程碑提示 / MAINTENANCE REMINDER</h4>
+            <div className="flex items-start gap-3">
+              <span className="text-lg">🛠️</span>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold uppercase tracking-wider font-mono">保養里程碑提示 / MAINTENANCE REMINDER</h4>
+                <p className="text-xs font-semibold leading-relaxed">
+                  提示：{smartInsights.reminderReason}。當前已達 <span className="underline font-bold">{smartInsights.lastOdo.toLocaleString()} KM</span>，請預約回廠檢查胎壓、煞車皮與更換冷氣濾網。
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => {
+                setActualKM(smartInsights.lastOdo.toString());
+                setActualDate(format(new Date(), 'yyyy-MM-dd'));
+                setShowMaintenanceModal(true);
+              }}
+              className="px-4 py-2 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs uppercase hover:bg-cyber-green/80 transition-all shadow-[0_0_15px_rgba(204,255,0,0.3)] shrink-0 self-end md:self-center"
+            >
+              🔧 紀錄已回廠 / RECORD COMPLETED
+            </button>
+          </motion.div>
+        )}
+
+        {/* 🚗 汽車行政到期自動提醒 / Annual Admin Reminders */}
+        {vehicleReminders.hasMissingDates && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={() => openReminderModal('both')}
+            className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-400 flex items-center justify-between gap-4 shadow-[0_0_20px_rgba(245,158,11,0.1)] cursor-pointer hover:bg-amber-500/15 transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-lg">⚠️</span>
               <p className="text-xs font-semibold leading-relaxed">
-                提示：新車即將到達保養里程碑（當前已達 <span className="underline font-bold">{smartInsights.lastOdo.toLocaleString()} KM</span>），請預約回廠檢查胎壓、煞車皮與更換冷氣濾網。
+                [ ⚠️ 未設定行車證/續保日期，點擊此處設定以啟動智能倒數 ]
               </p>
             </div>
+            <span className="text-xs font-mono font-bold text-amber-500 hover:underline">去設定 ➔</span>
+          </motion.div>
+        )}
+
+        {vehicleReminders.showLicReminder && vehicleReminders.licExpiryDate && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500 text-amber-400 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-lg">📅</span>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-amber-500">行車證續期提醒 / VEHICLE LICENSE EXPIRY</h4>
+                <p className="text-xs font-semibold leading-relaxed">
+                  {vehicleReminders.licDaysLeft < 0 
+                    ? `📅 行車證提醒：您的行車證已過期，請及時辦理續期申請！` 
+                    : `📅 行車證提醒：您的行車證將於 ${vehicleReminders.licDaysLeft} 天後到期，請及時辦理續期申請！`}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => openReminderModal('license')}
+              className="px-4 py-2 rounded-xl bg-amber-500 text-black font-mono font-bold text-xs uppercase hover:bg-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0 self-end md:self-center cursor-pointer"
+            >
+              📝 我已續期
+            </button>
+          </motion.div>
+        )}
+
+        {vehicleReminders.showInsReminder && vehicleReminders.insExpiryDate && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500 text-amber-400 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-lg">📅</span>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-amber-500">汽車續保提醒 / INSURANCE EXPIRY</h4>
+                <p className="text-xs font-semibold leading-relaxed">
+                  {vehicleReminders.insDaysLeft < 0 
+                    ? `📅 續保提醒：您的汽車保險已過期，請及時辦理續保申請！` 
+                    : `📅 續保提醒：您的汽車保險將於 ${vehicleReminders.insDaysLeft} 天後到期，請及時辦理續保申請！`}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => openReminderModal('insurance')}
+              className="px-4 py-2 rounded-xl bg-amber-500 text-black font-mono font-bold text-xs uppercase hover:bg-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0 self-end md:self-center cursor-pointer"
+            >
+              📝 我已續期
+            </button>
           </motion.div>
         )}
 
@@ -421,8 +688,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/40 font-bold">EV SMART INSIGHTS ENGINE</span>
               <h3 className="text-md font-bold uppercase tracking-wide text-white mt-0.5">智能用車提醒與續航估算</h3>
             </div>
-            <div className="h-7 w-7 rounded-lg bg-cyber-green/10 border border-cyber-green/25 flex items-center justify-center">
-              <span className="text-cyber-green text-sm select-none">🧠</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowHistoryModal(true)}
+                className="text-xs font-mono font-bold text-cyber-green hover:text-cyber-green/80 transition-colors border border-cyber-green/30 bg-cyber-green/5 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-[0_0_10px_rgba(204,255,0,0.1)] cursor-pointer"
+              >
+                🛠️ 查閱保養日誌
+              </button>
+              <div className="h-7 w-7 rounded-lg bg-cyber-green/10 border border-cyber-green/25 flex items-center justify-center">
+                <span className="text-cyber-green text-sm select-none">🧠</span>
+              </div>
             </div>
           </div>
 
@@ -454,6 +729,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 Smart #5 預設配置 100 kWh 電池 (CLTC 740km)
               </span>
             </div>
+          </div>
+
+          {/* 📋 行政限期管理 / Admin Deadlines */}
+          <div className="mt-4 pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-3 bg-white/[0.01] -mx-5 -mb-5 p-5 rounded-b-2xl">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-mono text-white/40 uppercase block">行車證到期日</span>
+                <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${!vehicleReminders.licExpiryDate ? 'bg-white/25' : (vehicleReminders.showLicReminder ? 'bg-amber-500 animate-pulse' : 'bg-cyber-green')}`} />
+                  {vehicleReminders.licExpiryDate ? format(vehicleReminders.licExpiryDate, 'yyyy-MM-dd') : '未設定'}
+                </span>
+              </div>
+              <div className="space-y-0.5 border-l border-white/5 pl-6">
+                <span className="text-[9px] font-mono text-white/40 uppercase block">汽車保險到期日</span>
+                <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${!vehicleReminders.insExpiryDate ? 'bg-white/25' : (vehicleReminders.showInsReminder ? 'bg-amber-500 animate-pulse' : 'bg-cyber-green')}`} />
+                  {vehicleReminders.insExpiryDate ? format(vehicleReminders.insExpiryDate, 'yyyy-MM-dd') : '未設定'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => openReminderModal('both')}
+              className="text-xs font-mono font-bold text-amber-500 hover:text-amber-400 transition-colors border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer hover:border-amber-500/65"
+            >
+              ✏️ 變更/設定期限
+            </button>
           </div>
         </div>
       </div>
@@ -807,6 +1108,162 @@ export const Dashboard: React.FC<DashboardProps> = ({
           })
         )}
       </div>
+
+      {showMaintenanceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 bg-black/85 backdrop-blur-sm"
+            onClick={() => setShowMaintenanceModal(false)}
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-card w-full max-w-sm p-6 relative z-10 border-cyber-green/30"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-mono font-bold uppercase text-cyber-green">紀錄已完成保養</h3>
+              <button 
+                onClick={() => setShowMaintenanceModal(false)} 
+                className="text-white/50 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!onRecordMaintenance) return;
+              setIsSubmitting(true);
+              try {
+                await onRecordMaintenance(Number(actualKM), actualDate, remarks);
+                alert('保養紀錄成功 / MAINTENANCE LOGGED SUCCESSFULLY');
+                setRemarks('');
+                setShowMaintenanceModal(false);
+              } catch (err: any) {
+                alert('紀錄失敗：' + (err.message || '未知錯誤'));
+              } finally {
+                setIsSubmitting(false);
+              }
+            }} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono uppercase text-cyber-green/70">回廠保養日期 / Date</label>
+                <input
+                  type="date"
+                  value={actualDate}
+                  onChange={(e) => setActualDate(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-cyber-green"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono uppercase text-cyber-green/70">回廠保養里程 (KM) / Mileage</label>
+                <input
+                  type="number"
+                  value={actualKM}
+                  onChange={(e) => setActualKM(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-cyber-green"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono uppercase text-cyber-green/70">保養備忘錄 (選填) / Remarks</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="例：更換冷氣濾網、檢查胎壓與煞車皮..."
+                  rows={2}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white text-xs focus:outline-none focus:border-cyber-green resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs uppercase hover:bg-cyber-green/80 transition-all disabled:opacity-50 mt-4 shadow-[0_0_15px_rgba(204,255,0,0.3)]"
+              >
+                {isSubmitting ? 'SUBMITTING...' : '確認提交 / CONFIRM SUBMISSION'}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 🛠️ 歷史保養時間軸彈窗 / Maintenance History Modal */}
+      <MaintenanceHistoryModal 
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        uid={userProfile?.id || auth.currentUser?.uid || ''}
+        joinedAt={userProfile?.joinedAt}
+      />
+
+      {/* 📅 更新行政提醒到期日彈窗 / Update Admin Expiries Modal */}
+      {showAdminReminderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 bg-black/85 backdrop-blur-sm"
+            onClick={() => setShowAdminReminderModal(false)}
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-card w-full max-w-sm p-6 relative z-10 border-amber-500/30"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-mono font-bold uppercase text-amber-500">
+                {reminderModalType === 'license' ? '更新行車證到期日' : reminderModalType === 'insurance' ? '更新保險到期日' : '設定行車證與續保到期日'}
+              </h3>
+              <button 
+                onClick={() => setShowAdminReminderModal(false)} 
+                className="text-white/50 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateReminderDates} className="space-y-4">
+              {(reminderModalType === 'license' || reminderModalType === 'both') && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-amber-500/70">行車證到期日 / Vehicle License Expiry Date</label>
+                  <input
+                    type="date"
+                    value={tempLicenseDate}
+                    onChange={(e) => setTempLicenseDate(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-amber-500"
+                    required={reminderModalType === 'license' || reminderModalType === 'both'}
+                  />
+                </div>
+              )}
+
+              {(reminderModalType === 'insurance' || reminderModalType === 'both') && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-amber-500/70">保險到期日 / Insurance Expiry Date</label>
+                  <input
+                    type="date"
+                    value={tempInsuranceDate}
+                    onChange={(e) => setTempInsuranceDate(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-amber-500"
+                    required={reminderModalType === 'insurance' || reminderModalType === 'both'}
+                  />
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isUpdatingReminder}
+                className="w-full py-3 rounded-xl bg-amber-500 text-black font-mono font-bold text-xs uppercase hover:bg-amber-400 transition-all disabled:opacity-50 mt-4 shadow-[0_0_15px_rgba(245,158,11,0.3)] cursor-pointer"
+              >
+                {isUpdatingReminder ? 'SUBMITTING...' : '確認提交 / CONFIRM SUBMISSION'}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };

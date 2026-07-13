@@ -156,7 +156,9 @@ export function useEVStore() {
             phoneNumber: '',
             selectedVehicleId: null,
             joinedAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+            updatedAt: serverTimestamp(),
+            lastMaintenanceKM: 0,
+            lastMaintenanceDate: serverTimestamp()
           };
           await setDoc(doc(db, 'userProfiles', auth.currentUser.uid), initialProfile);
           // Wait for the next onSnapshot trigger to set userProfile
@@ -900,6 +902,77 @@ export function useEVStore() {
 
       await setDoc(profileDoc, updateData, { merge: true });
     } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'userProfiles');
+    }
+  };
+
+  const recordMaintenance = async (actualKM: number, actualDate: string, remarks?: string) => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    try {
+      const userProfilesRef = doc(db, 'userProfiles', uid);
+      const usersRef = doc(db, 'users', uid);
+
+      const maintenanceData = {
+        lastMaintenanceKM: Number(actualKM),
+        lastMaintenanceDate: new Date(actualDate),
+        updatedAt: serverTimestamp(),
+      };
+
+      // 1. Update userProfiles document
+      await setDoc(userProfilesRef, maintenanceData, { merge: true });
+
+      // 2. Update users document
+      try {
+        await setDoc(usersRef, maintenanceData, { merge: true });
+      } catch (err) {
+        console.warn('Failed to write to users collection, trying update instead:', err);
+        try {
+          await updateDoc(usersRef, {
+            lastMaintenanceKM: Number(actualKM),
+            lastMaintenanceDate: new Date(actualDate),
+          });
+        } catch (innerErr) {
+          console.warn('Failed to update users doc:', innerErr);
+        }
+      }
+
+      // 3. Write log to maintenance_logs subcollection
+      const logData = {
+        actualKM: Number(actualKM),
+        actualDate: new Date(actualDate),
+        remarks: remarks || '',
+        createdAt: serverTimestamp(),
+      };
+
+      try {
+        await addDoc(collection(db, 'users', uid, 'maintenance_logs'), logData);
+      } catch (err) {
+        console.warn('Failed to write to users maintenance_logs:', err);
+      }
+
+      try {
+        await addDoc(collection(db, 'userProfiles', uid, 'maintenance_logs'), logData);
+      } catch (err) {
+        console.warn('Failed to write to userProfiles maintenance_logs:', err);
+      }
+
+      // 4. Trace in Audit Log
+      const operatorRole = isAdmin ? 'admin' : (isSubAdmin ? 'subAdmin' : 'member');
+      const operator = {
+        uid: auth.currentUser?.uid || '',
+        email: auth.currentUser?.email || userProfile?.email || '',
+        role: operatorRole
+      };
+      await createAuditLog(
+        operator,
+        'RECORD_MAINTENANCE',
+        'userProfiles',
+        `車友紀錄了回廠保養，里程: ${actualKM} KM, 日期: ${actualDate}`
+      );
+
+    } catch (error) {
+      console.error('Failed to record maintenance:', error);
       handleFirestoreError(error, OperationType.UPDATE, 'userProfiles');
     }
   };
@@ -2218,6 +2291,7 @@ export function useEVStore() {
     deleteLog,
     addLog,
     updateUserProfile,
+    recordMaintenance,
     deleteAccount,
     addActivity,
     updateActivity,
