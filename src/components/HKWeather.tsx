@@ -2,10 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sun, Cloud, CloudRain, CloudLightning, AlertTriangle, Thermometer, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+interface WeatherWarning {
+  name: string;
+  color: string;
+  severity: string;
+}
+
 interface WeatherData {
   temperature: number;
   iconId: number;
-  warnings: string[];
+  warnings: WeatherWarning[];
 }
 
 interface HKWeatherProps {
@@ -13,6 +19,62 @@ interface HKWeatherProps {
   // A prop to allow simulation of extreme weather to display slippery road warnings on dashboard
   simulatedWarnings?: string[] | null;
 }
+
+const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
+  if (!warningList || warningList.length === 0) return [];
+
+  return warningList.map(item => {
+    const code = item.warningStatementCode;
+    const subtype = item.subtype; // 🌟 關鍵：必須讀取此子代碼
+
+    // 1. 暴雨警告精準細分
+    if (code === 'WRAIN') {
+      if (subtype === 'WRAINY') return { name: '黃色暴雨警告', color: '#ffcc00', severity: 'minor' };
+      if (subtype === 'WRAINR') return { name: '紅色暴雨警告', color: '#ff3b30', severity: 'moderate' };
+      if (subtype === 'WRAINB') return { name: '黑色暴雨警告', color: '#a255ff', severity: 'extreme' };
+      return { name: '暴雨警告', color: '#ffcc00', severity: 'minor' };
+    }
+
+    // 2. 雷暴警告
+    if (code === 'WTS') {
+      return { name: '雷暴警告', color: '#ff9500', severity: 'minor' };
+    }
+
+    // 3. 熱帶氣旋（風球）精準細分
+    if (code === 'TC') {
+      if (subtype === 'TC1') return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor' };
+      if (subtype === 'TC3') return { name: '三號強風信號', color: '#ff9500', severity: 'moderate' };
+      if (['TC8NE', 'TC8SE', 'TC8NW', 'TC8SW'].includes(subtype)) {
+        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high' };
+      }
+      if (subtype === 'TC9') return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme' };
+      if (subtype === 'TC10') return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme' };
+      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high' };
+    }
+
+    // 其他警告默認處理
+    return { 
+      name: item.contents && item.contents[0] ? item.contents[0].split('現正')[0] : '氣象警告', 
+      color: '#ff3b30',
+      severity: 'minor'
+    };
+  });
+};
+
+const getWarningTailwindClasses = (name: string) => {
+  if (name.includes('黃色暴雨')) return 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20';
+  if (name.includes('紅色暴雨')) return 'text-red-500 border-red-500/30 bg-red-500/10 hover:bg-red-500/20';
+  if (name.includes('黑色暴雨')) return 'text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-500/10 hover:bg-fuchsia-500/20';
+  if (name.includes('一號戒備')) return 'text-sky-400 border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20';
+  if (name.includes('三號強風')) return 'text-orange-400 border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/20';
+  if (name.includes('八號') || name.includes('九號') || name.includes('十號')) {
+    return 'text-red-500 border-red-500/30 bg-red-500/10 hover:bg-red-500/20';
+  }
+  if (name.includes('雷暴')) return 'text-amber-500 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20';
+  if (name.includes('強烈季候風')) return 'text-sky-400 border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20';
+  if (name.includes('山泥傾瀉')) return 'text-orange-500 border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/20';
+  return 'text-red-500 border-red-500/30 bg-red-500/10 hover:bg-red-500/20';
+};
 
 const getWeatherIcon = (iconId: number) => {
   // Rough mapping of HKO icon codes to Lucide icons
@@ -35,9 +97,9 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
       if (!weatherRes.ok) throw new Error('Failed to fetch current weather status');
       const weatherJson = await weatherRes.json();
       
-      // Fetch warnings
-      const warnRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc');
-      if (!warnRes.ok) throw new Error('Failed to fetch warning summary');
+      // Fetch warnings using warningInfo endpoint
+      const warnRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warningInfo&lang=tc');
+      if (!warnRes.ok) throw new Error('Failed to fetch warning information');
       const warnJson = await warnRes.json();
 
       // Find temperature (using King's Park as default)
@@ -47,10 +109,13 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
       
       const iconId = weatherJson.icon?.[0] || 60;
       
-      const warnings: string[] = [];
-      if (warnJson && typeof warnJson === 'object') {
-        Object.values(warnJson).forEach((w: any) => {
-          if (w.name) warnings.push(w.name);
+      const warnings: WeatherWarning[] = [];
+      if (warnJson && Array.isArray(warnJson.details)) {
+        const parsed = parseHKOWarnings(warnJson.details);
+        parsed.forEach((w: WeatherWarning) => {
+          if (w && w.name) {
+            warnings.push(w);
+          }
         });
       }
 
@@ -80,9 +145,14 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
 
   const latestWarningsRef = useRef<string[]>([]);
   
+  const warningsString = data ? JSON.stringify(data.warnings.map(w => w.name)) : '';
+  const simulatedWarningsString = simulatedWarnings ? JSON.stringify(simulatedWarnings) : '';
+
   // Propagate warnings up to parent component
   useEffect(() => {
-    const currentWarnings = simulatedWarnings !== null && simulatedWarnings !== undefined ? simulatedWarnings : (data?.warnings || []);
+    const currentWarnings = simulatedWarnings !== null && simulatedWarnings !== undefined 
+      ? simulatedWarnings 
+      : (data?.warnings.map(w => w.name) || []);
     const warningsJson = JSON.stringify(currentWarnings);
     const prevJson = JSON.stringify(latestWarningsRef.current);
     
@@ -90,11 +160,17 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
       latestWarningsRef.current = currentWarnings;
       onWarningsUpdate?.(currentWarnings);
     }
-  }, [data?.warnings, simulatedWarnings, onWarningsUpdate]);
+  }, [warningsString, simulatedWarningsString, onWarningsUpdate]);
 
   if (loading || !data) return null;
 
-  const displayWarnings = simulatedWarnings !== null && simulatedWarnings !== undefined ? simulatedWarnings : data.warnings;
+  const displayWarnings: WeatherWarning[] = simulatedWarnings !== null && simulatedWarnings !== undefined 
+    ? simulatedWarnings.map(name => ({ name, color: '#ff3b30', severity: 'minor' })) 
+    : (data?.warnings || []);
+
+  // Find dynamic classes for the top warning badge based on the first warning
+  const firstWarning = displayWarnings[0]?.name || '';
+  const badgeClasses = getWarningTailwindClasses(firstWarning);
 
   return (
     <div className="flex flex-col items-end">
@@ -106,11 +182,11 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
             onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-2 py-0.5 bg-red-500/10 border border-red-500/30 rounded text-[9px] font-mono text-red-500 font-bold mb-1 animate-pulse hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer"
+            className={`flex items-center gap-1.5 px-2 py-0.5 border rounded text-[9px] font-mono font-bold mb-1 animate-pulse active:scale-95 transition-all cursor-pointer ${badgeClasses}`}
           >
             <AlertTriangle size={10} />
             <span className="truncate max-w-[125px]">
-              {displayWarnings.join(' | ')}
+              {displayWarnings.map(w => w.name).join(' | ')}
             </span>
           </motion.button>
         ) : null}
@@ -144,18 +220,21 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
 
               <div className="space-y-3 my-4">
                 {displayWarnings.length > 0 ? (
-                  displayWarnings.map((w, idx) => (
-                    <div 
-                      key={idx} 
-                      className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg text-xs text-white/90 font-medium flex items-center gap-2"
-                    >
-                      <span className="text-red-500">⚠️</span>
-                      <div>
-                        <span className="font-bold text-red-400">{w}</span>
-                        <div className="text-[9px] opacity-40 mt-0.5 uppercase tracking-wide">Hong Kong Observatory Active Alert</div>
+                  displayWarnings.map((w, idx) => {
+                    const mappedClasses = getWarningTailwindClasses(w.name).replace('hover:bg-yellow-500/20', '').replace('hover:bg-red-500/20', '').replace('hover:bg-fuchsia-500/20', '').replace('hover:bg-sky-500/20', '').replace('hover:bg-orange-500/20', '').replace('hover:bg-amber-500/20', '');
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`p-3 border rounded-lg text-xs font-medium flex items-center gap-2 ${mappedClasses}`}
+                      >
+                        <span>⚠️</span>
+                        <div>
+                          <span className="font-bold">{w.name}</span>
+                          <div className="text-[9px] opacity-40 mt-0.5 uppercase tracking-wide">Hong Kong Observatory Active Alert</div>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="p-4 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-center text-xs text-emerald-400 font-mono">
                     ✅ 目前沒有任何氣象警告生效。
