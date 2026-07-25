@@ -27,32 +27,86 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
   if (!warningList || warningList.length === 0) return [];
 
   return warningList.map(item => {
-    const code = item.warningStatementCode;
-    const subtype = item.subtype; // 🌟 關鍵：必須讀取此子代碼
+    const code = item.warningStatementCode || item.code || '';
+    const sub = item.subtype ? item.subtype.toString().toUpperCase() : '';
+    const contentsStr = item.contents ? item.contents.join(' ') : (item.name || '');
 
-    // 1. 暴雨警告精準細分
-    if (code === 'WRAIN') {
-      if (subtype === 'WRAINY') return { name: '黃色暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype };
-      if (subtype === 'WRAINR') return { name: '紅色暴雨警告', color: '#ff3b30', severity: 'moderate', code, subtype };
-      if (subtype === 'WRAINB') return { name: '黑色暴雨警告', color: '#a255ff', severity: 'extreme', code, subtype };
-      return { name: '暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype };
-    }
-
-    // 2. 雷暴警告
-    if (code === 'WTS') {
-      return { name: '雷暴警告', color: '#ff9500', severity: 'minor', code, subtype };
-    }
-
-    // 3. 熱帶氣旋（風球）精準細分
+    // 1. 熱帶氣旋（風球）嚴格解析 Subtype
     if (code === 'TC') {
-      if (subtype === 'TC1') return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code, subtype };
-      if (subtype === 'TC3') return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code, subtype };
-      if (['TC8NE', 'TC8SE', 'TC8NW', 'TC8SW'].includes(subtype)) {
-        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype };
+      if (sub.includes('TC8') || ['TC8NE', 'TC8SE', 'TC8NW', 'TC8SW'].includes(sub)) {
+        let tcName = '八號烈風或暴風信號';
+        if (sub === 'TC8NE') tcName = '八號東北烈風或暴風信號';
+        else if (sub === 'TC8SE') tcName = '八號東南烈風或暴風信號';
+        else if (sub === 'TC8NW') tcName = '八號西北烈風或暴風信號';
+        else if (sub === 'TC8SW') tcName = '八號西南烈風或暴風信號';
+        return { name: tcName, color: '#ff3b30', severity: 'high', code, subtype: sub || 'TC8NE' };
       }
-      if (subtype === 'TC9') return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme', code, subtype };
-      if (subtype === 'TC10') return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code, subtype };
-      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high', code, subtype };
+      if (sub === 'TC3') {
+        return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code, subtype: 'TC3' };
+      }
+      if (sub === 'TC9') {
+        return { name: '九號烈風或暴風風力增強信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC9' };
+      }
+      if (sub === 'TC10') {
+        return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC10' };
+      }
+      if (sub === 'TC1') {
+        return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code, subtype: 'TC1' };
+      }
+
+      // If subtype is not explicitly TC1/3/8/9/10, check contents string
+      if (contentsStr.includes('八號東北') || contentsStr.includes('8號東北')) {
+        return { name: '八號東北烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8NE' };
+      }
+      if (contentsStr.includes('八號東南') || contentsStr.includes('8號東南')) {
+        return { name: '八號東南烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8SE' };
+      }
+      if (contentsStr.includes('八號西北') || contentsStr.includes('8號西北')) {
+        return { name: '八號西北烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8NW' };
+      }
+      if (contentsStr.includes('八號西南') || contentsStr.includes('8號西南')) {
+        return { name: '八號西南烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8SW' };
+      }
+      if (contentsStr.includes('八號') || contentsStr.includes('8號')) {
+        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8NE' };
+      }
+      if (contentsStr.includes('九號') || contentsStr.includes('9號')) {
+        return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC9' };
+      }
+      if (contentsStr.includes('十號') || contentsStr.includes('10號')) {
+        return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC10' };
+      }
+      if (contentsStr.includes('三號') || contentsStr.includes('3號')) {
+        return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code, subtype: 'TC3' };
+      }
+      if (contentsStr.includes('一號') || contentsStr.includes('1號')) {
+        return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code, subtype: 'TC1' };
+      }
+
+      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high', code, subtype: sub };
+    }
+
+    // 2. 暴雨警告精準細分
+    if (code === 'WRAIN') {
+      if (sub === 'WRAINY' || contentsStr.includes('黃色')) return { name: '黃色暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype: 'WRAINY' };
+      if (sub === 'WRAINR' || contentsStr.includes('紅色')) return { name: '紅色暴雨警告', color: '#ff3b30', severity: 'moderate', code, subtype: 'WRAINR' };
+      if (sub === 'WRAINB' || contentsStr.includes('黑色')) return { name: '黑色暴雨警告', color: '#a255ff', severity: 'extreme', code, subtype: 'WRAINB' };
+      return { name: '暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype: sub };
+    }
+
+    // 3. 雷暴警告
+    if (code === 'WTS') {
+      return { name: '雷暴警告', color: '#ff9500', severity: 'minor', code, subtype: sub };
+    }
+
+    // 4. 強烈季候風
+    if (code === 'WMSGD') {
+      return { name: '強烈季候風信號', color: '#5ac8fa', severity: 'minor', code, subtype: sub };
+    }
+
+    // 5. 山泥傾瀉
+    if (code === 'WL') {
+      return { name: '山泥傾瀉警告', color: '#ff9500', severity: 'minor', code, subtype: sub };
     }
 
     // 其他警告默認處理
@@ -61,7 +115,7 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
       color: '#ff3b30',
       severity: 'minor',
       code,
-      subtype
+      subtype: sub
     };
   });
 };
@@ -97,15 +151,37 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
 
   const fetchWeather = async () => {
     try {
-      // Fetch current weather
-      const weatherRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
-      if (!weatherRes.ok) throw new Error('Failed to fetch current weather status');
-      const weatherJson = await weatherRes.json();
+      const timestamp = Date.now();
+
+      // Fetch current weather with cache-buster
+      let weatherJson: any;
+      try {
+        const weatherRes = await fetch(`https://data.weather.gov.hk/weatherAPI/opendata/weather.do?dataType=rhrread&lang=tc&_t=${timestamp}`);
+        if (weatherRes.ok) {
+          weatherJson = await weatherRes.json();
+        } else {
+          throw new Error('Fallback to php');
+        }
+      } catch {
+        const weatherResPhp = await fetch(`https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc&_t=${timestamp}`);
+        if (!weatherResPhp.ok) throw new Error('Failed to fetch current weather status');
+        weatherJson = await weatherResPhp.json();
+      }
       
-      // Fetch warnings using warningInfo endpoint
-      const warnRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warningInfo&lang=tc');
-      if (!warnRes.ok) throw new Error('Failed to fetch warning information');
-      const warnJson = await warnRes.json();
+      // Fetch warnings using warningInfo endpoint with cache-buster
+      let warnJson: any;
+      try {
+        const warnRes = await fetch(`https://data.weather.gov.hk/weatherAPI/opendata/weather.do?dataType=warningInfo&lang=tc&_t=${timestamp}`);
+        if (warnRes.ok) {
+          warnJson = await warnRes.json();
+        } else {
+          throw new Error('Fallback to php');
+        }
+      } catch {
+        const warnResPhp = await fetch(`https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warningInfo&lang=tc&_t=${timestamp}`);
+        if (!warnResPhp.ok) throw new Error('Failed to fetch warning information');
+        warnJson = await warnResPhp.json();
+      }
 
       // Find temperature (using King's Park as default)
       const kpTempData = weatherJson.temperature?.data?.find((d: any) => d.place === '京士柏') || 
@@ -130,8 +206,7 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
         warnings: warnings
       });
     } catch (error) {
-      console.warn('Using beautiful default HK weather fallback:', error);
-      // Fail gracefully: fallback to standard pleasant Hong Kong weather (24°C, Cloudy)
+      console.warn('Using fallback HK weather data:', error);
       setData({
         temperature: 24,
         iconId: 60,

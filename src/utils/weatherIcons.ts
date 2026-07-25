@@ -7,16 +7,16 @@ export const getHKOIconUrl = (code?: string, subtype?: string, name?: string): s
   const searchString = name || '';
 
   // 1. Check direct code and subtype mappings
-  if (upperCode === 'TC') {
+  if (upperCode === 'TC' || upperSubtype.startsWith('TC')) {
     if (upperSubtype === 'TC1') return `${baseUrl}tc1.gif`;
     if (upperSubtype === 'TC3') return `${baseUrl}tc3.gif`;
     if (upperSubtype === 'TC8NE') return `${baseUrl}tc8ne.gif`;
     if (upperSubtype === 'TC8SE') return `${baseUrl}tc8se.gif`;
     if (upperSubtype === 'TC8NW') return `${baseUrl}tc8nw.gif`;
     if (upperSubtype === 'TC8SW') return `${baseUrl}tc8sw.gif`;
+    if (upperSubtype.includes('TC8')) return `${baseUrl}tc8ne.gif`;
     if (upperSubtype === 'TC9') return `${baseUrl}tc9.gif`;
     if (upperSubtype === 'TC10') return `${baseUrl}tc10.gif`;
-    return `${baseUrl}tc1.gif`;
   }
   
   if (upperCode === 'WRAIN') {
@@ -35,8 +35,6 @@ export const getHKOIconUrl = (code?: string, subtype?: string, name?: string): s
   if (upperCode === 'WCOLD') return `${baseUrl}cold.gif`; // 寒冷
 
   // 2. Fallback based on name search (for simulated warnings or missing code/subtype)
-  if (searchString.includes('一號') || searchString.includes('1號')) return `${baseUrl}tc1.gif`;
-  if (searchString.includes('三號') || searchString.includes('3號')) return `${baseUrl}tc3.gif`;
   if (searchString.includes('八號東北') || searchString.includes('8號東北')) return `${baseUrl}tc8ne.gif`;
   if (searchString.includes('八號東南') || searchString.includes('8號東南')) return `${baseUrl}tc8se.gif`;
   if (searchString.includes('八號西北') || searchString.includes('8號西北')) return `${baseUrl}tc8nw.gif`;
@@ -44,6 +42,8 @@ export const getHKOIconUrl = (code?: string, subtype?: string, name?: string): s
   if (searchString.includes('八號') || searchString.includes('8號')) return `${baseUrl}tc8ne.gif`; // Default TC8
   if (searchString.includes('九號') || searchString.includes('9號')) return `${baseUrl}tc9.gif`;
   if (searchString.includes('十號') || searchString.includes('10號')) return `${baseUrl}tc10.gif`;
+  if (searchString.includes('三號') || searchString.includes('3號')) return `${baseUrl}tc3.gif`;
+  if (searchString.includes('一號') || searchString.includes('1號')) return `${baseUrl}tc1.gif`;
   if (searchString.includes('熱帶氣旋')) return `${baseUrl}tc1.gif`;
 
   if (searchString.includes('黃色暴雨') || searchString.includes('黃雨')) return `${baseUrl}rainy.gif`;
