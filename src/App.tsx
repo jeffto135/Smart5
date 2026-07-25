@@ -24,11 +24,27 @@ import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
 import { PersonalInformationStatementModal } from './components/PersonalInformationStatementModal';
 import { HKWeather } from './components/HKWeather';
+import { getHKOIconUrl } from './utils/weatherIcons';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
 import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogEntry } from './types';
+
+const getWeatherTip = (warnings: any[]) => {
+  const names = warnings.map(w => typeof w === 'string' ? w : w.name).join('');
+  
+  if (names.includes('八號') || names.includes('九號') || names.includes('十號') || names.includes('黑色暴雨')) {
+    return '⚠️ 極端天氣路面極度危險，請尋找安全地方暫泊，非必要切勿駕駛！';
+  }
+  if (names.includes('一號') || names.includes('三號') || names.includes('熱帶氣旋')) {
+    return '⚠️ 受熱帶氣旋影響，強風下行經橋面及沿岸切記握緊方向盤，注意安全！';
+  }
+  if (names.includes('暴雨') || names.includes('雷暴')) {
+    return '⚠️ 天雨路滑，請保持安全車距並開啟車燈，小心駕駛！';
+  }
+  return '⚠️ 請注意路面氣象變化，小心駕駛！';
+};
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -57,7 +73,7 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   
   const [targetGroupBuyId, setTargetGroupBuyId] = useState<string | null>(null);
-  const [activeWeatherWarnings, setActiveWeatherWarnings] = useState<string[]>([]);
+  const [activeWeatherWarnings, setActiveWeatherWarnings] = useState<any[]>([]);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -682,22 +698,21 @@ export default function App() {
               exit={{ opacity: 0, x: 20 }}
             >
               {(() => {
-                const isExtremeWeather = activeWeatherWarnings.some(w => 
-                  w.includes('暴雨') || w.includes('暴風') || w.includes('颱風') || w.includes('雷暴') || w.includes('烈風') || w.includes('強風') || w.includes('山泥傾瀉') || w.includes('季候風')
-                );
-                if (!isExtremeWeather) return null;
+                if (!activeWeatherWarnings || activeWeatherWarnings.length === 0) return null;
 
-                const hasRedOrBlackRain = activeWeatherWarnings.some(w => w.includes('紅色暴雨') || w.includes('黑色暴雨'));
-                const isExtremeDanger = activeWeatherWarnings.some(w => 
-                  w.includes('黑色暴雨') || 
-                  w.includes('八號') || 
-                  w.includes('九號') || 
-                  w.includes('十號')
-                );
+                const hasRedOrBlackRain = activeWeatherWarnings.some(w => {
+                  const name = typeof w === 'string' ? w : (w?.name || '');
+                  return name.includes('紅色暴雨') || name.includes('黑色暴雨');
+                });
+                const isExtremeDanger = activeWeatherWarnings.some(w => {
+                  const name = typeof w === 'string' ? w : (w?.name || '');
+                  return name.includes('黑色暴雨') || 
+                         name.includes('八號') || 
+                         name.includes('九號') || 
+                         name.includes('十號');
+                });
 
-                const warningTips = isExtremeDanger 
-                  ? "⚠️ 極端天氣路面極度危險，請尋找安全地方暫泊，非必要切勿駕駛！" 
-                  : "⚠️ 天雨路滑，小心駕駛！";
+                const warningTips = getWeatherTip(activeWeatherWarnings);
 
                 return (
                   <motion.div 
@@ -713,24 +728,50 @@ export default function App() {
                       className={`shrink-0 ${
                         hasRedOrBlackRain 
                           ? "text-red-400 animate-[bounce_1s_infinite] scale-110 drop-shadow-[0_0_8px_#ef4444]" 
-                          : "text-red-500 animate-pulse mt-0.5"
+                          : "text-red-500 animate-pulse mt-1"
                       }`} 
                       size={18} 
                     />
-                    <div className="space-y-0.5 flex-1">
+                    <div className="space-y-1.5 flex-1">
                       <div className={`text-[10px] uppercase tracking-widest font-mono font-bold ${
                         hasRedOrBlackRain ? "text-red-400 drop-shadow-[0_0_4px_rgba(239,68,68,0.4)]" : "text-red-500"
                       }`}>
                         極端氣象智行提醒 ｜ WEATHER WARNING ALERT
                       </div>
+                      
                       <div className={`text-xs leading-relaxed ${
                         hasRedOrBlackRain 
                           ? "text-white font-black text-[13px] drop-shadow-[0_0_6px_rgba(255,255,255,0.3)]" 
                           : "text-white/95 font-semibold"
                       }`}>
-                        現正生效：<span className={hasRedOrBlackRain ? "text-red-300 underline underline-offset-4 decoration-red-500/50" : "text-red-400 font-bold"}>{activeWeatherWarnings.join(' 、 ')}</span>
+                        現正生效：
                       </div>
-                      <p className={`text-xs font-bold mt-1.5 transition-all ${
+
+                      <div className="flex flex-wrap items-center gap-3 mt-1">
+                        {activeWeatherWarnings.map((w, index) => {
+                          const name = typeof w === 'string' ? w : (w?.name || '');
+                          const code = typeof w === 'string' ? undefined : w?.code;
+                          const subtype = typeof w === 'string' ? undefined : w?.subtype;
+                          return (
+                            <div key={index} className="flex items-center gap-2">
+                              {/* 白底圓角正方形框 (Icon Box) */}
+                              <div className="bg-white rounded-[6px] p-0.5 inline-flex items-center justify-center shadow-[0_2px_6px_rgba(0,0,0,0.3)] w-8 h-8 shrink-0 select-none">
+                                <img 
+                                  src={getHKOIconUrl(code, subtype, name)} 
+                                  alt={name} 
+                                  className="w-7 h-7 object-contain"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                              <span className={hasRedOrBlackRain ? "text-red-300 underline underline-offset-4 decoration-red-500/50 font-black text-[13px]" : "text-white/90 font-bold text-xs"}>
+                                {name}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <p className={`text-xs font-bold mt-2 transition-all ${
                         isExtremeDanger 
                           ? "text-red-400 animate-pulse text-[13px] font-black" 
                           : "text-cyber-green"

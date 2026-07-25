@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sun, Cloud, CloudRain, CloudLightning, AlertTriangle, Thermometer, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getHKOIconUrl } from '../utils/weatherIcons';
 
 interface WeatherWarning {
   name: string;
   color: string;
   severity: string;
+  code?: string;
+  subtype?: string;
 }
 
 interface WeatherData {
@@ -15,7 +18,7 @@ interface WeatherData {
 }
 
 interface HKWeatherProps {
-  onWarningsUpdate?: (warnings: string[]) => void;
+  onWarningsUpdate?: (warnings: any[]) => void;
   // A prop to allow simulation of extreme weather to display slippery road warnings on dashboard
   simulatedWarnings?: string[] | null;
 }
@@ -29,34 +32,36 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
 
     // 1. 暴雨警告精準細分
     if (code === 'WRAIN') {
-      if (subtype === 'WRAINY') return { name: '黃色暴雨警告', color: '#ffcc00', severity: 'minor' };
-      if (subtype === 'WRAINR') return { name: '紅色暴雨警告', color: '#ff3b30', severity: 'moderate' };
-      if (subtype === 'WRAINB') return { name: '黑色暴雨警告', color: '#a255ff', severity: 'extreme' };
-      return { name: '暴雨警告', color: '#ffcc00', severity: 'minor' };
+      if (subtype === 'WRAINY') return { name: '黃色暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype };
+      if (subtype === 'WRAINR') return { name: '紅色暴雨警告', color: '#ff3b30', severity: 'moderate', code, subtype };
+      if (subtype === 'WRAINB') return { name: '黑色暴雨警告', color: '#a255ff', severity: 'extreme', code, subtype };
+      return { name: '暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype };
     }
 
     // 2. 雷暴警告
     if (code === 'WTS') {
-      return { name: '雷暴警告', color: '#ff9500', severity: 'minor' };
+      return { name: '雷暴警告', color: '#ff9500', severity: 'minor', code, subtype };
     }
 
     // 3. 熱帶氣旋（風球）精準細分
     if (code === 'TC') {
-      if (subtype === 'TC1') return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor' };
-      if (subtype === 'TC3') return { name: '三號強風信號', color: '#ff9500', severity: 'moderate' };
+      if (subtype === 'TC1') return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code, subtype };
+      if (subtype === 'TC3') return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code, subtype };
       if (['TC8NE', 'TC8SE', 'TC8NW', 'TC8SW'].includes(subtype)) {
-        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high' };
+        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype };
       }
-      if (subtype === 'TC9') return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme' };
-      if (subtype === 'TC10') return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme' };
-      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high' };
+      if (subtype === 'TC9') return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme', code, subtype };
+      if (subtype === 'TC10') return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code, subtype };
+      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high', code, subtype };
     }
 
     // 其他警告默認處理
     return { 
       name: item.contents && item.contents[0] ? item.contents[0].split('現正')[0] : '氣象警告', 
       color: '#ff3b30',
-      severity: 'minor'
+      severity: 'minor',
+      code,
+      subtype
     };
   });
 };
@@ -143,16 +148,51 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
     return () => clearInterval(interval);
   }, []);
 
-  const latestWarningsRef = useRef<string[]>([]);
+  const latestWarningsRef = useRef<any[]>([]);
   
-  const warningsString = data ? JSON.stringify(data.warnings.map(w => w.name)) : '';
+  const warningsString = data ? JSON.stringify(data.warnings) : '';
   const simulatedWarningsString = simulatedWarnings ? JSON.stringify(simulatedWarnings) : '';
 
   // Propagate warnings up to parent component
   useEffect(() => {
     const currentWarnings = simulatedWarnings !== null && simulatedWarnings !== undefined 
-      ? simulatedWarnings 
-      : (data?.warnings.map(w => w.name) || []);
+      ? simulatedWarnings.map(name => {
+          let code = '';
+          let subtype = '';
+          if (name.includes('暴雨')) {
+            code = 'WRAIN';
+            if (name.includes('黃色')) subtype = 'WRAINY';
+            else if (name.includes('紅色')) subtype = 'WRAINR';
+            else if (name.includes('黑色')) subtype = 'WRAINB';
+          } else if (name.includes('風球') || name.includes('信號') || name.includes('熱帶氣旋')) {
+            code = 'TC';
+            if (name.includes('一號') || name.includes('1號')) subtype = 'TC1';
+            else if (name.includes('三號') || name.includes('3號')) subtype = 'TC3';
+            else if (name.includes('八號東北') || name.includes('8號東北')) subtype = 'TC8NE';
+            else if (name.includes('八號東南') || name.includes('8號東南')) subtype = 'TC8SE';
+            else if (name.includes('八號西北') || name.includes('8號西北')) subtype = 'TC8NW';
+            else if (name.includes('八號西南') || name.includes('8號西南')) subtype = 'TC8SW';
+            else if (name.includes('八號') || name.includes('8號')) subtype = 'TC8NE';
+            else if (name.includes('九號') || name.includes('9號')) subtype = 'TC9';
+            else if (name.includes('十號') || name.includes('10號')) subtype = 'TC10';
+          } else if (name.includes('雷暴')) {
+            code = 'WTS';
+          } else if (name.includes('季候風')) {
+            code = 'WMSGD';
+          } else if (name.includes('山泥傾瀉')) {
+            code = 'WL';
+          } else if (name.includes('火災')) {
+            code = 'WFIREW';
+          } else if (name.includes('霜凍')) {
+            code = 'WFROST';
+          } else if (name.includes('酷熱')) {
+            code = 'WHOT';
+          } else if (name.includes('寒冷')) {
+            code = 'WCOLD';
+          }
+          return { name, code, subtype };
+        })
+      : (data?.warnings || []);
     const warningsJson = JSON.stringify(currentWarnings);
     const prevJson = JSON.stringify(latestWarningsRef.current);
     
@@ -165,7 +205,42 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
   if (loading || !data) return null;
 
   const displayWarnings: WeatherWarning[] = simulatedWarnings !== null && simulatedWarnings !== undefined 
-    ? simulatedWarnings.map(name => ({ name, color: '#ff3b30', severity: 'minor' })) 
+    ? simulatedWarnings.map(name => {
+        let code = '';
+        let subtype = '';
+        if (name.includes('暴雨')) {
+          code = 'WRAIN';
+          if (name.includes('黃色')) subtype = 'WRAINY';
+          else if (name.includes('紅色')) subtype = 'WRAINR';
+          else if (name.includes('黑色')) subtype = 'WRAINB';
+        } else if (name.includes('風球') || name.includes('信號') || name.includes('熱帶氣旋')) {
+          code = 'TC';
+          if (name.includes('一號') || name.includes('1號')) subtype = 'TC1';
+          else if (name.includes('三號') || name.includes('3號')) subtype = 'TC3';
+          else if (name.includes('八號東北') || name.includes('8號東北')) subtype = 'TC8NE';
+          else if (name.includes('八號東南') || name.includes('8號東南')) subtype = 'TC8SE';
+          else if (name.includes('八號西北') || name.includes('8號西北')) subtype = 'TC8NW';
+          else if (name.includes('八號西南') || name.includes('8號西南')) subtype = 'TC8SW';
+          else if (name.includes('八號') || name.includes('8號')) subtype = 'TC8NE';
+          else if (name.includes('九號') || name.includes('9號')) subtype = 'TC9';
+          else if (name.includes('十號') || name.includes('10號')) subtype = 'TC10';
+        } else if (name.includes('雷暴')) {
+          code = 'WTS';
+        } else if (name.includes('季候風')) {
+          code = 'WMSGD';
+        } else if (name.includes('山泥傾瀉')) {
+          code = 'WL';
+        } else if (name.includes('火災')) {
+          code = 'WFIREW';
+        } else if (name.includes('霜凍')) {
+          code = 'WFROST';
+        } else if (name.includes('酷熱')) {
+          code = 'WHOT';
+        } else if (name.includes('寒冷')) {
+          code = 'WCOLD';
+        }
+        return { name, color: '#ff3b30', severity: 'minor', code, subtype };
+      }) 
     : (data?.warnings || []);
 
   // Find dynamic classes for the top warning badge based on the first warning
@@ -182,9 +257,21 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
             onClick={() => setShowModal(true)}
-            className={`flex items-center gap-1.5 px-2 py-0.5 border rounded text-[9px] font-mono font-bold mb-1 animate-pulse active:scale-95 transition-all cursor-pointer ${badgeClasses}`}
+            className={`flex items-center gap-1.5 px-2 py-1 border rounded text-[9px] font-mono font-bold mb-1 animate-pulse active:scale-95 transition-all cursor-pointer ${badgeClasses}`}
           >
-            <AlertTriangle size={10} />
+            {displayWarnings.map((w, idx) => (
+              <div 
+                key={idx}
+                className="bg-white rounded-sm p-[1px] inline-flex items-center justify-center shadow-sm w-4 h-4 shrink-0 select-none"
+              >
+                <img 
+                  src={getHKOIconUrl(w.code, w.subtype, w.name)} 
+                  alt={w.name} 
+                  className="w-3.5 h-3.5 object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ))}
             <span className="truncate max-w-[125px]">
               {displayWarnings.map(w => w.name).join(' | ')}
             </span>
@@ -225,9 +312,16 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
                     return (
                       <div 
                         key={idx} 
-                        className={`p-3 border rounded-lg text-xs font-medium flex items-center gap-2 ${mappedClasses}`}
+                        className={`p-3 border rounded-lg text-xs font-medium flex items-center gap-3 ${mappedClasses}`}
                       >
-                        <span>⚠️</span>
+                        <div className="bg-white rounded-[6px] p-1 inline-flex items-center justify-center shadow-[0_2px_6px_rgba(0,0,0,0.3)] w-8 h-8 shrink-0 select-none">
+                          <img 
+                            src={getHKOIconUrl(w.code, w.subtype, w.name)} 
+                            alt={w.name} 
+                            className="w-7 h-7 object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
                         <div>
                           <span className="font-bold">{w.name}</span>
                           <div className="text-[9px] opacity-40 mt-0.5 uppercase tracking-wide">Hong Kong Observatory Active Alert</div>
