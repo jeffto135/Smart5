@@ -24,6 +24,7 @@ import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
 import { PersonalInformationStatementModal } from './components/PersonalInformationStatementModal';
 import { HKWeather } from './components/HKWeather';
+import { WeatherIcon } from './components/WeatherIcon';
 import { getHKOIconUrl, handleHKOIconError } from './utils/weatherIcons';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
@@ -755,13 +756,12 @@ export default function App() {
                           return (
                             <div key={index} className="flex items-center gap-2">
                               {/* 白底圓角正方形框 (Icon Box) */}
-                              <div className="bg-white rounded-[6px] p-0.5 inline-flex items-center justify-center shadow-[0_2px_6px_rgba(0,0,0,0.3)] w-8 h-8 shrink-0 select-none">
-                                <img 
-                                  src={getHKOIconUrl(code, subtype, name)} 
-                                  alt={name} 
-                                  className="w-7 h-7 object-contain"
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => handleHKOIconError(e, code, name)}
+                              <div className="bg-white rounded-[6px] p-0.5 inline-flex items-center justify-center shadow-[0_2px_6px_rgba(0,0,0,0.3)] min-w-8 min-h-8 shrink-0 select-none">
+                                <WeatherIcon 
+                                  code={code} 
+                                  subtype={subtype} 
+                                  name={name} 
+                                  iconSizeClassName="w-7 h-7"
                                 />
                               </div>
                               <span className={hasRedOrBlackRain ? "text-red-300 underline underline-offset-4 decoration-red-500/50 font-black text-[13px]" : "text-white/90 font-bold text-xs"}>

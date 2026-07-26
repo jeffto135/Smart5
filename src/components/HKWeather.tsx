@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sun, Cloud, CloudRain, CloudLightning, AlertTriangle, Thermometer, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getHKOIconUrl, handleHKOIconError } from '../utils/weatherIcons';
+import { WeatherIcon } from './WeatherIcon';
 
 interface WeatherWarning {
   name: string;
@@ -337,14 +338,13 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
             {displayWarnings.map((w, idx) => (
               <div 
                 key={idx}
-                className="bg-white rounded-sm p-[1px] inline-flex items-center justify-center shadow-sm w-4 h-4 shrink-0 select-none"
+                className="bg-white rounded-sm p-[1px] inline-flex items-center justify-center shadow-sm min-w-4 min-h-4 shrink-0 select-none"
               >
-                <img 
-                  src={getHKOIconUrl(w.code, w.subtype, w.name)} 
-                  alt={w.name} 
-                  className="w-3.5 h-3.5 object-contain"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => handleHKOIconError(e, w.code, w.name)}
+                <WeatherIcon 
+                  code={w.code} 
+                  subtype={w.subtype} 
+                  name={w.name} 
+                  iconSizeClassName="w-3.5 h-3.5"
                 />
               </div>
             ))}
@@ -390,13 +390,12 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
                         key={idx} 
                         className={`p-3 border rounded-lg text-xs font-medium flex items-center gap-3 ${mappedClasses}`}
                       >
-                        <div className="bg-white rounded-[6px] p-1 inline-flex items-center justify-center shadow-[0_2px_6px_rgba(0,0,0,0.3)] w-8 h-8 shrink-0 select-none">
-                          <img 
-                            src={getHKOIconUrl(w.code, w.subtype, w.name)} 
-                            alt={w.name} 
-                            className="w-7 h-7 object-contain"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => handleHKOIconError(e, w.code, w.name)}
+                        <div className="bg-white rounded-[6px] p-1 inline-flex items-center justify-center shadow-[0_2px_6px_rgba(0,0,0,0.3)] min-w-8 min-h-8 shrink-0 select-none">
+                          <WeatherIcon 
+                            code={w.code} 
+                            subtype={w.subtype} 
+                            name={w.name} 
+                            iconSizeClassName="w-7 h-7"
                           />
                         </div>
                         <div>
