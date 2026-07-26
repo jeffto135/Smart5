@@ -24,7 +24,7 @@ import { DisclaimerModal } from './components/DisclaimerModal';
 import { UserAgreementModal } from './components/UserAgreementModal';
 import { PersonalInformationStatementModal } from './components/PersonalInformationStatementModal';
 import { HKWeather } from './components/HKWeather';
-import { getHKOIconUrl } from './utils/weatherIcons';
+import { getHKOIconUrl, handleHKOIconError } from './utils/weatherIcons';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
 import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun, AlertTriangle } from 'lucide-react';
@@ -761,6 +761,7 @@ export default function App() {
                                   alt={name} 
                                   className="w-7 h-7 object-contain"
                                   referrerPolicy="no-referrer"
+                                  onError={(e) => handleHKOIconError(e, code, name)}
                                 />
                               </div>
                               <span className={hasRedOrBlackRain ? "text-red-300 underline underline-offset-4 decoration-red-500/50 font-black text-[13px]" : "text-white/90 font-bold text-xs"}>

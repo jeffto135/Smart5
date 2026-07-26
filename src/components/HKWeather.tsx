@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sun, Cloud, CloudRain, CloudLightning, AlertTriangle, Thermometer, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { getHKOIconUrl } from '../utils/weatherIcons';
+import { getHKOIconUrl, handleHKOIconError } from '../utils/weatherIcons';
 
 interface WeatherWarning {
   name: string;
@@ -344,6 +344,7 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
                   alt={w.name} 
                   className="w-3.5 h-3.5 object-contain"
                   referrerPolicy="no-referrer"
+                  onError={(e) => handleHKOIconError(e, w.code, w.name)}
                 />
               </div>
             ))}
@@ -395,6 +396,7 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
                             alt={w.name} 
                             className="w-7 h-7 object-contain"
                             referrerPolicy="no-referrer"
+                            onError={(e) => handleHKOIconError(e, w.code, w.name)}
                           />
                         </div>
                         <div>
