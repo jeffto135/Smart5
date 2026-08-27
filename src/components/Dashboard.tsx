@@ -25,7 +25,7 @@ interface DashboardProps {
   polls: Poll[];
   groupBuys: GroupBuy[];
   userProfile: UserProfile | null;
-  onRecordMaintenance?: (actualKM: number, actualDate: string, remarks?: string) => Promise<void>;
+  onRecordMaintenance?: (actualKM: number, actualDate: string, remarks?: string, cost?: number) => Promise<void>;
   onLogClick: (log: LogEntry) => void;
   onViewAll: () => void;
   onActivityClick: () => void;
@@ -57,6 +57,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [actualKM, setActualKM] = useState('');
+  const [actualCost, setActualCost] = useState('');
   const [actualDate, setActualDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [remarks, setRemarks] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -1137,9 +1138,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               if (!onRecordMaintenance) return;
               setIsSubmitting(true);
               try {
-                await onRecordMaintenance(Number(actualKM), actualDate, remarks);
+                await onRecordMaintenance(Number(actualKM), actualDate, remarks, Number(actualCost) || 0);
                 alert('保養紀錄成功 / MAINTENANCE LOGGED SUCCESSFULLY');
                 setRemarks('');
+                setActualKM('');
+                setActualCost('');
                 setShowMaintenanceModal(false);
               } catch (err: any) {
                 alert('紀錄失敗：' + (err.message || '未知錯誤'));
@@ -1158,15 +1161,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono uppercase text-cyber-green/70">回廠保養里程 (KM) / Mileage</label>
-                <input
-                  type="number"
-                  value={actualKM}
-                  onChange={(e) => setActualKM(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-cyber-green"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-cyber-green/70">回廠里程 (KM) / Mileage</label>
+                  <input
+                    type="number"
+                    value={actualKM}
+                    onChange={(e) => setActualKM(e.target.value)}
+                    placeholder="例：10000"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-cyber-green"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-cyber-green/70">💰 保養費用 (HKD)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={actualCost}
+                    onChange={(e) => setActualCost(e.target.value)}
+                    placeholder="0 (免費/首保)"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-mono text-white focus:outline-none focus:border-cyber-green"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1">

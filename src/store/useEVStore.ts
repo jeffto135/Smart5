@@ -906,7 +906,7 @@ export function useEVStore() {
     }
   };
 
-  const recordMaintenance = async (actualKM: number, actualDate: string, remarks?: string) => {
+  const recordMaintenance = async (actualKM: number, actualDate: string, remarks?: string, cost?: number) => {
     if (!auth.currentUser) return;
     const uid = auth.currentUser.uid;
     try {
@@ -938,10 +938,15 @@ export function useEVStore() {
       }
 
       // 3. Write log to maintenance_logs subcollection
+      const parsedKM = Number(actualKM);
+      const parsedCost = Number(cost) || 0;
       const logData = {
-        actualKM: Number(actualKM),
         actualDate: new Date(actualDate),
+        mileageKM: parsedKM,
+        actualKM: parsedKM,
+        cost: parsedCost,
         remarks: remarks || '',
+        notes: remarks || '',
         createdAt: serverTimestamp(),
       };
 
