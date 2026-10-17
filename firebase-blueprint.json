@@ -174,9 +174,35 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["merchantName", "category", "title", "discountDetail", "contact", "createdAt"]
+    },
+    "Record": {
+      "title": "Record",
+      "description": "EV expense or charging record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Uploader UID." },
+        "vehicleId": { "type": "string", "description": "Vehicle ID." },
+        "plateNumber": { "type": "string", "description": "Vehicle license plate." },
+        "type": { "type": "string", "enum": ["driving", "charging", "maintenance", "parking", "accessory", "other"], "description": "Expense, driving, or charging type." },
+        "amountHKD": { "type": "number", "description": "Total amount in HKD." },
+        "kwhAdded": { "type": "number", "description": "Energy charged in kWh (when type is charging)." },
+        "location": { "type": "string", "description": "Location or merchant name." },
+        "recordDate": { "type": "string", "format": "date-time", "description": "Date and time of record." },
+        "notes": { "type": "string", "description": "Remarks or memo." },
+        "odometer": { "type": "number", "description": "Optional odometer at record time." },
+        "odoKM": { "type": "number", "description": "Total odometer for driving record." },
+        "currentSOC": { "type": "number", "description": "Current battery SOC percentage." },
+        "consumption": { "type": "number", "description": "Average energy consumption in kWh/100km." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "amountHKD", "recordDate"]
     }
   },
   "firestore": {
+    "records": {
+      "schema": "Record",
+      "description": "User expense and charging records."
+    },
     "vehicles": {
       "schema": "Vehicle",
       "description": "User's vehicles."

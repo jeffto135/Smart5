@@ -81,6 +81,16 @@ export const WeatherIcon: React.FC<WeatherIconProps> = ({
       );
     }
 
+    const isFire = upperCode === 'WFIRE' || upperCode === 'WFIREW' || searchName.includes('火災');
+    if (isFire) {
+      const isYellowFire = sub.includes('Y') || sub === 'WFIREY' || searchName.includes('黃色') || searchName.includes('黃火');
+      return (
+        <div className={`${isYellowFire ? 'bg-[#ffcc00] text-black' : 'bg-[#ff3b30] text-white'} font-black text-[11px] px-1.5 py-0.5 rounded shadow-sm inline-flex items-center justify-center shrink-0 whitespace-nowrap leading-none select-none`}>
+          🔥 {isYellowFire ? '黃色火災' : '紅色火災'}
+        </div>
+      );
+    }
+
     return (
       <div className="bg-red-500 text-white font-bold text-[11px] px-1.5 py-0.5 rounded shadow-sm inline-flex items-center justify-center shrink-0 whitespace-nowrap leading-none select-none">
         ⚠️ {searchName || '警告'}

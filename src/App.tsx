@@ -28,9 +28,11 @@ import { WeatherIcon } from './components/WeatherIcon';
 import { getHKOIconUrl, handleHKOIconError } from './utils/weatherIcons';
 import { CyberButton } from './components/ui/CyberButton';
 import { CyberCard } from './components/ui/CyberCard';
-import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun, AlertTriangle } from 'lucide-react';
+import { ParkingTimerModal } from './components/ParkingTimerModal';
+import { RecordEditModal } from './components/RecordEditModal';
+import { Plus, User as UserIcon, Car, ChevronDown, Home, FileText, MessageSquare, Sun, AlertTriangle, Clock, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogEntry } from './types';
+import { LogEntry, RecordItem } from './types';
 
 const getWeatherTip = (warnings: any[]) => {
   const names = warnings.map(w => typeof w === 'string' ? w : w.name).join('');
@@ -44,6 +46,12 @@ const getWeatherTip = (warnings: any[]) => {
   if (names.includes('暴雨') || names.includes('雷暴')) {
     return '⚠️ 天雨路滑，請保持安全車距並開啟車燈，小心駕駛！';
   }
+  if (names.includes('黃色火災') || names.includes('黃火')) {
+    return '🔥 黃色火災危險警告生效，天氣乾燥，郊野切勿留下火種，行車注意車輛散熱！';
+  }
+  if (names.includes('紅色火災') || names.includes('紅火') || names.includes('火災')) {
+    return '🔥 火災危險警告生效，極度乾燥，切勿留下火種，行車注意引擎冷卻與車況！';
+  }
   return '⚠️ 請注意路面氣象變化，小心駕駛！';
 };
 
@@ -52,6 +60,10 @@ export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [view, setView] = useState<'dashboard' | 'entry' | 'settings' | 'history' | 'admin' | 'messages' | 'activityList' | 'pollList' | 'groupBuy' | 'clubPerks'>('dashboard');
   const [editingLog, setEditingLog] = useState<LogEntry | null>(null);
+  const [editingRecord, setEditingRecord] = useState<RecordItem | null>(null);
+  const [showParkingTimer, setShowParkingTimer] = useState(false);
+  const [entryInitialData, setEntryInitialData] = useState<any>(null);
+  const [showAddActionSheet, setShowAddActionSheet] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const evStore = useEVStore();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -295,7 +307,12 @@ export default function App() {
     }
   };
 
-  const handleSaveLog = async (data: any) => {
+  const handleSaveRecordOrLog = async (data: any) => {
+    // If it's a categorized expense/charging record
+    if (data.type) {
+      const recId = await evStore.addRecord(data);
+      return { logId: recId };
+    }
     const result = await evStore.addLog(data);
     if (result && result.catchUpInfo) {
       // Small delay to allow the form's success message to be seen
@@ -305,6 +322,22 @@ export default function App() {
       }, 100);
     }
     return result;
+  };
+
+  const handleTimerSettle = (details: {
+    type: 'parking' | 'charging';
+    durationMinutes: number;
+    durationText: string;
+    location: string;
+    notes: string;
+  }) => {
+    setShowParkingTimer(false);
+    setEntryInitialData({
+      type: details.type,
+      location: details.location,
+      notes: details.notes
+    });
+    setView('entry');
   };
 
   const handleLogoutAttempt = () => {
@@ -788,6 +821,7 @@ export default function App() {
               })()}
               <Dashboard 
                 logs={evStore.logs} 
+                records={evStore.records}
                 vehicle={evStore.vehicle}
                 activities={evStore.activities}
                 polls={evStore.polls}
@@ -802,6 +836,11 @@ export default function App() {
                 onClubPerksClick={() => setView('clubPerks')}
                 selectedMonth={selectedMonth}
                 onSelectMonth={setSelectedMonth}
+                onOpenTimer={() => setShowParkingTimer(true)}
+                onOpenNewRecord={() => {
+                  setEntryInitialData(null);
+                  setView('entry');
+                }}
               />
             </motion.div>
           ) : view === 'entry' ? (
@@ -819,8 +858,13 @@ export default function App() {
                 <LogEntryForm 
                   vehicle={evStore.vehicle} 
                   logs={evStore.logs}
-                  onSave={handleSaveLog} 
-                  onCancel={() => setView('dashboard')}
+                  onSave={handleSaveRecordOrLog} 
+                  onCancel={() => {
+                    setEntryInitialData(null);
+                    setView('dashboard');
+                  }}
+                  onOpenTimer={() => setShowParkingTimer(true)}
+                  initialData={entryInitialData}
                 />
               )}
             </motion.div>
@@ -912,12 +956,19 @@ export default function App() {
             >
               <LogsHistory 
                 logs={evStore.logs} 
+                records={evStore.records}
                 vehicle={evStore.vehicle}
                 onLogClick={setEditingLog}
+                onRecordClick={(rec) => setEditingRecord(rec)}
                 onClose={() => setView('dashboard')}
                 isLoading={evStore.loading}
                 selectedMonth={selectedMonth}
                 onSelectMonth={setSelectedMonth}
+                onOpenTimer={() => setShowParkingTimer(true)}
+                onOpenNewRecord={() => {
+                  setEntryInitialData(null);
+                  setView('entry');
+                }}
               />
             </motion.div>
           ) : view === 'messages' ? (
@@ -991,6 +1042,29 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {editingRecord && (
+          <RecordEditModal
+            record={editingRecord}
+            onSave={async (id, data) => {
+              await evStore.updateRecord(id, data);
+              setEditingRecord(null);
+            }}
+            onDelete={async (id) => {
+              await evStore.deleteRecord(id);
+              setEditingRecord(null);
+            }}
+            onClose={() => setEditingRecord(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <ParkingTimerModal 
+        isOpen={showParkingTimer}
+        onClose={() => setShowParkingTimer(false)}
+        onSettle={handleTimerSettle}
+      />
+
       <ConfirmationModal
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
@@ -1055,17 +1129,71 @@ export default function App() {
             ))}
           </div>
 
-          {/* Center: Add Button */}
-          <div className="flex-none px-2 -mt-8">
+          {/* Center: Add Button & Quick Action Sheet */}
+          <div className="flex-none px-2 -mt-8 relative">
+            <AnimatePresence>
+              {showAddActionSheet && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" 
+                    onClick={() => setShowAddActionSheet(false)} 
+                  />
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.85, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.85, y: 10 }}
+                    className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 w-60 bg-zinc-950/95 backdrop-blur-xl border border-cyber-green/40 p-2 rounded-2xl shadow-[0_0_35px_rgba(204,255,0,0.25)] space-y-1.5"
+                  >
+                    <button
+                      onClick={() => {
+                        setEntryInitialData(null);
+                        setView('entry');
+                        setShowAddActionSheet(false);
+                      }}
+                      className="w-full p-2.5 rounded-xl bg-white/5 hover:bg-cyber-green/15 hover:border-cyber-green/40 border border-transparent transition-all flex items-center gap-2.5 text-left text-xs font-mono font-bold text-white group cursor-pointer"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-cyber-green/15 text-cyber-green flex items-center justify-center shrink-0">
+                        <Zap size={16} className="cyber-text-glow" />
+                      </div>
+                      <div>
+                        <div className="text-white group-hover:text-cyber-green">記錄開支 / 充電</div>
+                        <div className="text-[9px] text-white/40 font-normal">充電 · 泊車 · 保養 · 雜支</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowParkingTimer(true);
+                        setShowAddActionSheet(false);
+                      }}
+                      className="w-full p-2.5 rounded-xl bg-white/5 hover:bg-cyber-green/15 hover:border-cyber-green/40 border border-transparent transition-all flex items-center gap-2.5 text-left text-xs font-mono font-bold text-white group cursor-pointer"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center shrink-0">
+                        <Clock size={16} />
+                      </div>
+                      <div>
+                        <div className="text-white group-hover:text-cyber-green">🅿️ 停車/充電計時</div>
+                        <div className="text-[9px] text-white/40 font-normal">免泊倒數 · 結束結算</div>
+                      </div>
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+
             <button
-              onClick={() => setView('entry')}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-[0_0_20px_rgba(204,255,0,0.2)] border-2 ${
-                view === 'entry' 
-                  ? 'bg-cyber-green text-black border-cyber-green scale-110' 
-                  : 'bg-cyber-bg-alt border-white/10 text-cyber-green hover:border-cyber-green/50'
+              onClick={() => setShowAddActionSheet(!showAddActionSheet)}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 relative z-50 cursor-pointer ${
+                showAddActionSheet || view === 'entry'
+                  ? 'bg-cyber-green text-black border-cyber-green scale-110 shadow-[0_0_25px_#CCFF00]' 
+                  : 'bg-cyber-bg-alt border-white/10 text-cyber-green hover:border-cyber-green/50 shadow-[0_0_20px_rgba(204,255,0,0.2)]'
               }`}
             >
-              <Plus size={32} strokeWidth={2.5} />
+              <Plus 
+                size={32} 
+                strokeWidth={2.5} 
+                className={`transition-transform duration-200 ${showAddActionSheet ? 'rotate-45' : ''}`}
+              />
             </button>
           </div>
 

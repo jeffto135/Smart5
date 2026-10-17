@@ -1,9 +1,26 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Calendar, MapPin, Gauge, LayoutGrid, List, Zap } from 'lucide-react';
-import { motion } from 'motion/react';
-import { LogEntry, Vehicle } from '../types';
+import React, { useState, useMemo } from 'react';
+import { 
+  ArrowLeft, 
+  ChevronLeft, 
+  ChevronRight, 
+  Calendar, 
+  MapPin, 
+  Gauge, 
+  Zap, 
+  DollarSign, 
+  Plus, 
+  Clock, 
+  TrendingUp, 
+  BarChart2, 
+  ChevronDown, 
+  ChevronUp,
+  SlidersHorizontal
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { LogEntry, Vehicle, RecordItem, RecordType } from '../types';
 import { format } from 'date-fns';
 import { 
+  LineChart,
   ComposedChart, 
   Line, 
   Bar, 
@@ -14,74 +31,273 @@ import {
   Legend, 
   ResponsiveContainer 
 } from 'recharts';
-import { MonthDropdown } from './MonthDropdown';
 
 interface LogsHistoryProps {
   logs: LogEntry[];
+  records?: RecordItem[];
   vehicle: Vehicle | null;
   onLogClick: (log: LogEntry) => void;
+  onRecordClick?: (record: RecordItem) => void;
   onClose: () => void;
   isLoading?: boolean;
   selectedMonth: string;
   onSelectMonth: (month: string) => void;
+  onOpenTimer?: () => void;
+  onOpenNewRecord?: () => void;
 }
 
+export type TimelineItem = {
+  id: string;
+  source: 'record' | 'log';
+  rawRecord?: RecordItem;
+  rawLog?: LogEntry;
+  type: RecordType | 'drive';
+  amountHKD: number;
+  kwhAdded: number;
+  location: string;
+  notes: string;
+  dateStr: string; // yyyy-MM-dd
+  timeStr: string; // HH:mm
+  timestampMillis: number;
+  odometer?: number;
+  batteryPercent?: number;
+  segmentDiff?: number;
+};
+
 export const LogsHistory: React.FC<LogsHistoryProps> = ({ 
-  logs, 
+  logs = [], 
+  records = [],
   vehicle, 
   onLogClick, 
+  onRecordClick,
   onClose, 
   isLoading = false,
   selectedMonth,
-  onSelectMonth
+  onSelectMonth,
+  onOpenTimer,
+  onOpenNewRecord
 }) => {
-  const [cols, setCols] = useState<1 | 2>(2);
+  // Category Tab Filter: 'all' | 'charging' | 'other'
+  const [filterTab, setFilterTab] = useState<'all' | 'charging' | 'other'>('all');
+  const [showChart, setShowChart] = useState<boolean>(false);
+  const [chartType, setChartType] = useState<'battery' | 'energy'>('battery');
 
-  // 1. Filter logs for the selected month to render
-  const filteredLogs = React.useMemo(() => {
-    return logs.filter(log => {
-      if (selectedMonth === 'all') return true;
-      const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
-      return d.startsWith(selectedMonth);
-    });
-  }, [logs, selectedMonth]);
+  // Month navigation helpers
+  const handlePrevMonth = () => {
+    const base = selectedMonth === 'all' ? new Date() : new Date(`${selectedMonth}-01T00:00:00`);
+    const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+    const m = prev.getMonth() + 1;
+    onSelectMonth(`${prev.getFullYear()}-${m < 10 ? `0${m}` : m}`);
+  };
 
-  // 📊 模組三：按日期歸總（Group by Date）後的本月數據按日期升序排列
-  const chartData = React.useMemo(() => {
-    // 1. Sort all filtered logs chronologically (ascending date) in-memory to compute correct odoDiff
-    const sortedAllLogs = [...filteredLogs].sort((a, b) => {
-      const dateCompare = (a.date || "").localeCompare(b.date || "");
-      if (dateCompare !== 0) return dateCompare;
-      const aOdo = Number(a.odo ?? a.odometer ?? 0);
-      const bOdo = Number(b.odo ?? b.odometer ?? 0);
-      return aOdo - bOdo;
-    });
+  const handleNextMonth = () => {
+    const base = selectedMonth === 'all' ? new Date() : new Date(`${selectedMonth}-01T00:00:00`);
+    const next = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+    const m = next.getMonth() + 1;
+    onSelectMonth(`${next.getFullYear()}-${m < 10 ? `0${m}` : m}`);
+  };
 
-    for (let i = 0; i < sortedAllLogs.length; i++) {
-      const current = sortedAllLogs[i];
-      const currentOdo = Number(current.odo ?? current.odometer ?? 0);
-      if (i === 0) {
-        current.odoDiff = 0;
-      } else {
-        const prev = sortedAllLogs[i - 1];
-        const prevOdo = Number(prev.odo ?? prev.odometer ?? 0);
-        current.odoDiff = Math.max(0, currentOdo - prevOdo);
-      }
+  const currentMonthDisplay = useMemo(() => {
+    if (selectedMonth === 'all') return '全體歷史紀錄';
+    try {
+      const [year, month] = selectedMonth.split('-');
+      return `${year}年 ${Number(month)}月`;
+    } catch (e) {
+      return selectedMonth;
     }
+  }, [selectedMonth]);
 
-    // 2. Group by date
+  // Combine & normalize Records & VehicleLogs
+  const allTimelineItems = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [];
+    const seenRecordDatesAndCosts = new Set<string>();
+
+    // 1. Process items from `records` collection
+    records.forEach(r => {
+      const dateObj = r.recordDate?.toDate ? r.recordDate.toDate() : new Date(r.recordDate as any);
+      const dateStr = format(dateObj, 'yyyy-MM-dd');
+      const timeStr = format(dateObj, 'HH:mm');
+      const timestampMillis = dateObj.getTime();
+
+      // Fingerprint to avoid duplicate display if record was mirrored from a log
+      seenRecordDatesAndCosts.add(`${dateStr}_${r.amountHKD}_${r.type}`);
+
+      items.push({
+        id: `rec_${r.id}`,
+        source: 'record',
+        rawRecord: r,
+        type: r.type,
+        amountHKD: Number(r.amountHKD) || 0,
+        kwhAdded: Number(r.kwhAdded) || 0,
+        location: r.location || '',
+        notes: r.notes || '',
+        dateStr,
+        timeStr,
+        timestampMillis,
+        odometer: r.odometer
+      });
+    });
+
+    // 2. Process items from `logs` (legacy or driving logs without duplicate record)
+    logs.forEach(l => {
+      const dateObj = l.timestamp?.toDate ? l.timestamp.toDate() : new Date(l.timestamp as any);
+      const dateStr = l.date || format(dateObj, 'yyyy-MM-dd');
+      const timeStr = format(dateObj, 'HH:mm');
+      const timestampMillis = dateObj.getTime();
+      const isCharge = l.isCharging || l.type === 'charge';
+      const logType: RecordType | 'drive' = isCharge ? 'charging' : 'drive';
+
+      // If we already have this record from the records collection, don't show duplicate
+      const fp = `${dateStr}_${l.cost || 0}_${logType}`;
+      if (seenRecordDatesAndCosts.has(fp) && (l.cost || 0) > 0) {
+        return;
+      }
+
+      // Estimate kwh from batteryDiff if charging
+      const batteryCapacity = vehicle?.batteryCapacity || 100;
+      const kwhEst = isCharge && l.batteryDiff ? (l.batteryDiff / 100) * batteryCapacity : 0;
+
+      items.push({
+        id: `log_${l.id}`,
+        source: 'log',
+        rawLog: l,
+        type: logType,
+        amountHKD: Number(l.cost) || 0,
+        kwhAdded: kwhEst,
+        location: l.location || (isCharge ? '充電補能' : '日常行車'),
+        notes: isCharge ? '車輛充電日誌' : '行駛日誌',
+        dateStr,
+        timeStr,
+        timestampMillis,
+        odometer: Number(l.odo ?? l.odometer ?? 0),
+        batteryPercent: Number(l.soc ?? l.batteryPercent ?? 100),
+        segmentDiff: Number(l.segmentDiff ?? l.batteryDiff ?? 0)
+      });
+    });
+
+    // Sort strictly descending by timestamp
+    items.sort((a, b) => b.timestampMillis - a.timestampMillis);
+
+    return items;
+  }, [records, logs, vehicle]);
+
+  // Filter items by selectedMonth and filterTab
+  const filteredItems = useMemo(() => {
+    return allTimelineItems.filter(item => {
+      // Month Filter
+      if (selectedMonth !== 'all' && !item.dateStr.startsWith(selectedMonth)) {
+        return false;
+      }
+
+      // Tab Filter
+      if (filterTab === 'charging') {
+        return item.type === 'charging';
+      }
+      if (filterTab === 'other') {
+        return item.type === 'maintenance' || item.type === 'parking' || item.type === 'accessory' || item.type === 'other';
+      }
+      return true; // 'all'
+    });
+  }, [allTimelineItems, selectedMonth, filterTab]);
+
+  // Group by date (Daily Grouping)
+  const groupedByDate = useMemo(() => {
+    const groups: {
+      dateStr: string;
+      displayDate: string;
+      items: TimelineItem[];
+      totalCost: number;
+      totalKwh: number;
+    }[] = [];
+
+    const groupMap = new Map<string, TimelineItem[]>();
+
+    filteredItems.forEach(item => {
+      if (!groupMap.has(item.dateStr)) {
+        groupMap.set(item.dateStr, []);
+      }
+      groupMap.get(item.dateStr)!.push(item);
+    });
+
+    // Format and calculate day totals
+    groupMap.forEach((dayItems, dateStr) => {
+      let totalCost = 0;
+      let totalKwh = 0;
+
+      dayItems.forEach(item => {
+        totalCost += item.amountHKD;
+        if (item.type === 'charging') {
+          totalKwh += item.kwhAdded;
+        }
+      });
+
+      // Format date for human friendly display: e.g. "10月15日 (週四)"
+      let displayDate = dateStr;
+      try {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          displayDate = format(d, 'M月d日');
+        }
+      } catch (e) {}
+
+      groups.push({
+        dateStr,
+        displayDate,
+        items: dayItems,
+        totalCost,
+        totalKwh
+      });
+    });
+
+    // Sort groups descending by date
+    groups.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+
+    return groups;
+  }, [filteredItems]);
+
+  // Monthly summary stats for header banner
+  const monthSummary = useMemo(() => {
+    let cost = 0;
+    let chargingCost = 0;
+    let otherCost = 0;
+    let kwh = 0;
+
+    filteredItems.forEach(item => {
+      cost += item.amountHKD;
+      if (item.type === 'charging') {
+        chargingCost += item.amountHKD;
+        kwh += item.kwhAdded;
+      } else if (item.type !== 'drive') {
+        otherCost += item.amountHKD;
+      }
+    });
+
+    const avgPrice = kwh > 0 ? (chargingCost / kwh).toFixed(2) : null;
+
+    return {
+      totalCost: cost,
+      chargingCost,
+      otherCost,
+      totalKwh: kwh,
+      avgPrice,
+      totalCount: filteredItems.length
+    };
+  }, [filteredItems]);
+
+  // Chart data for energy curve
+  const chartData = useMemo(() => {
     const groups: { [date: string]: { driveEnergy: number; chargeEnergy: number } } = {};
     const batteryCapacity = vehicle?.batteryCapacity || 100;
 
-    sortedAllLogs.forEach(log => {
+    logs.forEach(log => {
       const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
-      // Format as MM-DD for brevity in XAxis
+      if (selectedMonth !== 'all' && !d.startsWith(selectedMonth)) return;
+
       let formattedDate = d;
       try {
         const parts = d.split('-');
-        if (parts.length === 3) {
-          formattedDate = `${parts[1]}-${parts[2]}`;
-        }
+        if (parts.length === 3) formattedDate = `${parts[1]}-${parts[2]}`;
       } catch (e) {}
 
       if (!groups[formattedDate]) {
@@ -92,67 +308,137 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
       const isCharge = log.type === "charge" || (!log.type && log.isCharging);
       const diffVal = Number(log.segmentDiff ?? log.batteryDiff ?? 0);
 
-      if (isDrive) {
-        groups[formattedDate].driveEnergy += diffVal;
-      } else if (isCharge) {
-        groups[formattedDate].chargeEnergy += diffVal;
-      }
+      if (isDrive) groups[formattedDate].driveEnergy += diffVal;
+      else if (isCharge) groups[formattedDate].chargeEnergy += diffVal;
     });
 
-    // 3. Transform into array and sort chronologically (ascending date)
-    return Object.entries(groups).map(([date, data]) => {
-      const driveKwh = parseFloat(((data.driveEnergy / 100) * batteryCapacity).toFixed(2));
-      const chargeKwh = parseFloat(((data.chargeEnergy / 100) * batteryCapacity).toFixed(2));
-      return {
-        date,
-        dayTotalDriveEnergy: driveKwh,
-        dayTotalChargeEnergy: chargeKwh,
-      };
-    }).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filteredLogs, vehicle]);
+    return Object.entries(groups).map(([date, data]) => ({
+      date,
+      dayTotalDriveEnergy: parseFloat(((data.driveEnergy / 100) * batteryCapacity).toFixed(2)),
+      dayTotalChargeEnergy: parseFloat(((data.chargeEnergy / 100) * batteryCapacity).toFixed(2)),
+    })).sort((a, b) => a.date.localeCompare(b.date));
+  }, [logs, vehicle, selectedMonth]);
+
+  // 電量趨勢折線圖數據 (Battery Trend Chart migrated from Home)
+  const batteryTrendData = useMemo(() => {
+    const sortedLogsAsc = [...logs].filter(log => {
+      if (selectedMonth === 'all') return true;
+      const d = log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd');
+      return d.startsWith(selectedMonth);
+    }).sort((a, b) => {
+      const dateCompare = (a.date || "").localeCompare(b.date || "");
+      if (dateCompare !== 0) return dateCompare;
+      const aOdo = Number(a.odo ?? a.odometer ?? 0);
+      const bOdo = Number(b.odo ?? b.odometer ?? 0);
+      return aOdo - bOdo;
+    });
+
+    for (let i = 0; i < sortedLogsAsc.length; i++) {
+      const current = sortedLogsAsc[i];
+      const currentOdo = Number(current.odo ?? current.odometer ?? 0);
+      if (i === 0) {
+        current.odoDiff = 0;
+      } else {
+        const prev = sortedLogsAsc[i - 1];
+        const prevOdo = Number(prev.odo ?? prev.odometer ?? 0);
+        current.odoDiff = Math.max(0, currentOdo - prevOdo);
+      }
+    }
+
+    const statsLogs = [...sortedLogsAsc].reverse();
+    return [...statsLogs.slice(0, 20)].reverse().map(log => ({
+      date: format(log.timestamp.toDate(), 'MM/dd'),
+      time: format(log.timestamp.toDate(), 'HH:mm'),
+      battery: log.soc ?? log.batteryPercent ?? 0,
+      distance: log.odoDiff ?? log.distance ?? 0,
+      odometer: log.odo ?? log.odometer ?? 0
+    }));
+  }, [logs, selectedMonth]);
+
+  const getCategoryBadge = (type: string) => {
+    switch (type) {
+      case 'charging':
+        return {
+          icon: '⚡',
+          label: '充電',
+          bg: 'bg-cyber-green/15',
+          border: 'border-cyber-green/40',
+          text: 'text-cyber-green',
+          glow: 'shadow-[0_0_10px_rgba(204,255,0,0.15)]'
+        };
+      case 'parking':
+        return {
+          icon: '🅿️',
+          label: '泊車',
+          bg: 'bg-sky-500/15',
+          border: 'border-sky-500/40',
+          text: 'text-sky-400',
+          glow: 'shadow-[0_0_10px_rgba(56,189,248,0.15)]'
+        };
+      case 'maintenance':
+        return {
+          icon: '🛠️',
+          label: '保養',
+          bg: 'bg-amber-500/15',
+          border: 'border-amber-500/40',
+          text: 'text-amber-400',
+          glow: 'shadow-[0_0_10px_rgba(245,158,11,0.15)]'
+        };
+      case 'accessory':
+        return {
+          icon: '🛍️',
+          label: '配件',
+          bg: 'bg-purple-500/15',
+          border: 'border-purple-500/40',
+          text: 'text-purple-400',
+          glow: 'shadow-[0_0_10px_rgba(168,85,247,0.15)]'
+        };
+      case 'driving':
+      case 'drive':
+        return {
+          icon: '🚗',
+          label: '日常行車',
+          bg: 'bg-emerald-500/15',
+          border: 'border-emerald-500/40',
+          text: 'text-emerald-400',
+          glow: 'shadow-[0_0_10px_rgba(16,185,129,0.15)]'
+        };
+      default:
+        return {
+          icon: '📝',
+          label: '其他',
+          bg: 'bg-zinc-500/15',
+          border: 'border-zinc-500/40',
+          text: 'text-zinc-300',
+          glow: ''
+        };
+    }
+  };
+
+  const handleItemClick = (item: TimelineItem) => {
+    if (item.source === 'record' && item.rawRecord && onRecordClick) {
+      onRecordClick(item.rawRecord);
+    } else if (item.rawLog) {
+      onLogClick(item.rawLog);
+    }
+  };
 
   if (isLoading) {
     return (
       <div className="space-y-6 pb-20">
-        <div className="flex justify-between items-center mb-8">
-          <div className="flex items-center gap-4">
-            <button 
-              type="button" 
-              onClick={onClose} 
-              className="p-2 -ml-2 text-white/40 hover:text-white transition-colors"
-            >
-              <ArrowLeft size={24} />
-            </button>
-            <div>
-              <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
-                營運紀錄 <span className="text-cyber-green">Logs</span>
-              </h2>
-              <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
-                充電與行駛用電力度數據日誌
-              </p>
-            </div>
+        <div className="flex items-center gap-4">
+          <button onClick={onClose} className="p-2 -ml-2 text-white/40 hover:text-white">
+            <ArrowLeft size={24} />
+          </button>
+          <div>
+            <h2 className="text-2xl font-mono font-bold uppercase tracking-tight">
+              歷史記錄 <span className="text-cyber-green">Records</span>
+            </h2>
           </div>
         </div>
-        
-        {/* Skeleton Grid for logs */}
-        <div className={`grid ${cols === 2 ? 'grid-cols-2' : 'grid-cols-1'} gap-6`}>
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="p-6 rounded-3xl border border-white/10 bg-white/[0.02] space-y-4">
-              <div className="flex justify-between items-center">
-                <div className="h-4 w-32 bg-zinc-800 animate-pulse rounded-md" />
-                <div className="h-5 w-16 bg-zinc-800 animate-pulse rounded-full" />
-              </div>
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="space-y-2">
-                  <div className="h-3 w-16 bg-zinc-800 animate-pulse rounded" />
-                  <div className="h-6 w-24 bg-zinc-805 animate-pulse rounded-md" />
-                </div>
-                <div className="space-y-2 text-right">
-                  <div className="h-3 w-16 bg-zinc-800 animate-pulse rounded ml-auto" />
-                  <div className="h-6 w-24 bg-zinc-805 animate-pulse rounded-md ml-auto" />
-                </div>
-              </div>
-            </div>
+        <div className="space-y-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 animate-pulse h-24" />
           ))}
         </div>
       </div>
@@ -160,206 +446,457 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300 pb-20">
+      {/* 1. Header & Navigation */}
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-2xl font-mono font-bold uppercase tracking-tight font-sans">
-          歷史紀錄
-        </h2>
-        <div className="flex gap-1 p-1 bg-white/5 rounded-lg border border-white/10">
+        <div className="flex items-center gap-3">
           <button 
-            onClick={() => setCols(1)}
-            className={`p-1.5 rounded transition-colors ${cols === 1 ? 'bg-cyber-green text-black' : 'text-white/40 hover:text-white'}`}
+            type="button" 
+            onClick={onClose} 
+            className="p-2 -ml-2 text-white/40 hover:text-white transition-colors cursor-pointer"
           >
-            <List size={16} />
+            <ArrowLeft size={22} />
           </button>
-          <button 
-            onClick={() => setCols(2)}
-            className={`p-1.5 rounded transition-colors ${cols === 2 ? 'bg-cyber-green text-black' : 'text-white/40 hover:text-white'}`}
-          >
-            <LayoutGrid size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* 📊 模組三：全月用電與充電曲線圖 */}
-      <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
-        <div className="flex justify-between items-center mb-4 gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-            <div>
-              <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/40 font-bold">Dynamic Energy Composed Track</span>
-              <h3 className="text-md font-bold uppercase tracking-wide text-white mt-0.5">
-                {selectedMonth === 'all' ? '歷史' : '本月'}用電與充電對比
-              </h3>
-            </div>
-            <MonthDropdown selectedMonth={selectedMonth} onSelectMonth={onSelectMonth} />
+          <div>
+            <h2 className="text-2xl font-mono font-bold uppercase tracking-tight flex items-center gap-2">
+              <span>開支與充電記錄</span>
+              <span className="text-xs font-normal text-cyber-green border border-cyber-green/30 bg-cyber-green/10 px-2 py-0.5 rounded-full">
+                RECORDS
+              </span>
+            </h2>
+            <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
+              MONTHLY EXPENSE & CHARGING TIMELINE
+            </p>
           </div>
-          <span className="text-[10px] font-mono text-cyber-green bg-cyber-green/10 border border-cyber-green/20 px-2 py-0.5 rounded uppercase font-bold shrink-0">
-            kWh 雙軸
-          </span>
         </div>
 
-        {chartData.length > 0 ? (
-          <div className="h-56 w-full mt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: -15, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="#ffffff25" 
-                  fontSize={9} 
-                  tickLine={false} 
-                  axisLine={false}
-                />
-                {/* Left Y-Axis for fluorescent green line: dayTotalDriveEnergy */}
-                <YAxis 
-                  yAxisId="left"
-                  stroke="#CCFF00" 
-                  fontSize={9} 
-                  tickLine={false} 
-                  axisLine={false}
-                  width={40}
-                  tickFormatter={(val) => `${val} kWh`}
-                />
-                {/* Right Y-Axis for sky-blue bar: dayTotalChargeEnergy */}
-                <YAxis 
-                  yAxisId="right"
-                  orientation="right"
-                  stroke="#38bdf8" 
-                  fontSize={9} 
-                  tickLine={false} 
-                  axisLine={false}
-                  width={40}
-                  tickFormatter={(val) => `${val} kWh`}
-                />
-                <Tooltip 
-                  contentStyle={{ background: '#121212', border: '1px solid #ffffff10', borderRadius: '8px', fontSize: '10px' }}
-                  itemStyle={{ fontSize: '10px' }}
-                  labelStyle={{ color: '#ffffff40', marginBottom: '4px' }}
-                  formatter={(value: any, name: string) => {
-                    if (name === "dayTotalDriveEnergy") return [`${value} kWh`, "本日行程總耗電量"];
-                    if (name === "dayTotalChargeEnergy") return [`${value} kWh`, "本日補給總充電量"];
-                    return [value, name];
-                  }}
-                />
-                <Legend 
-                  verticalAlign="top" 
-                  height={36} 
-                  iconType="circle"
-                  iconSize={8}
-                  wrapperStyle={{ fontSize: '10px', opacity: 0.8 }}
-                  formatter={(value) => {
-                    if (value === "dayTotalDriveEnergy") return <span className="text-white/60 font-mono text-[9px] uppercase tracking-wide">🔋 耗電量 (Line)</span>;
-                    if (value === "dayTotalChargeEnergy") return <span className="text-white/60 font-mono text-[9px] uppercase tracking-wide">⚡ 充電量 (Bar)</span>;
-                    return value;
-                  }}
-                />
-                {/* Sky blue Bar for charge energy */}
-                <Bar 
-                  yAxisId="right"
-                  dataKey="dayTotalChargeEnergy" 
-                  fill="#38bdf8" 
-                  radius={[4, 4, 0, 0]}
-                  barSize={12}
-                  name="dayTotalChargeEnergy"
-                />
-                {/* Fluorescent green line for drive energy */}
-                <Line 
-                  yAxisId="left"
-                  type="monotone" 
-                  dataKey="dayTotalDriveEnergy" 
-                  stroke="#CCFF00" 
-                  strokeWidth={2}
-                  dot={{ fill: '#CCFF00', r: 3, strokeWidth: 0, fillOpacity: 0.5 }}
-                  activeDot={{ r: 5, stroke: '#121212', strokeWidth: 2, fill: '#CCFF00' }}
-                  name="dayTotalDriveEnergy"
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="h-48 flex items-center justify-center text-[10px] uppercase tracking-widest opacity-20 font-mono">
-            本月尚無用車及充電數據
-          </div>
-        )}
-      </div>
-
-      <div className={`grid ${cols === 2 ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
-        {logs.length === 0 ? (
-          <div className="col-span-2 text-center py-20 opacity-30 uppercase tracking-[0.3em] font-mono text-sm">
-            目前沒有紀錄
-          </div>
-        ) : filteredLogs.length === 0 ? (
-          <div className="col-span-2 text-center py-20 opacity-30 uppercase tracking-[0.2em] font-mono text-sm">
-            本月尚無用車及充電數據
-          </div>
-        ) : (
-          filteredLogs.map((log) => (
-            <motion.button
-              key={log.id}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              onClick={() => onLogClick(log)}
-              className="w-full text-left glass-card p-5 bg-white/[0.02] hover:bg-white/[0.05] transition-all border-l-2 border-l-transparent hover:border-l-cyber-green"
+        {/* Quick Tools */}
+        <div className="flex items-center gap-2">
+          {onOpenTimer && (
+            <button
+              onClick={onOpenTimer}
+              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyber-green/50 text-white/80 hover:text-cyber-green transition-all flex items-center gap-1.5 text-xs font-mono cursor-pointer"
+              title="停車/充電計時器"
             >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-2 text-cyber-green/60 text-xs font-mono uppercase">
-                  <Calendar size={14} />
-                  {log.date || format(log.timestamp.toDate(), 'yyyy-MM-dd')}
-                  <span className="opacity-40">
-                    {format(log.timestamp.toDate(), 'HH:mm')}
+              <Clock size={16} className="text-cyber-green" />
+              <span className="hidden sm:inline">計時器</span>
+            </button>
+          )}
+
+          {onOpenNewRecord && (
+            <button
+              onClick={onOpenNewRecord}
+              className="p-2 px-3 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs flex items-center gap-1 hover:bg-cyber-green/80 transition-all shadow-[0_0_15px_rgba(204,255,0,0.25)] cursor-pointer"
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              <span>記一筆</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 2. Month Switcher Bar: [ < 2026年 X月 > ] */}
+      <div className="p-3 rounded-2xl bg-black/60 border border-white/10 flex items-center justify-between shadow-lg">
+        {/* Previous Month */}
+        <button
+          onClick={handlePrevMonth}
+          className="p-2 rounded-xl bg-white/5 hover:bg-cyber-green/20 hover:text-cyber-green border border-white/5 hover:border-cyber-green/30 text-white/70 transition-all cursor-pointer flex items-center gap-1"
+          title="上一個月"
+        >
+          <ChevronLeft size={18} />
+          <span className="text-[10px] font-mono hidden sm:inline">上個月</span>
+        </button>
+
+        {/* Current Month Display & All Toggle */}
+        <div className="flex items-center gap-2">
+          <div className="text-center">
+            <span className="text-sm sm:text-base font-mono font-black text-white tracking-wide">
+              {currentMonthDisplay}
+            </span>
+            <div className="text-[9px] font-mono text-white/40">
+              共 {monthSummary.totalCount} 筆 · 支出 HK$ {monthSummary.totalCost.toLocaleString()}
+            </div>
+          </div>
+
+          {selectedMonth !== 'all' ? (
+            <button
+              onClick={() => onSelectMonth('all')}
+              className="text-[10px] font-mono text-cyber-green/80 hover:text-cyber-green bg-cyber-green/10 border border-cyber-green/30 px-2 py-1 rounded-lg transition-colors cursor-pointer ml-1"
+            >
+              顯示全部
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                const now = new Date();
+                const m = now.getMonth() + 1;
+                onSelectMonth(`${now.getFullYear()}-${m < 10 ? `0${m}` : m}`);
+              }}
+              className="text-[10px] font-mono text-white/60 hover:text-white bg-white/10 px-2 py-1 rounded-lg transition-colors cursor-pointer ml-1"
+            >
+              本月
+            </button>
+          )}
+        </div>
+
+        {/* Next Month */}
+        <button
+          onClick={handleNextMonth}
+          className="p-2 rounded-xl bg-white/5 hover:bg-cyber-green/20 hover:text-cyber-green border border-white/5 hover:border-cyber-green/30 text-white/70 transition-all cursor-pointer flex items-center gap-1"
+          title="下一個月"
+        >
+          <span className="text-[10px] font-mono hidden sm:inline">下個月</span>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* 3. Category Filter Tabs: [ 全部 ] [ ⚡ 充電 ] [ 🛠️ 其他支出 ] */}
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+        <div className="flex gap-1.5 p-1 bg-white/[0.03] border border-white/10 rounded-xl overflow-x-auto">
+          {[
+            { id: 'all', label: '全部 / ALL', count: filteredItems.length },
+            { id: 'charging', label: '⚡ 充電', count: allTimelineItems.filter(i => (selectedMonth === 'all' || i.dateStr.startsWith(selectedMonth)) && i.type === 'charging').length },
+            { id: 'other', label: '🛠️ 其他支出', count: allTimelineItems.filter(i => (selectedMonth === 'all' || i.dateStr.startsWith(selectedMonth)) && (i.type === 'maintenance' || i.type === 'parking' || i.type === 'accessory' || i.type === 'other')).length }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterTab(tab.id as any)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                filterTab === tab.id
+                  ? 'bg-cyber-green text-black shadow-[0_0_12px_rgba(204,255,0,0.3)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className={`text-[9px] px-1 rounded-full ${filterTab === tab.id ? 'bg-black/20 text-black' : 'bg-white/10 text-white/40'}`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Toggle Chart Button */}
+        <button
+          onClick={() => setShowChart(!showChart)}
+          className={`p-2 px-3 rounded-xl border text-xs font-mono transition-all flex items-center gap-1.5 cursor-pointer ${
+            showChart 
+              ? 'bg-cyber-green/15 border-cyber-green text-cyber-green shadow-[0_0_10px_rgba(204,255,0,0.15)]' 
+              : 'bg-white/5 border-white/10 text-white/50 hover:text-white'
+          }`}
+          title="切換電量與耗能圖表"
+        >
+          <BarChart2 size={16} />
+          <span>{showChart ? '收起圖表' : '電量/耗能圖表'}</span>
+          {showChart ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
+
+      {/* 4. Collapsible Charts (Battery Trend Chart & Composed Energy Chart) */}
+      <AnimatePresence>
+        {showChart && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-white/10 relative space-y-3">
+              {/* Header with Sub-tabs for Battery Trend vs Energy Curve */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                <div>
+                  <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/40 block font-bold">
+                    ANALYTICAL CHARTS
+                  </span>
+                  <h4 className="text-sm font-mono font-bold text-white flex items-center gap-2">
+                    {chartType === 'battery' ? '⚡ 電量趨勢折線圖' : '📊 每日耗能與補給雙軌分析'}
+                  </h4>
+                </div>
+
+                <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setChartType('battery')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      chartType === 'battery'
+                        ? 'bg-cyber-green text-black shadow-[0_0_10px_rgba(204,255,0,0.25)]'
+                        : 'text-white/50 hover:text-white'
+                    }`}
+                  >
+                    ⚡ 電量趨勢
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartType('energy')}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                      chartType === 'energy'
+                        ? 'bg-cyber-green text-black shadow-[0_0_10px_rgba(204,255,0,0.25)]'
+                        : 'text-white/50 hover:text-white'
+                    }`}
+                  >
+                    📊 耗能對比
+                  </button>
+                </div>
+              </div>
+
+              {/* Chart Content */}
+              {chartType === 'battery' ? (
+                batteryTrendData.length > 0 ? (
+                  <div className="h-52 w-full mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={batteryTrendData} margin={{ top: 10, right: -10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                        <XAxis 
+                          dataKey="date" 
+                          stroke="#ffffff20" 
+                          fontSize={9} 
+                          tickLine={false} 
+                          axisLine={false}
+                          padding={{ left: 10, right: 10 }}
+                        />
+                        <YAxis 
+                          yAxisId="left"
+                          domain={[0, 100]} 
+                          stroke="#ffffff20" 
+                          fontSize={9} 
+                          tickLine={false} 
+                          axisLine={false} 
+                          width={40}
+                          tickFormatter={(val) => `${val}%`}
+                        />
+                        <YAxis 
+                          yAxisId="right"
+                          orientation="right"
+                          hide
+                        />
+                        <Tooltip 
+                          contentStyle={{ background: '#121212', border: '1px solid #ffffff15', borderRadius: '8px', fontSize: '10px' }}
+                          itemStyle={{ fontSize: '10px' }}
+                          labelStyle={{ color: '#ffffff40', marginBottom: '4px' }}
+                          labelFormatter={(value, payload) => {
+                            if (payload && payload[0]) {
+                              return `${value} ${payload[0].payload.time}`;
+                            }
+                            return value;
+                          }}
+                          formatter={(value: any, name: string) => {
+                            if (name === "電量") return [`${value}%`, name];
+                            if (name === "里程") return [`${value} KM`, name];
+                            return [value, name];
+                          }}
+                        />
+                        <Line 
+                          yAxisId="left"
+                          type="monotone" 
+                          dataKey="battery" 
+                          stroke="#CCFF00" 
+                          strokeWidth={2}
+                          dot={{ fill: '#CCFF00', r: 3, strokeWidth: 0, fillOpacity: 0.6 }}
+                          activeDot={{ r: 5, stroke: '#1a1a1a', strokeWidth: 2, fill: '#CCFF00' }}
+                          name="電量"
+                          animationDuration={800}
+                        />
+                        <Line 
+                          yAxisId="right"
+                          type="monotone" 
+                          dataKey="distance" 
+                          stroke="#ffffff25" 
+                          strokeWidth={1}
+                          strokeDasharray="4 4"
+                          dot={false}
+                          name="里程"
+                          animationDuration={800}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-44 flex items-center justify-center text-[10px] font-mono uppercase tracking-widest text-white/30">
+                    尚無足夠電量數據
+                  </div>
+                )
+              ) : (
+                chartData.length > 0 ? (
+                  <div className="h-52 w-full mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={chartData} margin={{ top: 5, right: -15, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                        <XAxis dataKey="date" stroke="#ffffff25" fontSize={9} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="left" stroke="#CCFF00" fontSize={9} tickLine={false} axisLine={false} width={40} tickFormatter={(v) => `${v}k`} />
+                        <YAxis yAxisId="right" orientation="right" stroke="#38bdf8" fontSize={9} tickLine={false} axisLine={false} width={40} tickFormatter={(v) => `${v}k`} />
+                        <Tooltip 
+                          contentStyle={{ background: '#121212', border: '1px solid #ffffff15', borderRadius: '8px', fontSize: '10px' }}
+                          formatter={(value: any, name: string) => {
+                            if (name === "dayTotalDriveEnergy") return [`${value} kWh`, "本日行駛耗電"];
+                            if (name === "dayTotalChargeEnergy") return [`${value} kWh`, "本日充電補給"];
+                            return [value, name];
+                          }}
+                        />
+                        <Legend 
+                          verticalAlign="top" 
+                          height={28}
+                          formatter={(value) => {
+                            if (value === "dayTotalDriveEnergy") return <span className="text-white/60 font-mono text-[9px]">🔋 行駛耗電 (kWh)</span>;
+                            if (value === "dayTotalChargeEnergy") return <span className="text-white/60 font-mono text-[9px]">⚡ 補給充電 (kWh)</span>;
+                            return value;
+                          }}
+                        />
+                        <Bar yAxisId="right" dataKey="dayTotalChargeEnergy" fill="#38bdf8" radius={[4, 4, 0, 0]} barSize={10} name="dayTotalChargeEnergy" />
+                        <Line yAxisId="left" type="monotone" dataKey="dayTotalDriveEnergy" stroke="#CCFF00" strokeWidth={2} dot={{ fill: '#CCFF00', r: 3 }} name="dayTotalDriveEnergy" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-44 flex items-center justify-center text-[10px] font-mono uppercase tracking-widest text-white/30">
+                    尚無足夠耗能數據
+                  </div>
+                )
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. Daily Grouped Timeline View */}
+      {groupedByDate.length === 0 ? (
+        <div className="py-20 text-center glass-card border border-white/5 space-y-3">
+          <div className="text-3xl">📝</div>
+          <div className="text-sm font-mono text-white/40 uppercase tracking-widest">
+            {selectedMonth === 'all' ? '目前尚無開支或充電記錄' : `${currentMonthDisplay} 尚無任何記錄`}
+          </div>
+          {onOpenNewRecord && (
+            <button
+              onClick={onOpenNewRecord}
+              className="inline-flex items-center gap-1.5 py-2 px-4 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs uppercase hover:bg-cyber-green/80 transition-all cursor-pointer"
+            >
+              <Plus size={16} />
+              立即記錄第一筆開支
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groupedByDate.map(group => (
+            <div key={group.dateStr} className="space-y-2">
+              {/* Daily Header with Subtotal */}
+              <div className="flex items-center justify-between px-2 py-1 border-l-2 border-cyber-green bg-white/[0.015] rounded-r-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-white tracking-wide">
+                    {group.displayDate}
+                  </span>
+                  <span className="text-[10px] font-mono text-white/40">
+                    · {group.items.length} 筆
                   </span>
                 </div>
-                
-                <div className="flex flex-col items-end justify-start gap-1">
-                  {/* 1. 黃色補能標籤：僅在充電紀錄時渲染，獨立一行 */}
-                  {log.isCharging && (
-                    <span className="bg-[#A3E635] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5 animate-pulse">
-                      ⚡ 補能
+
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  {group.totalKwh > 0 && (
+                    <span className="text-cyber-green font-bold text-[11px] bg-cyber-green/10 border border-cyber-green/30 px-1.5 py-0.5 rounded">
+                      +{group.totalKwh.toFixed(1)} kWh
                     </span>
                   )}
-
-                  {/* 2. 電量框：強制鎖死寬度，確保不論有沒有補能標籤，尺寸都跟其他卡片 100% 一致 */}
-                  <div className={`w-[68px] h-[36px] flex flex-col items-center justify-center rounded-md border text-[11px] font-bold leading-tight ${
-                    log.isCharging ? 'border-[#A3E635] text-[#A3E635]' : 'border-zinc-700 text-zinc-400'
-                  }`}>
-                    <div>{log.batteryPercent}%</div>
-                    <div className="text-[9px] opacity-80 font-mono">BATT</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <div className="text-[10px] uppercase opacity-30 tracking-widest flex items-center gap-1">
-                    <Gauge size={10} /> {log.isCharging ? '補電力度' : '分段里程'}
-                  </div>
-                  <div className="text-lg font-mono font-bold">
-                    {log.isCharging ? `+${log.batteryDiff}%` : `${log.distance.toLocaleString()} km`}
-                  </div>
-                </div>
-                <div className="space-y-1 text-right">
-                  <div className="text-[10px] uppercase opacity-30 tracking-widest">
-                    {log.isCharging ? '充電費用' : '本次能耗'}
-                  </div>
-                  <div className={`text-lg font-mono font-bold ${!log.isCharging && log.efficiency ? 'text-cyber-green' : 'text-white/80'}`}>
-                    {log.isCharging 
-                      ? (log.cost ? `$${log.cost}` : '--')
-                      : (log.efficiency ? `${log.efficiency} ⚡️` : '--')
-                    }
-                  </div>
+                  <span className="text-white/50 text-[10px]">小計:</span>
+                  <span className="font-extrabold text-white">
+                    HK$ {group.totalCost.toLocaleString()}
+                  </span>
                 </div>
               </div>
 
-              {log.location && (
-                <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2 text-[10px] opacity-40 uppercase tracking-widest">
-                  <MapPin size={10} />
-                  {log.location}
-                </div>
-              )}
-            </motion.button>
-          ))
-        )}
-      </div>
+              {/* Items for this date */}
+              <div className="space-y-2">
+                {group.items.map(item => {
+                  const badge = getCategoryBadge(item.type);
+                  const isCharging = item.type === 'charging';
+                  const unitPrice = isCharging && item.kwhAdded > 0 && item.amountHKD > 0
+                    ? (item.amountHKD / item.kwhAdded).toFixed(2)
+                    : null;
+
+                  return (
+                    <motion.div
+                      key={item.id}
+                      whileHover={{ scale: 1.008 }}
+                      whileTap={{ scale: 0.995 }}
+                      onClick={() => handleItemClick(item)}
+                      className="glass-card p-4 bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-cyber-green/40 transition-all rounded-2xl flex items-center justify-between gap-4 cursor-pointer relative overflow-hidden group select-none shadow-sm"
+                    >
+                      {/* Left: Category Icon Badge */}
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className={`w-11 h-11 rounded-2xl ${badge.bg} border ${badge.border} ${badge.glow} flex flex-col items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
+                          <span className="text-base select-none leading-none">{badge.icon}</span>
+                          <span className={`text-[8px] font-mono font-bold uppercase mt-0.5 ${badge.text}`}>
+                            {badge.label}
+                          </span>
+                        </div>
+
+                        {/* Middle: Title, Location, Notes, Time */}
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs sm:text-sm font-bold text-white group-hover:text-cyber-green transition-colors truncate">
+                              {item.location || (isCharging ? '充電補能' : '用車記錄')}
+                            </span>
+                            <span className="text-[10px] font-mono text-white/30 shrink-0">
+                              {item.timeStr}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-[11px] font-mono text-white/50 truncate">
+                            {item.notes ? (
+                              <span className="truncate">{item.notes}</span>
+                            ) : (item.rawRecord?.odoKM || item.odometer) ? (
+                              <span>里程: {(item.rawRecord?.odoKM ?? item.odometer)?.toLocaleString()} KM</span>
+                            ) : (
+                              <span className="text-white/20">無詳細備註</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Amount & kWh */}
+                      <div className="text-right shrink-0 space-y-0.5">
+                        <div className="text-base sm:text-lg font-mono font-black text-white group-hover:text-cyber-green transition-colors">
+                          {item.amountHKD > 0 ? (
+                            <span>HK$ {item.amountHKD.toLocaleString()}</span>
+                          ) : (
+                            <span className="text-xs text-cyber-green font-normal">免費 / $0</span>
+                          )}
+                        </div>
+
+                        {/* Charging kWh & Unit Price */}
+                        {isCharging && item.kwhAdded > 0 && (
+                          <div className="text-[10.5px] font-mono text-cyber-green font-semibold flex items-center justify-end gap-1">
+                            <span>+{item.kwhAdded.toFixed(1)} kWh</span>
+                            {unitPrice && (
+                              <span className="text-[9px] text-white/40 font-normal">
+                                (${unitPrice}/度)
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Driving SOC & consumption */}
+                        {(item.type === 'driving' || item.type === 'drive') && (
+                          <div className="text-[10px] font-mono text-emerald-400 font-medium flex items-center justify-end gap-1.5">
+                            {item.rawRecord?.currentSOC !== undefined ? (
+                              <span>剩餘 {item.rawRecord.currentSOC}%</span>
+                            ) : item.batteryPercent !== undefined ? (
+                              <span>剩餘 {item.batteryPercent}%</span>
+                            ) : null}
+                            {item.rawRecord?.consumption ? (
+                              <span className="text-white/40">({item.rawRecord.consumption} kWh/100km)</span>
+                            ) : null}
+                            {item.type === 'drive' && item.segmentDiff !== undefined && item.segmentDiff > 0 && (
+                              <span className="text-red-400">-{item.segmentDiff}%</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

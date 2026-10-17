@@ -110,6 +110,39 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
       return { name: '山泥傾瀉警告', color: '#ff9500', severity: 'minor', code, subtype: sub };
     }
 
+    // 6. 火災危險警告精準判定（黃火 vs 紅火）
+    if (code === 'WFIRE' || code === 'WFIREW' || contentsStr.includes('火災')) {
+      const isYellow = sub.includes('Y') || sub === 'WFIREY' || contentsStr.includes('黃色') || contentsStr.includes('黃火');
+      const isRed = sub.includes('R') || sub === 'WFIRER' || contentsStr.includes('紅色') || contentsStr.includes('紅火');
+
+      if (isYellow) {
+        return {
+          name: '黃色火災危險警告',
+          color: '#ffcc00',
+          severity: 'minor',
+          code: 'WFIRE',
+          subtype: 'WFIREY'
+        };
+      }
+      if (isRed) {
+        return {
+          name: '紅色火災危險警告',
+          color: '#ff3b30',
+          severity: 'moderate',
+          code: 'WFIRE',
+          subtype: 'WFIRER'
+        };
+      }
+      const fallbackYellow = contentsStr.includes('黃');
+      return {
+        name: fallbackYellow ? '黃色火災危險警告' : '紅色火災危險警告',
+        color: fallbackYellow ? '#ffcc00' : '#ff3b30',
+        severity: fallbackYellow ? 'minor' : 'moderate',
+        code: 'WFIRE',
+        subtype: fallbackYellow ? 'WFIREY' : 'WFIRER'
+      };
+    }
+
     // 其他警告默認處理
     return { 
       name: item.contents && item.contents[0] ? item.contents[0].split('現正')[0] : '氣象警告', 
@@ -122,6 +155,8 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
 };
 
 const getWarningTailwindClasses = (name: string) => {
+  if (name.includes('黃色火災') || name.includes('黃火')) return 'text-yellow-400 border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20 shadow-[0_0_12px_rgba(250,204,21,0.15)]';
+  if (name.includes('紅色火災') || name.includes('紅火')) return 'text-red-500 border-red-500/40 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.15)]';
   if (name.includes('黃色暴雨')) return 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20';
   if (name.includes('紅色暴雨')) return 'text-red-500 border-red-500/30 bg-red-500/10 hover:bg-red-500/20';
   if (name.includes('黑色暴雨')) return 'text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-500/10 hover:bg-fuchsia-500/20';
@@ -323,6 +358,25 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
   const firstWarning = displayWarnings[0]?.name || '';
   const badgeClasses = getWarningTailwindClasses(firstWarning);
 
+  // 彈窗內的標籤與顏色聯動：若當前為「黃色火災危險警告」，彈窗卡片邊框與標題高亮色使用黃色 (#ffcc00)，避免整片誤套用紅色高亮樣式
+  const isYellowFire = displayWarnings.some(w => w.name.includes('黃色火災') || w.name.includes('黃火') || w.subtype === 'WFIREY');
+  const hasExtreme = displayWarnings.some(w => 
+    w.severity === 'extreme' || w.severity === 'high' || w.name.includes('紅色') || w.name.includes('黑色') || w.name.includes('八號') || w.name.includes('九號') || w.name.includes('十號')
+  );
+  const isYellowModalTheme = (isYellowFire && !hasExtreme) || (displayWarnings.length > 0 && displayWarnings.every(w => w.name.includes('黃')));
+
+  const modalTheme = isYellowModalTheme ? {
+    border: 'border-yellow-500/40',
+    shadow: 'shadow-[0_0_35px_rgba(250,204,21,0.22)]',
+    titleColor: 'text-yellow-400',
+    btnClass: 'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border-yellow-500/40 shadow-[0_0_12px_rgba(250,204,21,0.15)]'
+  } : {
+    border: 'border-red-500/30',
+    shadow: 'shadow-[0_0_30px_rgba(239,68,68,0.2)]',
+    titleColor: 'text-red-500',
+    btnClass: 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'
+  };
+
   return (
     <div className="flex flex-col items-end">
       <AnimatePresence mode="wait">
@@ -367,16 +421,16 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm p-6 bg-[#0f0f11] border border-red-500/30 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.2)] relative"
+              className={`w-full max-w-sm p-6 bg-[#0f0f11] border rounded-2xl relative ${modalTheme.border} ${modalTheme.shadow}`}
             >
               <button 
                 onClick={() => setShowModal(false)}
-                className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+                className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
               
-              <div className="flex items-center gap-2 text-red-500 font-bold font-mono text-sm uppercase mb-4">
+              <div className={`flex items-center gap-2 font-bold font-mono text-sm uppercase mb-4 ${modalTheme.titleColor}`}>
                 <AlertTriangle size={18} className="animate-pulse" />
                 香港即時天氣警告資訊
               </div>
@@ -413,12 +467,12 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
               </div>
 
               <div className="mt-5 p-3 rounded-lg border border-white/5 bg-white/[0.02] text-[10px] text-white/50 leading-relaxed font-mono">
-                提醒您：在雷暴、大雨或颱風期間行車時，請減速慢行，並與前車保持適當安全距離。
+                提醒您：在極端天氣、乾燥火險或暴雨颱風期間行車時，請減速慢行，並注意車輛散熱與安全。
               </div>
 
               <button 
                 onClick={() => setShowModal(false)}
-                className="w-full mt-6 py-2 px-4 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold font-mono uppercase tracking-widest border border-red-500/30 transition-all active:scale-98"
+                className={`w-full mt-6 py-2 px-4 rounded-lg text-xs font-bold font-mono uppercase tracking-widest border transition-all active:scale-98 cursor-pointer ${modalTheme.btnClass}`}
               >
                 關閉視窗 CLOSE
               </button>

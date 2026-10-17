@@ -60,6 +60,26 @@ service cloud.firestore {
              data.userId == request.auth.uid;
     }
 
+    // --- Record Validation ---
+    function isValidRecord(data) {
+      return data.userId == request.auth.uid &&
+             data.type in ['driving', 'charging', 'maintenance', 'parking', 'accessory', 'other'] &&
+             data.amountHKD is number && data.amountHKD >= 0 &&
+             (data.kwhAdded is number || !data.keys().hasAll(['kwhAdded'])) &&
+             (data.location is string || !data.keys().hasAll(['location'])) &&
+             (data.notes is string || !data.keys().hasAll(['notes'])) &&
+             (data.vehicleId is string || !data.keys().hasAll(['vehicleId'])) &&
+             (data.plateNumber is string || !data.keys().hasAll(['plateNumber'])) &&
+             (data.odometer is number || !data.keys().hasAll(['odometer'])) &&
+             (data.odoKM is number || !data.keys().hasAll(['odoKM'])) &&
+             (data.currentSOC is number || !data.keys().hasAll(['currentSOC'])) &&
+             (data.consumption is number || !data.keys().hasAll(['consumption'])) &&
+             (data.startSoc is number || !data.keys().hasAll(['startSoc'])) &&
+             (data.endSoc is number || !data.keys().hasAll(['endSoc'])) &&
+             (data.createdAt is timestamp || !data.keys().hasAll(['createdAt'])) &&
+             data.recordDate is timestamp;
+    }
+
     // --- UserProfile Validation ---
     function isValidProfile(data) {
       return (data.phoneNumber is string || !data.keys().hasAll(['phoneNumber'])) &&
@@ -69,11 +89,14 @@ service cloud.firestore {
              (data.photoURL is string || !data.keys().hasAll(['photoURL'])) &&
              (data.joinedAt is timestamp || !data.keys().hasAll(['joinedAt'])) &&
              (data.plate is string || !data.keys().hasAll(['plate'])) &&
+             (data.licensePlate is string || !data.keys().hasAll(['licensePlate'])) &&
              (data.selectedVehicleId is string || data.selectedVehicleId == null || !data.keys().hasAll(['selectedVehicleId'])) &&
              (data.lastMaintenanceKM is number || !data.keys().hasAll(['lastMaintenanceKM'])) &&
              (data.lastMaintenanceDate is timestamp || data.lastMaintenanceDate == null || !data.keys().hasAll(['lastMaintenanceDate'])) &&
              (data.licenseExpiryDate is timestamp || data.licenseExpiryDate == null || !data.keys().hasAll(['licenseExpiryDate'])) &&
              (data.insuranceExpiryDate is timestamp || data.insuranceExpiryDate == null || !data.keys().hasAll(['insuranceExpiryDate'])) &&
+             (data.currentODO is number || !data.keys().hasAll(['currentODO'])) &&
+             (data.baseSOC is number || !data.keys().hasAll(['baseSOC'])) &&
              data.updatedAt == request.time;
     }
 
@@ -247,8 +270,9 @@ service cloud.firestore {
                       (incoming().role == existing().role || isAdmin()) &&
                       (isAdmin() ? true : (
                         incoming().diff(existing()).affectedKeys().hasOnly([
-                          'phoneNumber', 'displayName', 'photoURL', 'plate', 'selectedVehicleId', 'updatedAt',
-                          'lastMaintenanceKM', 'lastMaintenanceDate', 'licenseExpiryDate', 'insuranceExpiryDate'
+                          'phoneNumber', 'displayName', 'photoURL', 'plate', 'licensePlate', 'selectedVehicleId', 'updatedAt',
+                          'lastMaintenanceKM', 'lastMaintenanceDate', 'licenseExpiryDate', 'insuranceExpiryDate',
+                          'currentODO', 'baseSOC'
                         ]) || (
                           existing().status == 'pending_verification' &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
@@ -313,6 +337,15 @@ service cloud.firestore {
                       isValidLog(incoming()) &&
                       (isSubAdmin() ? true : (incoming().userId == existing().userId && incoming().vehicleId == existing().vehicleId));
       
+      allow delete: if isOwner(existing().userId) || isSubAdmin();
+    }
+
+    match /records/{recordId} {
+      allow read: if isOwner(existing().userId) || isSubAdmin();
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isSubAdmin();
+      allow create: if isSignedIn() && isValidRecord(incoming());
+      allow update: if (isOwner(existing().userId) || isSubAdmin()) && isValidRecord(incoming()) &&
+                      (isSubAdmin() ? true : incoming().userId == existing().userId);
       allow delete: if isOwner(existing().userId) || isSubAdmin();
     }
 

@@ -22,16 +22,18 @@ import {
 } from 'firebase/firestore';
 import { deleteUser, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
-import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration, GroupBuy, GroupBuyRegistration, ClubPerk } from '../types';
+import { Vehicle, LogEntry, UserProfile, Activity, Poll, EVNotification, ParkingLot, ActivityRegistration, GroupBuy, GroupBuyRegistration, ClubPerk, RecordItem, RecordType } from '../types';
 import { format } from 'date-fns';
 import { OperationType, handleFirestoreError } from '../lib/utils';
 import { createAuditLog } from '../utils/logger';
 import { getPickupPin } from '../utils/pin';
+import { saveOfflineRecord } from '../utils/offlineQueue';
 
 export function useEVStore() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [records, setRecords] = useState<RecordItem[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [groupBuys, setGroupBuys] = useState<GroupBuy[]>([]);
@@ -550,6 +552,249 @@ export function useEVStore() {
     return () => unsubscribe();
   }, [vehicle?.id, vehicle?.userId, auth.currentUser?.uid]);
 
+  // Sync Records (Expenses, Charging, Parking, Maintenance)
+  useEffect(() => {
+    if (!auth.currentUser) {
+      setRecords([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'records'),
+      where('userId', '==', auth.currentUser.uid),
+      orderBy('recordDate', 'desc'),
+      limit(300)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const recordList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          amountHKD: Number(data.amountHKD || 0),
+          kwhAdded: Number(data.kwhAdded || 0)
+        } as RecordItem;
+      });
+
+      // Sort descending by recordDate
+      recordList.sort((a, b) => {
+        const aTime = a.recordDate?.toMillis ? a.recordDate.toMillis() : (a.recordDate ? new Date(a.recordDate as any).getTime() : 0);
+        const bTime = b.recordDate?.toMillis ? b.recordDate.toMillis() : (b.recordDate ? new Date(b.recordDate as any).getTime() : 0);
+        return bTime - aTime;
+      });
+
+      setRecords(recordList);
+    }, (error) => {
+      console.warn("Records fetch failed or pending index:", error);
+    });
+
+    return () => unsubscribe();
+  }, [auth.currentUser?.uid]);
+
+  const addRecord = async (data: {
+    type: RecordType;
+    amountHKD: number;
+    kwhAdded?: number;
+    location?: string;
+    recordDate?: any;
+    notes?: string;
+    odometer?: number;
+    batteryPercent?: number;
+    startSoc?: number;
+    endSoc?: number;
+    odoKM?: number;
+    currentSOC?: number;
+    consumption?: number;
+  }) => {
+    if (!auth.currentUser) return;
+
+    // 📴 若處於離線狀態，直接存入離線隊列並同步本機狀態
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const offlineRecord = saveOfflineRecord({
+        ...data,
+        userId: auth.currentUser.uid,
+        vehicleId: vehicle?.id || '',
+        plateNumber: vehicle?.plate || '',
+        recordDate: data.recordDate || new Date()
+      });
+
+      if (data.type === 'driving') {
+        const odoVal = Number(data.odoKM ?? data.odometer ?? vehicle?.lastOdometer ?? 0);
+        const socVal = Number(data.currentSOC ?? data.batteryPercent ?? 100);
+        setUserProfile(prev => prev ? ({ ...prev, currentODO: odoVal, baseSOC: socVal }) : null);
+        if (vehicle?.id) {
+          setVehicles(prev => prev.map(v => v.id === vehicle.id ? { ...v, lastOdometer: odoVal, lastBatteryPercent: socVal } : v));
+        }
+      }
+      return offlineRecord.id;
+    }
+
+    try {
+      let recordTimestamp: Timestamp;
+      if (data.recordDate instanceof Timestamp) {
+        recordTimestamp = data.recordDate;
+      } else if (data.recordDate instanceof Date) {
+        recordTimestamp = Timestamp.fromDate(data.recordDate);
+      } else if (typeof data.recordDate === 'string' && data.recordDate) {
+        const d = new Date(data.recordDate);
+        recordTimestamp = isNaN(d.getTime()) ? Timestamp.now() : Timestamp.fromDate(d);
+      } else {
+        recordTimestamp = Timestamp.now();
+      }
+
+      const docData: any = {
+        userId: auth.currentUser.uid,
+        vehicleId: vehicle?.id || '',
+        plateNumber: vehicle?.plate || '',
+        type: data.type,
+        amountHKD: Number(data.amountHKD) || 0,
+        kwhAdded: data.type === 'charging' ? (Number(data.kwhAdded) || 0) : 0,
+        location: data.location || '',
+        recordDate: recordTimestamp,
+        notes: data.notes || '',
+        createdAt: serverTimestamp()
+      };
+
+      if (data.odometer !== undefined && data.odometer !== null && !isNaN(Number(data.odometer))) {
+        docData.odometer = Number(data.odometer);
+      }
+      if (data.odoKM !== undefined && data.odoKM !== null && !isNaN(Number(data.odoKM))) {
+        docData.odoKM = Number(data.odoKM);
+        docData.odometer = Number(data.odoKM);
+      }
+      if (data.currentSOC !== undefined && data.currentSOC !== null && !isNaN(Number(data.currentSOC))) {
+        docData.currentSOC = Number(data.currentSOC);
+        docData.batteryPercent = Number(data.currentSOC);
+        docData.endSoc = Number(data.currentSOC);
+      }
+      if (data.consumption !== undefined && data.consumption !== null && !isNaN(Number(data.consumption))) {
+        docData.consumption = Number(data.consumption);
+      }
+
+      const docRef = await addDoc(collection(db, 'records'), docData);
+
+      // Handle driving type submission
+      if (data.type === 'driving') {
+        const uid = auth.currentUser.uid;
+        const odoVal = Number(data.odoKM ?? data.odometer ?? vehicle?.lastOdometer ?? 0);
+        const socVal = Number(data.currentSOC ?? data.batteryPercent ?? 100);
+
+        // 1. 同步更新用戶主檔案 users/${uid} 的 currentODO 與 baseSOC
+        try {
+          await setDoc(doc(db, 'users', uid), {
+            currentODO: odoVal,
+            baseSOC: socVal,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (uErr) {
+          console.warn("Notice: could not update users collection directly:", uErr);
+        }
+
+        // 2. 同步更新 userProfiles/${uid} 的 currentODO 與 baseSOC
+        try {
+          await updateDoc(doc(db, 'userProfiles', uid), {
+            currentODO: odoVal,
+            baseSOC: socVal,
+            updatedAt: serverTimestamp()
+          });
+        } catch (pErr) {
+          console.warn("Notice: could not update userProfiles doc:", pErr);
+        }
+
+        // 3. 更新車輛資料
+        if (vehicle?.id) {
+          try {
+            await updateVehicle(vehicle.id, {
+              lastOdometer: odoVal,
+              lastBatteryPercent: socVal
+            });
+          } catch (vErr) {
+            console.warn("Notice: could not update vehicle state:", vErr);
+          }
+        }
+
+        // 4. 即時更新記憶體內 userProfile 狀態，確保首頁真實續航估算引擎即刻重新計算
+        setUserProfile(prev => prev ? ({ ...prev, currentODO: odoVal, baseSOC: socVal }) : null);
+
+        // 5. 寫入 vehicleLogs 以便里程趨勢折線圖與行駛日誌即時獲取最新行駛節點
+        try {
+          await addLog({
+            odometer: odoVal,
+            batteryPercent: socVal,
+            cost: Number(data.amountHKD) || 0,
+            location: data.location || '日常行車',
+            isCharging: false,
+            date: format(recordTimestamp.toDate(), 'yyyy-MM-dd'),
+            timestamp: recordTimestamp,
+            type: 'drive'
+          });
+        } catch (logErr) {
+          console.warn("Optional driving log sync notice:", logErr);
+        }
+      } else if (data.type === 'charging' && vehicle) {
+        // If charging record has vehicle odometer/battery state, also create/sync vehicleLogs
+        try {
+          const currentOdo = (data.odometer !== undefined && data.odometer !== null && !isNaN(Number(data.odometer))) 
+            ? Number(data.odometer) 
+            : Number(vehicle.lastOdometer || 0);
+          const endBattery = Number(data.endSoc ?? data.batteryPercent ?? 100);
+          const startBattery = Number(data.startSoc ?? vehicle.lastBatteryPercent ?? 50);
+
+          await addLog({
+            odometer: currentOdo,
+            batteryPercent: endBattery,
+            cost: Number(data.amountHKD) || 0,
+            location: data.location || '',
+            isCharging: true,
+            isDualCharge: data.startSoc !== undefined && data.endSoc !== undefined,
+            startSoc: startBattery,
+            endSoc: endBattery,
+            date: format(recordTimestamp.toDate(), 'yyyy-MM-dd'),
+            timestamp: recordTimestamp
+          });
+        } catch (logErr) {
+          console.warn("Optional charging log sync notice:", logErr);
+        }
+      } else if (data.odometer && Number(data.odometer) > 0 && vehicle) {
+        if (Number(data.odometer) > Number(vehicle.lastOdometer || 0)) {
+          await updateVehicle(vehicle.id, { lastOdometer: Number(data.odometer) });
+        }
+      }
+
+      if ('vibrate' in navigator) navigator.vibrate(50);
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'records');
+    }
+  };
+
+  const updateRecord = async (recordId: string, data: Partial<RecordItem>) => {
+    try {
+      const updateData: any = { ...data };
+      if (data.recordDate && !(data.recordDate instanceof Timestamp)) {
+        const d = new Date(data.recordDate as any);
+        updateData.recordDate = isNaN(d.getTime()) ? Timestamp.now() : Timestamp.fromDate(d);
+      }
+      if (data.amountHKD !== undefined) updateData.amountHKD = Number(data.amountHKD);
+      if (data.kwhAdded !== undefined) updateData.kwhAdded = Number(data.kwhAdded);
+      if (data.odometer !== undefined) updateData.odometer = Number(data.odometer);
+      updateData.updatedAt = serverTimestamp();
+
+      await updateDoc(doc(db, 'records', recordId), updateData);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'records');
+    }
+  };
+
+  const deleteRecord = async (recordId: string) => {
+    try {
+      await deleteDoc(doc(db, 'records', recordId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'records');
+    }
+  };
+
   const addVehicle = async (data: Partial<Vehicle>) => {
     if (!auth.currentUser) return;
     try {
@@ -734,6 +979,7 @@ export function useEVStore() {
     isDualCharge?: boolean;
     startSoc?: number;
     endSoc?: number;
+    type?: 'charge' | 'drive';
   }) => {
     if (!vehicle || !auth.currentUser) return;
 
@@ -960,6 +1206,24 @@ export function useEVStore() {
         await addDoc(collection(db, 'userProfiles', uid, 'maintenance_logs'), logData);
       } catch (err) {
         console.warn('Failed to write to userProfiles maintenance_logs:', err);
+      }
+
+      // 3b. Mirror to records collection for unified expense & records tab tracking
+      try {
+        await addDoc(collection(db, 'records'), {
+          userId: uid,
+          vehicleId: vehicle?.id || '',
+          plateNumber: vehicle?.plate || '',
+          type: 'maintenance',
+          amountHKD: parsedCost,
+          location: remarks || '原廠回廠保養',
+          recordDate: Timestamp.fromDate(new Date(actualDate)),
+          notes: `回廠里程: ${parsedKM} KM${remarks ? ` · ${remarks}` : ''}`,
+          odometer: parsedKM,
+          createdAt: serverTimestamp()
+        });
+      } catch (recErr) {
+        console.warn('Failed to mirror maintenance log to records:', recErr);
       }
 
       // 4. Trace in Audit Log
@@ -2337,6 +2601,10 @@ export function useEVStore() {
     clearAllActivities,
     clearAllPolls,
     clearAllSystemNotifications,
+    records,
+    addRecord,
+    updateRecord,
+    deleteRecord,
     addNotification,
     refreshData
   };

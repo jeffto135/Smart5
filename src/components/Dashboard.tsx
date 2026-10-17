@@ -8,18 +8,20 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag, Gift } from 'lucide-react';
+import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag, Gift, Clock, Sparkles, PlusCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
-import { LogEntry, Vehicle, Activity, Poll, GroupBuy, UserProfile } from '../types';
+import { LogEntry, Vehicle, Activity, Poll, GroupBuy, UserProfile, RecordItem } from '../types';
 import { format } from 'date-fns';
 import { MonthDropdown } from './MonthDropdown';
 import { auth, db } from '../lib/firebase';
 import { doc, setDoc, updateDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { MaintenanceHistoryModal } from './MaintenanceHistoryModal';
+import { getStoredTimer } from './ParkingTimerModal';
 
 interface DashboardProps {
   logs: LogEntry[];
+  records?: RecordItem[];
   vehicle: Vehicle | null;
   activities: Activity[];
   polls: Poll[];
@@ -34,10 +36,13 @@ interface DashboardProps {
   onClubPerksClick: () => void;
   selectedMonth: string;
   onSelectMonth: (month: string) => void;
+  onOpenTimer?: () => void;
+  onOpenNewRecord?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
   logs, 
+  records = [],
   vehicle, 
   activities,
   polls,
@@ -51,7 +56,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onGroupBuyClick,
   onClubPerksClick,
   selectedMonth,
-  onSelectMonth
+  onSelectMonth,
+  onOpenTimer,
+  onOpenNewRecord
 }) => {
   const [expandedDates, setExpandedDates] = useState<{ [date: string]: boolean }>({});
   
@@ -340,11 +347,93 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [filteredMonthLogs, vehicle, selectedMonth]);
 
+  // 💰 開支面板細分與電價精算 (Dashboard Overview Expense & Energy Pricing)
+  const expenseStats = useMemo(() => {
+    let totalExpenditure = 0;
+    let chargingCost = 0;
+    let otherCost = 0;
+    let totalKwhAdded = 0;
+    let recordCount = 0;
+    let chargingCount = 0;
+    let otherCount = 0;
+
+    const seenFingerprints = new Set<string>();
+
+    // 1. Process records collection items
+    (records || []).forEach(r => {
+      const dateObj = r.recordDate?.toDate ? r.recordDate.toDate() : new Date(r.recordDate as any);
+      const dateStr = format(dateObj, 'yyyy-MM-dd');
+      if (selectedMonth !== 'all' && !dateStr.startsWith(selectedMonth)) return;
+
+      const amt = Number(r.amountHKD) || 0;
+      const kwh = Number(r.kwhAdded) || 0;
+
+      seenFingerprints.add(`${dateStr}_${amt}_${r.type}`);
+      totalExpenditure += amt;
+      recordCount++;
+
+      if (r.type === 'charging') {
+        chargingCost += amt;
+        totalKwhAdded += kwh;
+        chargingCount++;
+      } else {
+        otherCost += amt;
+        otherCount++;
+      }
+    });
+
+    // 2. Fallback / merge legacy logs for selected month
+    filteredMonthLogs.forEach(l => {
+      const dateStr = l.date || format(l.timestamp.toDate(), 'yyyy-MM-dd');
+      const amt = Number(l.cost) || 0;
+      const isCharge = l.isCharging || l.type === 'charge';
+      const fp = `${dateStr}_${amt}_${isCharge ? 'charging' : 'drive'}`;
+
+      if (seenFingerprints.has(fp)) return; // already counted in records
+
+      if (amt > 0) {
+        totalExpenditure += amt;
+        recordCount++;
+
+        if (isCharge) {
+          chargingCost += amt;
+          chargingCount++;
+          const cap = vehicle?.batteryCapacity || 100;
+          const kwhEst = l.batteryDiff ? (l.batteryDiff / 100) * cap : 0;
+          totalKwhAdded += kwhEst;
+        } else {
+          otherCost += amt;
+          otherCount++;
+        }
+      }
+    });
+
+    // 運算公式：平均電價 (HKD/kWh) = 當月充電總花費 / 當月總充入度數 (kWh)
+    const avgPricePerKwh = totalKwhAdded > 0 
+      ? (chargingCost / totalKwhAdded).toFixed(2) 
+      : null;
+
+    return {
+      totalExpenditure,
+      chargingCost,
+      otherCost,
+      totalKwhAdded,
+      chargingCount,
+      otherCount,
+      recordCount,
+      avgPricePerKwh
+    };
+  }, [records, filteredMonthLogs, selectedMonth, vehicle]);
+
   // 🧠 模組二：智能用車提醒與續航估算 (EV Smart Insights)
   const smartInsights = useMemo(() => {
     const lastLog = logs[0];
-    const lastSoc = lastLog?.batteryPercent ?? vehicle?.lastBatteryPercent ?? 100;
-    const lastOdo = lastLog ? Number(lastLog.odo ?? lastLog.odometer ?? 0) : Number(vehicle?.lastOdometer ?? 0);
+    const lastSoc = (userProfile?.baseSOC !== undefined && userProfile.baseSOC !== null)
+      ? Number(userProfile.baseSOC)
+      : (lastLog?.batteryPercent ?? vehicle?.lastBatteryPercent ?? 100);
+    const lastOdo = (userProfile?.currentODO !== undefined && userProfile.currentODO !== null)
+      ? Number(userProfile.currentODO)
+      : (lastLog ? Number(lastLog.odo ?? lastLog.odometer ?? 0) : Number(vehicle?.lastOdometer ?? 0));
 
     const currentODO = lastOdo;
     const lastMaintenanceKM = userProfile?.lastMaintenanceKM ?? 0;
@@ -580,22 +669,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 🧠 模組二：EV Smart Insights 智能儀表板 */}
-      <div className="space-y-4">
+      {/* 1. 緊湊型天氣/續牌提醒條（僅在觸發時顯示） */}
+      <div className="space-y-2.5">
         {smartInsights.showMaintenanceWarning && (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="p-4 rounded-2xl bg-cyber-green/10 border-2 border-cyber-green text-cyber-green flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[0_0_20px_rgba(204,255,0,0.2)]"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-cyber-green/10 border border-cyber-green text-cyber-green flex items-center justify-between gap-3 shadow-[0_0_15px_rgba(204,255,0,0.15)]"
           >
-            <div className="flex items-start gap-3">
-              <span className="text-lg">🛠️</span>
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold uppercase tracking-wider font-mono">保養里程碑提示 / MAINTENANCE REMINDER</h4>
-                <p className="text-xs font-semibold leading-relaxed">
-                  提示：{smartInsights.reminderReason}。當前已達 <span className="underline font-bold">{smartInsights.lastOdo.toLocaleString()} KM</span>，請預約回廠檢查胎壓、煞車皮與更換冷氣濾網。
-                </p>
-              </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">🛠️</span>
+              <span className="text-xs font-mono font-bold truncate">
+                {smartInsights.reminderReason} (當前: {smartInsights.lastOdo.toLocaleString()} KM)
+              </span>
             </div>
             <button 
               onClick={() => {
@@ -603,85 +689,80 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 setActualDate(format(new Date(), 'yyyy-MM-dd'));
                 setShowMaintenanceModal(true);
               }}
-              className="px-4 py-2 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs uppercase hover:bg-cyber-green/80 transition-all shadow-[0_0_15px_rgba(204,255,0,0.3)] shrink-0 self-end md:self-center"
+              className="px-3 py-1 rounded-full bg-cyber-green text-black font-mono font-bold text-xs uppercase hover:bg-cyber-green/80 transition-all shadow-sm shrink-0 cursor-pointer"
             >
-              🔧 紀錄已回廠 / RECORD COMPLETED
+              已回廠
             </button>
           </motion.div>
         )}
 
-        {/* 🚗 汽車行政到期自動提醒 / Annual Admin Reminders */}
-        {vehicleReminders.hasMissingDates && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            onClick={() => openReminderModal('both')}
-            className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-400 flex items-center justify-between gap-4 shadow-[0_0_20px_rgba(245,158,11,0.1)] cursor-pointer hover:bg-amber-500/15 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-lg">⚠️</span>
-              <p className="text-xs font-semibold leading-relaxed">
-                [ ⚠️ 未設定行車證/續保日期，點擊此處設定以啟動智能倒數 ]
-              </p>
-            </div>
-            <span className="text-xs font-mono font-bold text-amber-500 hover:underline">去設定 ➔</span>
-          </motion.div>
-        )}
-
+        {/* 汽車行政到期緊湊膠囊提醒條 (Pill Style, 高度 44px) */}
         {vehicleReminders.showLicReminder && vehicleReminders.licExpiryDate && (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500 text-amber-400 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="h-11 px-3.5 sm:px-4 rounded-full bg-amber-500/15 border border-amber-500/70 text-amber-300 flex items-center justify-between gap-3 shadow-[0_0_15px_rgba(245,158,11,0.2)]"
           >
-            <div className="flex items-start gap-3">
-              <span className="text-lg">📅</span>
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-amber-500">行車證續期提醒 / VEHICLE LICENSE EXPIRY</h4>
-                <p className="text-xs font-semibold leading-relaxed">
-                  {vehicleReminders.licDaysLeft < 0 
-                    ? `📅 行車證提醒：您的行車證已過期，請及時辦理續期申請！` 
-                    : `📅 行車證提醒：您的行車證將於 ${vehicleReminders.licDaysLeft} 天後到期，請及時辦理續期申請！`}
-                </p>
-              </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">⚠️</span>
+              <span className="text-xs font-mono font-bold truncate">
+                {vehicleReminders.licDaysLeft < 0 
+                  ? `行車證已過期！請及時辦理續期手續` 
+                  : `行車證將於 ${vehicleReminders.licDaysLeft} 天後到期`}
+              </span>
             </div>
             <button 
               onClick={() => openReminderModal('license')}
-              className="px-4 py-2 rounded-xl bg-amber-500 text-black font-mono font-bold text-xs uppercase hover:bg-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0 self-end md:self-center cursor-pointer"
+              className="px-3 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase transition-all shadow-[0_0_10px_rgba(245,158,11,0.3)] shrink-0 cursor-pointer"
             >
-              📝 我已續期
+              我已續期
             </button>
           </motion.div>
         )}
 
         {vehicleReminders.showInsReminder && vehicleReminders.insExpiryDate && (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500 text-amber-400 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="h-11 px-3.5 sm:px-4 rounded-full bg-amber-500/15 border border-amber-500/70 text-amber-300 flex items-center justify-between gap-3 shadow-[0_0_15px_rgba(245,158,11,0.2)]"
           >
-            <div className="flex items-start gap-3">
-              <span className="text-lg">📅</span>
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-amber-500">汽車續保提醒 / INSURANCE EXPIRY</h4>
-                <p className="text-xs font-semibold leading-relaxed">
-                  {vehicleReminders.insDaysLeft < 0 
-                    ? `📅 續保提醒：您的汽車保險已過期，請及時辦理續保申請！` 
-                    : `📅 續保提醒：您的汽車保險將於 ${vehicleReminders.insDaysLeft} 天後到期，請及時辦理續保申請！`}
-                </p>
-              </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">🛡️</span>
+              <span className="text-xs font-mono font-bold truncate">
+                {vehicleReminders.insDaysLeft < 0 
+                  ? `汽車保險已過期！請及時辦理續保` 
+                  : `汽車保險將於 ${vehicleReminders.insDaysLeft} 天後到期`}
+              </span>
             </div>
             <button 
               onClick={() => openReminderModal('insurance')}
-              className="px-4 py-2 rounded-xl bg-amber-500 text-black font-mono font-bold text-xs uppercase hover:bg-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0 self-end md:self-center cursor-pointer"
+              className="px-3 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-mono font-bold text-xs uppercase transition-all shadow-[0_0_10px_rgba(245,158,11,0.3)] shrink-0 cursor-pointer"
             >
-              📝 我已續期
+              我已續期
             </button>
           </motion.div>
         )}
 
+        {vehicleReminders.hasMissingDates && !vehicleReminders.showLicReminder && !vehicleReminders.showInsReminder && (
+          <motion.div 
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={() => openReminderModal('both')}
+            className="h-11 px-3.5 sm:px-4 rounded-full bg-amber-500/10 border border-amber-500/40 text-amber-400 flex items-center justify-between gap-3 shadow-sm cursor-pointer hover:bg-amber-500/15 transition-all"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">⚠️</span>
+              <span className="text-xs font-mono font-bold truncate">未設定行車證/續保日期，點擊啟動智能倒數</span>
+            </div>
+            <span className="text-xs font-mono font-bold text-amber-500 shrink-0">去設定 ➔</span>
+          </motion.div>
+        )}
+      </div>
+
+      {/* 2. EV 智能續航與能耗卡片 (EV Smart Insights & Efficiency) */}
+      <div className="space-y-4">
+        {/* 智能續航與用車提醒主卡 */}
         <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
-          {/* Cyber accents decoration */}
           <div className="absolute top-0 right-0 w-24 h-24 bg-cyber-green/5 blur-[40px] pointer-events-none" />
           
           <div className="flex justify-between items-start mb-3">
@@ -694,7 +775,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 onClick={() => setShowHistoryModal(true)}
                 className="text-xs font-mono font-bold text-cyber-green hover:text-cyber-green/80 transition-colors border border-cyber-green/30 bg-cyber-green/5 px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-[0_0_10px_rgba(204,255,0,0.1)] cursor-pointer"
               >
-                🛠️ 查閱保養日誌
+                🛠️ 保養日誌
               </button>
               <div className="h-7 w-7 rounded-lg bg-cyber-green/10 border border-cyber-green/25 flex items-center justify-center">
                 <span className="text-cyber-green text-sm select-none">🧠</span>
@@ -732,97 +813,87 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
-          {/* 📋 行政限期管理 / Admin Deadlines */}
-          <div className="mt-4 pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-3 bg-white/[0.01] -mx-5 -mb-5 p-5 rounded-b-2xl">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              <div className="space-y-0.5">
-                <span className="text-[9px] font-mono text-white/40 uppercase block">行車證到期日</span>
-                <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${!vehicleReminders.licExpiryDate ? 'bg-white/25' : (vehicleReminders.showLicReminder ? 'bg-amber-500 animate-pulse' : 'bg-cyber-green')}`} />
-                  {vehicleReminders.licExpiryDate ? format(vehicleReminders.licExpiryDate, 'yyyy-MM-dd') : '未設定'}
-                </span>
+          {/* 📋 行政限期管理：若上方已有到期警告，則隱藏下方的重複日期顯示 */}
+          {(!vehicleReminders.showLicReminder || !vehicleReminders.showInsReminder) && (
+            <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-3 bg-white/[0.01] -mx-5 -mb-5 px-5 py-3 rounded-b-2xl">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                {!vehicleReminders.showLicReminder && (
+                  <div className="space-y-0.5">
+                    <span className="text-[9px] font-mono text-white/40 uppercase block">行車證到期日</span>
+                    <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${!vehicleReminders.licExpiryDate ? 'bg-white/25' : 'bg-cyber-green'}`} />
+                      {vehicleReminders.licExpiryDate ? format(vehicleReminders.licExpiryDate, 'yyyy-MM-dd') : '未設定'}
+                    </span>
+                  </div>
+                )}
+                {!vehicleReminders.showInsReminder && (
+                  <div className={`space-y-0.5 ${!vehicleReminders.showLicReminder ? 'border-l border-white/5 pl-6' : ''}`}>
+                    <span className="text-[9px] font-mono text-white/40 uppercase block">汽車保險到期日</span>
+                    <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${!vehicleReminders.insExpiryDate ? 'bg-white/25' : 'bg-cyber-green'}`} />
+                      {vehicleReminders.insExpiryDate ? format(vehicleReminders.insExpiryDate, 'yyyy-MM-dd') : '未設定'}
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="space-y-0.5 border-l border-white/5 pl-6">
-                <span className="text-[9px] font-mono text-white/40 uppercase block">汽車保險到期日</span>
-                <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${!vehicleReminders.insExpiryDate ? 'bg-white/25' : (vehicleReminders.showInsReminder ? 'bg-amber-500 animate-pulse' : 'bg-cyber-green')}`} />
-                  {vehicleReminders.insExpiryDate ? format(vehicleReminders.insExpiryDate, 'yyyy-MM-dd') : '未設定'}
-                </span>
-              </div>
+              <button
+                onClick={() => openReminderModal('both')}
+                className="text-xs font-mono font-bold text-amber-500 hover:text-amber-400 transition-colors border border-amber-500/30 bg-amber-500/5 px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer hover:border-amber-500/65"
+              >
+                ✏️ 變更期限
+              </button>
             </div>
-            <button
-              onClick={() => openReminderModal('both')}
-              className="text-xs font-mono font-bold text-amber-500 hover:text-amber-400 transition-colors border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer hover:border-amber-500/65"
-            >
-              ✏️ 變更/設定期限
-            </button>
-          </div>
+          )}
         </div>
-      </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-4">
-        <CyberCard title="對比油車節省" icon={<DollarSign size={18} />} className="border-cyber-green/20">
-          <div className="text-3xl font-mono font-bold text-cyber-green flex items-baseline gap-1">
-            <span className="text-sm opacity-50">$</span>
-            {stats.totalSavings}
-          </div>
-          <div className="text-[10px] uppercase opacity-40 mt-1 tracking-tighter">節省 (HKD)</div>
-        </CyberCard>
-        
-        <CyberCard 
-          title="平均能耗" 
-          icon={<Zap size={18} />}
-          className="min-h-[140px]"
-        >
-          <div className="space-y-1">
-            <div className="text-[10px] uppercase opacity-40 font-mono tracking-tight">
-              每 100km 消耗電量
+        {/* 對比油車節省 & 平均能耗 雙指標卡 */}
+        <div className="grid grid-cols-2 gap-4">
+          <CyberCard title="對比油車節省" icon={<DollarSign size={18} />} className="border-cyber-green/20">
+            <div className="text-3xl font-mono font-bold text-cyber-green flex items-baseline gap-1">
+              <span className="text-sm opacity-50">$</span>
+              {stats.totalSavings}
             </div>
-            <div className="text-3xl font-mono font-bold text-white flex items-baseline gap-1">
-              {stats.avgEfficiency}
-              <span className="text-[12px] opacity-50 uppercase font-sans tracking-widest ml-1">kWh / 100km</span>
-            </div>
-          </div>
+            <div className="text-[10px] uppercase opacity-40 mt-1 tracking-tighter">節省 (HKD)</div>
+          </CyberCard>
           
-          <div className="mt-4 flex items-center gap-2">
-            {stats.trend === 'up' ? (
-              <div className="flex items-center text-red-500 gap-1 bg-red-500/10 px-2 py-0.5 rounded-full">
-                <ArrowUpRight size={12} />
-                <span className="text-[9px] uppercase font-bold tracking-tighter">近期能耗上升</span>
+          <CyberCard 
+            title="平均能耗" 
+            icon={<Zap size={18} />}
+            className="min-h-[140px]"
+          >
+            <div className="space-y-1">
+              <div className="text-[10px] uppercase opacity-40 font-mono tracking-tight">
+                每 100km 消耗電量
               </div>
-            ) : stats.trend === 'down' ? (
-              <div className="flex items-center text-cyber-green gap-1 bg-cyber-green/10 px-2 py-0.5 rounded-full">
-                <ArrowDownRight size={12} />
-                <span className="text-[9px] uppercase font-bold tracking-tighter">近期能耗下降</span>
+              <div className="text-3xl font-mono font-bold text-white flex items-baseline gap-1">
+                {stats.avgEfficiency}
+                <span className="text-[12px] opacity-50 uppercase font-sans tracking-widest ml-1">kWh / 100km</span>
               </div>
-            ) : (
-              <div className="flex items-center text-white/30 gap-1 bg-white/5 px-2 py-0.5 rounded-full">
-                <Minus size={12} />
-                <span className="text-[9px] uppercase font-bold tracking-tighter">能耗表現穩定</span>
-              </div>
-            )}
-          </div>
-        </CyberCard>
+            </div>
+            
+            <div className="mt-4 flex items-center gap-2">
+              {stats.trend === 'up' ? (
+                <div className="flex items-center text-red-500 gap-1 bg-red-500/10 px-2 py-0.5 rounded-full">
+                  <ArrowUpRight size={12} />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter">近期能耗上升</span>
+                </div>
+              ) : stats.trend === 'down' ? (
+                <div className="flex items-center text-cyber-green gap-1 bg-cyber-green/10 px-2 py-0.5 rounded-full">
+                  <ArrowDownRight size={12} />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter">近期能耗下降</span>
+                </div>
+              ) : (
+                <div className="flex items-center text-white/30 gap-1 bg-white/5 px-2 py-0.5 rounded-full">
+                  <Minus size={12} />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter">能耗表現穩定</span>
+                </div>
+              )}
+            </div>
+          </CyberCard>
+        </div>
       </div>
 
-      {/* Monthly Summary Section */}
-      <CyberCard title={`${stats.currentMonthLabel} 數據總計`} icon={<TrendingDown size={18} />}>
-        <div className="grid grid-cols-2 gap-4 text-center">
-          <div className="p-3 rounded bg-white/[0.03] border border-white/5">
-            <div className="text-[9px] uppercase opacity-40 mb-1 font-mono tracking-tight">總里程</div>
-            <div className="text-xl font-mono font-bold text-white leading-none">{stats.monthlyDistance}</div>
-            <div className="text-[8px] opacity-30 mt-1 uppercase">KM</div>
-          </div>
-          <div className="p-3 rounded bg-white/[0.03] border border-white/5">
-            <div className="text-[9px] uppercase opacity-40 mb-1 font-mono tracking-tight">總支出</div>
-            <div className="text-xl font-mono font-bold text-white leading-none">{stats.monthlyCost}</div>
-            <div className="text-[8px] opacity-30 mt-1 uppercase font-mono">HKD</div>
-          </div>
-        </div>
-      </CyberCard>
-      
-      {/* Activity, Poll, Group Buy & Perks Shortcuts */}
+      {/* 3. 4 大社群金剛快捷鍵（活動、投票、團購、福利） */}
       <div className="grid grid-cols-4 gap-2 md:gap-4">
         <button 
           onClick={() => {
@@ -905,209 +976,157 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      {/* Chart Section */}
-      <CyberCard title="電量趨勢" className="min-h-[280px]" action={<MonthDropdown selectedMonth={selectedMonth} onSelectMonth={onSelectMonth} />}>
-        {stats.chartData.length > 0 ? (
-          <div className="h-48 w-full mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.chartData} margin={{ top: 10, right: -10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="#ffffff20" 
-                  fontSize={9} 
-                  tickLine={false} 
-                  axisLine={false}
-                  padding={{ left: 10, right: 10 }}
-                />
-                <YAxis 
-                  yAxisId="left"
-                  domain={[0, 100]} 
-                  stroke="#ffffff20" 
-                  fontSize={9} 
-                  tickLine={false} 
-                  axisLine={false}
-                  width={40}
-                  tickFormatter={(val) => `${val}%`}
-                />
-                <YAxis 
-                  yAxisId="right"
-                  orientation="right"
-                  hide
-                />
-                <Tooltip 
-                  contentStyle={{ background: '#121212', border: '1px solid #ffffff10', borderRadius: '8px', fontSize: '10px' }}
-                  itemStyle={{ fontSize: '10px' }}
-                  labelStyle={{ color: '#ffffff40', marginBottom: '4px' }}
-                  labelFormatter={(value, payload) => {
-                    if (payload && payload[0]) {
-                      return `${value} ${payload[0].payload.time}`;
-                    }
-                    return value;
-                  }}
-                  formatter={(value: any, name: string) => {
-                    if (name === "電量") return [`${value}%`, name];
-                    if (name === "里程") return [`${value} KM`, name];
-                    return [value, name];
-                  }}
-                />
-                <Line 
-                  yAxisId="left"
-                  type="monotone" 
-                  dataKey="battery" 
-                  stroke="#CCFF00" 
-                  strokeWidth={2}
-                  dot={{ fill: '#CCFF00', r: 3, strokeWidth: 0, fillOpacity: 0.5 }}
-                  activeDot={{ r: 5, stroke: '#1a1a1a', strokeWidth: 2, fill: '#CCFF00' }}
-                  name="電量"
-                  animationDuration={800}
-                />
-                <Line 
-                  yAxisId="right"
-                  type="monotone" 
-                  dataKey="distance" 
-                  stroke="#ffffff20" 
-                  strokeWidth={1}
-                  strokeDasharray="4 4"
-                  dot={false}
-                  name="里程"
-                  animationDuration={800}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center text-[10px] uppercase tracking-widest opacity-20">
-            需要更多數據
-          </div>
-        )}
-      </CyberCard>
-
-      {/* Recent Logs List */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center px-1">
-          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">最近紀錄</h3>
-          <button 
-            onClick={onViewAll}
-            className="text-[10px] uppercase tracking-widest text-cyber-green/50 hover:text-cyber-green transition-colors"
+      {/* 4. 停車/用車快捷操作按鈕 (Parking/Charging & Quick Record) */}
+      <div className="space-y-3">
+        {/* 🅿️ 實時停車/充電計時器 進行中快捷卡片 */}
+        {getStoredTimer() && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={onOpenTimer}
+            className="p-3.5 rounded-2xl bg-cyber-green/15 border-2 border-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.2)] flex items-center justify-between gap-3 cursor-pointer hover:bg-cyber-green/20 transition-all select-none"
           >
-            查看全部
-          </button>
-        </div>
-        
-        {groupedLogs.length === 0 ? (
-          <div className="glass-card p-10 text-center text-[10px] uppercase tracking-widest opacity-20">
-            尚無紀錄
-          </div>
-        ) : (
-          groupedLogs.slice(0, 5).map((group) => {
-            const hasMultiple = group.records.length > 1;
-            const isExpanded = !!expandedDates[group.date];
-            const hasCharge = group.totalChargeEnergy > 0;
-            const dominantRecord = group.records[group.records.length - 1];
-
-            return (
-              <div 
-                key={group.date}
-                className="glass-card overflow-hidden bg-white/[0.01] border border-white/5 rounded-xl transition-all"
-              >
-                {/* Daily Summary Card */}
-                <div 
-                  onClick={(e) => {
-                    if (hasMultiple) {
-                      toggleDate(group.date, e);
-                    } else {
-                      onLogClick(dominantRecord);
-                    }
-                  }}
-                  className="w-full text-left p-4 flex justify-between items-center bg-white/[0.01] hover:bg-white/[0.04] transition-all cursor-pointer relative overflow-hidden group select-none"
-                >
-                  {hasCharge && (
-                    <div className="absolute top-0 left-0 bottom-0 w-1 bg-cyber-green/50" />
-                  )}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-sm font-mono group-hover:text-cyber-green transition-colors font-bold">
-                        {group.date}
-                      </div>
-                      {hasCharge && (
-                        <span className="text-[8px] bg-cyber-green font-mono font-bold text-black px-1 rounded">⚡️ 補能</span>
-                      )}
-                      {hasMultiple && (
-                        <span className="text-[8px] bg-white/10 text-white/60 font-mono px-1 rounded">
-                          {group.records.length} 段用車 {isExpanded ? '▼ 摺疊' : '▶ 展開'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5 font-mono flex items-center gap-1">
-                      <span>最後 {dominantRecord.batteryPercent}% 電量</span>
-                      {group.avgEfficiency !== "--" && (
-                        <>
-                          <span className="opacity-30">•</span>
-                          <span className="text-cyber-green/70 font-semibold">{group.avgEfficiency} kWh/100km</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-mono font-bold text-cyber-green leading-tight">
-                      {group.maxOdo.toLocaleString()} <span className="text-[10px] opacity-40 font-normal">KM</span>
-                    </div>
-                    <div className="text-[9px] text-white/30 font-mono flex justify-end gap-1.5 mt-0.5">
-                      <span className="text-white/60">+{group.totalDistance}KM</span>
-                      {group.totalDriveEnergy > 0 && <span className="text-red-400">-{group.totalDriveEnergy}%⚡️</span>}
-                      {group.totalChargeEnergy > 0 && <span className="text-cyber-green">+{group.totalChargeEnergy}%🔌</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Sub-Segments Expandable List */}
-                {hasMultiple && isExpanded && (
-                  <div className="border-t border-white/5 bg-white/[0.015] p-2 space-y-1 animate-in slide-in-from-top-2 duration-150">
-                    <div className="text-[9px] uppercase tracking-widest text-white/30 px-2 py-1 font-mono">
-                      分段時空明細 (按記錄先後排序)：
-                    </div>
-                    {group.records.map((rec, subIdx) => {
-                      const isRecCharge = rec.type === "charge" || (!rec.type && rec.isCharging);
-                      return (
-                        <button
-                          key={rec.id}
-                          onClick={() => onLogClick(rec)}
-                          className="w-full text-left p-2.5 rounded hover:bg-white/5 transition-all flex justify-between items-center bg-white/[0.01]"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono text-white/40">#{subIdx + 1}</span>
-                            <span className="text-[11px] font-mono text-white/80">
-                              {rec.timestamp ? format(rec.timestamp.toDate(), 'HH:mm') : '--:--'}
-                            </span>
-                            {isRecCharge ? (
-                              <span className="text-[7px] text-cyber-green border border-cyber-green/40 px-1 rounded font-mono font-bold">CHARGE</span>
-                            ) : (
-                              <span className="text-[7px] text-white/40 border border-white/10 px-1 rounded font-mono">DRIVE</span>
-                            )}
-                            {rec.location && (
-                              <span className="text-[9px] text-white/20 truncate max-w-[100px] font-mono">
-                                ({rec.location})
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-right flex items-center gap-4">
-                            <div className="text-xs font-mono text-cyber-green">
-                              {Number(rec.odo ?? rec.odometer ?? 0).toLocaleString()} <span className="text-[8px] opacity-40 font-mono">KM</span>
-                            </div>
-                            <div className="text-[10px] font-mono text-white/40 min-w-[70px] text-right">
-                              {rec.batteryPercent}% ({isRecCharge ? `+${rec.segmentDiff ?? rec.batteryDiff}%` : `-${rec.segmentDiff ?? rec.batteryDiff}%`})
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-cyber-green text-black flex items-center justify-center font-bold text-base shrink-0">
+                {getStoredTimer()?.type === 'parking' ? '🅿️' : '⚡'}
               </div>
-            );
-          })
+              <div>
+                <div className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyber-green animate-ping" />
+                  <span>{getStoredTimer()?.type === 'parking' ? '停車計時進行中' : '充電計時進行中'}</span>
+                  {getStoredTimer()?.location && (
+                    <span className="text-cyber-green">· {getStoredTimer()?.location}</span>
+                  )}
+                </div>
+                <p className="text-[10px] font-mono text-white/60 mt-0.5">
+                  點擊查看剩餘時限或結束結算 ➔
+                </p>
+              </div>
+            </div>
+            <button 
+              type="button"
+              className="px-3 py-1.5 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs uppercase shadow-[0_0_10px_rgba(204,255,0,0.3)] shrink-0"
+            >
+              結算
+            </button>
+          </motion.div>
         )}
+
+        {/* 快捷操作按鈕網格 */}
+        <div className="grid grid-cols-2 gap-3">
+          {onOpenTimer && (
+            <button
+              type="button"
+              onClick={onOpenTimer}
+              className="p-3 rounded-2xl bg-white/[0.02] border border-cyber-green/30 hover:border-cyber-green hover:bg-cyber-green/10 transition-all flex items-center justify-between gap-2 group cursor-pointer shadow-[0_0_15px_rgba(204,255,0,0.05)]"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-cyber-green/15 border border-cyber-green/30 flex items-center justify-center text-cyber-green group-hover:scale-110 transition-transform shrink-0">
+                  <Clock size={16} className="cyber-text-glow" />
+                </div>
+                <div className="text-left min-w-0">
+                  <span className="text-xs font-mono font-bold text-white group-hover:text-cyber-green block truncate">
+                    🅿️ 停車/充電計時
+                  </span>
+                  <span className="text-[9px] font-mono text-white/40 block truncate">
+                    免泊倒數 · 結束結算
+                  </span>
+                </div>
+              </div>
+              <span className="text-cyber-green text-xs font-mono font-bold shrink-0">啟動 ➔</span>
+            </button>
+          )}
+
+          {onOpenNewRecord && (
+            <button
+              type="button"
+              onClick={onOpenNewRecord}
+              className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-cyber-green hover:bg-cyber-green/10 transition-all flex items-center justify-between gap-2 group cursor-pointer shadow-sm"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white group-hover:text-cyber-green group-hover:scale-110 transition-transform shrink-0">
+                  <PlusCircle size={16} />
+                </div>
+                <div className="text-left min-w-0">
+                  <span className="text-xs font-mono font-bold text-white group-hover:text-cyber-green block truncate">
+                    ⚡ 記錄用車開支
+                  </span>
+                  <span className="text-[9px] font-mono text-white/40 block truncate">
+                    充電 · 泊車 · 保養
+                  </span>
+                </div>
+              </div>
+              <span className="text-white/60 group-hover:text-cyber-green text-xs font-mono font-bold shrink-0">記帳 ➔</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 5. 精簡版當月開支小卡片 (Compact Expense Card) */}
+      <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-cyber-green/30 transition-all relative overflow-hidden shadow-sm">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-cyber-green/5 blur-3xl pointer-events-none" />
+
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/50 font-bold flex items-center gap-1.5">
+              <DollarSign size={13} className="text-cyber-green" />
+              <span>{stats.currentMonthLabel} 開支概覽</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <MonthDropdown selectedMonth={selectedMonth} onSelectMonth={onSelectMonth} />
+            <button 
+              onClick={onViewAll}
+              className="text-[11px] font-mono text-cyber-green/80 hover:text-cyber-green flex items-center gap-0.5 transition-colors cursor-pointer ml-1"
+              title="查看記錄頁面月度流水"
+            >
+              <span>明細</span>
+              <ArrowUpRight size={13} />
+            </button>
+          </div>
+        </div>
+
+        {/* 3 個核心數值橫向佈局: 總支出 │ 充電 │ 電價 */}
+        <div 
+          onClick={onViewAll}
+          className="grid grid-cols-3 divide-x divide-white/10 p-3 rounded-xl bg-black/40 border border-white/5 cursor-pointer hover:bg-black/60 transition-all"
+        >
+          {/* 總支出 */}
+          <div className="px-2 text-center sm:text-left">
+            <span className="text-[9px] sm:text-[10px] font-mono text-white/40 uppercase block tracking-wider">
+              總支出
+            </span>
+            <div className="text-sm sm:text-base font-mono font-black text-white mt-0.5 truncate">
+              <span className="text-[10px] sm:text-xs text-cyber-green mr-0.5">HK$</span>
+              <span>{expenseStats.totalExpenditure.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
+            </div>
+          </div>
+
+          {/* 充電 */}
+          <div className="px-2 text-center sm:text-left">
+            <span className="text-[9px] sm:text-[10px] font-mono text-white/40 uppercase block tracking-wider">
+              充電
+            </span>
+            <div className="text-sm sm:text-base font-mono font-black text-white mt-0.5 truncate">
+              <span className="text-[10px] sm:text-xs text-cyber-green mr-0.5">HK$</span>
+              <span>{expenseStats.chargingCost.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
+            </div>
+          </div>
+
+          {/* 電價 */}
+          <div className="px-2 text-center sm:text-left">
+            <span className="text-[9px] sm:text-[10px] font-mono text-cyber-green uppercase block tracking-wider">
+              電價
+            </span>
+            <div className="text-sm sm:text-base font-mono font-black text-cyber-green cyber-text-glow mt-0.5 truncate">
+              {expenseStats.avgPricePerKwh !== null ? (
+                <span>HK$ {expenseStats.avgPricePerKwh} <span className="text-[9px] sm:text-[10px] font-normal text-white/40">/ kWh</span></span>
+              ) : (
+                <span className="text-white/40 text-xs sm:text-sm">--</span>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {showMaintenanceModal && (

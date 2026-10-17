@@ -39,16 +39,33 @@ export const getHKOIconUrl = (code?: string, subtype?: string, name?: string): s
     return `${hkoBaseUrl}tc1.gif`;
   }
 
-  // 3. 雷暴及其他天氣警告
+  // 3. 火災危險警告精準判定（黃色火災 firey.gif vs 紅色火災 firer.gif）
+  if (upperCode === 'WFIRE' || upperCode === 'WFIREW' || searchString.includes('火災')) {
+    // 1️⃣ 黃色火災危險警告
+    if (sub.includes('Y') || sub === 'WFIREY' || searchString.includes('黃色') || searchString.includes('黃火')) {
+      return `${hkoBaseUrl}firey.gif`;
+    }
+
+    // 2️⃣ 紅色火災危險警告
+    if (sub.includes('R') || sub === 'WFIRER' || searchString.includes('紅色') || searchString.includes('紅火')) {
+      return `${hkoBaseUrl}firer.gif`;
+    }
+
+    // 預設若為黃色警告文字則回傳 firey
+    return searchString.includes('黃') 
+      ? `${hkoBaseUrl}firey.gif` 
+      : `${hkoBaseUrl}firer.gif`;
+  }
+
+  // 4. 雷暴及其他天氣警告
   if (upperCode === 'WTS') return `${hkoBaseUrl}ts.gif`; // 雷暴
   if (upperCode === 'WMSGD') return `${hkoBaseUrl}mon.gif`; // 強烈季候風
   if (upperCode === 'WL') return `${hkoBaseUrl}landslip.gif`; // 山泥傾瀉
-  if (upperCode === 'WFIREW' || upperCode === 'WFIRE') return `${hkoBaseUrl}firer.gif`; // 火災警告
   if (upperCode === 'WFROST') return `${hkoBaseUrl}frost.gif`; // 霜凍
   if (upperCode === 'WHOT') return `${hkoBaseUrl}vhot.gif`; // 酷熱
   if (upperCode === 'WCOLD') return `${hkoBaseUrl}cold.gif`; // 寒冷
 
-  // 4. Fallback based on name search
+  // 5. Fallback based on name search
   if (searchString.includes('八號東北') || searchString.includes('8號東北')) return `${hkoBaseUrl}tc8ne.gif`;
   if (searchString.includes('八號東南') || searchString.includes('8號東南')) return `${hkoBaseUrl}tc8se.gif`;
   if (searchString.includes('八號西北') || searchString.includes('8號西北')) return `${hkoBaseUrl}tc8nw.gif`;
@@ -65,10 +82,13 @@ export const getHKOIconUrl = (code?: string, subtype?: string, name?: string): s
   if (searchString.includes('黑色暴雨') || searchString.includes('黑雨')) return `${baseUrl}rainb.gif`;
   if (searchString.includes('暴雨')) return `${baseUrl}rainy.gif`;
 
+  if (searchString.includes('黃色火災') || searchString.includes('黃火')) return `${hkoBaseUrl}firey.gif`;
+  if (searchString.includes('紅色火災') || searchString.includes('紅火')) return `${hkoBaseUrl}firer.gif`;
+  if (searchString.includes('火災')) return searchString.includes('黃') ? `${hkoBaseUrl}firey.gif` : `${hkoBaseUrl}firer.gif`;
+
   if (searchString.includes('雷暴')) return `${hkoBaseUrl}ts.gif`;
   if (searchString.includes('季候風')) return `${hkoBaseUrl}mon.gif`;
   if (searchString.includes('山泥傾瀉')) return `${hkoBaseUrl}landslip.gif`;
-  if (searchString.includes('火災')) return `${hkoBaseUrl}firer.gif`;
   if (searchString.includes('霜凍')) return `${hkoBaseUrl}frost.gif`;
   if (searchString.includes('酷熱')) return `${hkoBaseUrl}vhot.gif`;
   if (searchString.includes('寒冷')) return `${hkoBaseUrl}cold.gif`;
@@ -94,10 +114,14 @@ export const handleHKOIconError = (
     target.src = 'https://www.weather.gov.hk/tc/wxinfo/dailywx/images/rainy.gif';
   } else if (upperCode === 'TC' || searchStr.includes('風球') || searchStr.includes('信號') || searchStr.includes('熱帶氣旋')) {
     target.src = 'https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc1.gif';
+  } else if (upperCode === 'WFIRE' || upperCode === 'WFIREW' || searchStr.includes('火災')) {
+    const isYellowFire = searchStr.includes('黃色') || searchStr.includes('黃火');
+    target.src = isYellowFire 
+      ? 'https://www.hko.gov.hk/tc/wxinfo/dailywx/images/firey.gif'
+      : 'https://www.hko.gov.hk/tc/wxinfo/dailywx/images/firer.gif';
   } else if (upperCode === 'WTS' || searchStr.includes('雷暴')) {
     target.src = 'https://www.hko.gov.hk/tc/wxinfo/dailywx/images/ts.gif';
   } else {
     target.src = 'https://www.hko.gov.hk/tc/wxinfo/dailywx/images/ts.gif';
   }
 };
-

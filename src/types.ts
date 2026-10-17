@@ -38,6 +38,28 @@ export interface LogEntry {
   odoDiff?: number;
 }
 
+export type RecordType = 'driving' | 'charging' | 'maintenance' | 'parking' | 'accessory' | 'other';
+
+export interface RecordItem {
+  id: string;
+  userId: string;
+  vehicleId?: string;
+  plateNumber?: string;
+  type: RecordType;
+  amountHKD: number;
+  kwhAdded?: number;
+  location?: string;
+  recordDate: Timestamp;
+  notes?: string;
+  createdAt?: Timestamp;
+  odometer?: number;
+  startSoc?: number;
+  endSoc?: number;
+  odoKM?: number;
+  currentSOC?: number;
+  consumption?: number;
+}
+
 export interface VehicleStats {
   totalSavings: number;
   efficiency: number; // kWh/100km
@@ -65,6 +87,8 @@ export interface UserProfile {
   lastMaintenanceDate?: Timestamp | null;
   licenseExpiryDate?: Timestamp | null;
   insuranceExpiryDate?: Timestamp | null;
+  currentODO?: number;
+  baseSOC?: number;
 }
 
 export interface Activity {
