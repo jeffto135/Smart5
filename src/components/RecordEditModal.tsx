@@ -22,6 +22,9 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
   const [kwhAdded, setKwhAdded] = useState<string>(record.kwhAdded !== undefined ? String(record.kwhAdded) : '0');
   const [location, setLocation] = useState<string>(record.location || '');
   const [notes, setNotes] = useState<string>(record.notes || '');
+  const [odoKM, setOdoKM] = useState<string>(record.odoKM !== undefined ? String(record.odoKM) : (record.odometer !== undefined ? String(record.odometer) : ''));
+  const [currentSOC, setCurrentSOC] = useState<string>(record.currentSOC !== undefined ? String(record.currentSOC) : '');
+  const [consumption, setConsumption] = useState<string>(record.consumption !== undefined ? String(record.consumption) : '');
   
   const recordDateObj = record.recordDate?.toDate ? record.recordDate.toDate() : new Date(record.recordDate as any);
   const [dateStr, setDateStr] = useState<string>(format(recordDateObj, 'yyyy-MM-dd'));
@@ -31,14 +34,25 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onSave(record.id, {
+      const updateData: Partial<RecordItem> = {
         type,
         amountHKD: Number(amountHKD) || 0,
         kwhAdded: type === 'charging' ? (Number(kwhAdded) || 0) : 0,
         location: location.trim(),
         notes: notes.trim(),
         recordDate: new Date(dateStr) as any
-      });
+      };
+
+      if (type === 'driving') {
+        if (odoKM !== '') {
+          updateData.odoKM = Number(odoKM);
+          updateData.odometer = Number(odoKM);
+        }
+        if (currentSOC !== '') updateData.currentSOC = Number(currentSOC);
+        if (consumption !== '') updateData.consumption = Number(consumption);
+      }
+
+      await onSave(record.id, updateData);
       onClose();
     } catch (err: any) {
       alert('儲存失敗：' + (err.message || '未知錯誤'));
@@ -183,6 +197,52 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
                   onChange={(e) => setDateStr(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 font-mono text-white focus:outline-none focus:border-cyber-green text-sm"
                   required
+                />
+              </div>
+            </div>
+          )}
+
+          {/* If driving, show ODO, SOC, and Consumption fields */}
+          {type === 'driving' && (
+            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-cyber-green/30 space-y-3">
+              <span className="text-[10px] font-mono uppercase text-cyber-green font-bold block">
+                🚗 日常行車數據 (DRIVING DATA)
+              </span>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-white/70">總里程 (ODO KM)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={odoKM}
+                    onChange={(e) => setOdoKM(e.target.value)}
+                    placeholder="例: 12500"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 font-mono text-white focus:outline-none focus:border-cyber-green text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-white/70">電量 (SOC %)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={currentSOC}
+                    onChange={(e) => setCurrentSOC(e.target.value)}
+                    placeholder="例: 76"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 font-mono text-white focus:outline-none focus:border-cyber-green text-sm"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono uppercase text-white/70">平均能耗 (kWh/100km，選填)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={consumption}
+                  onChange={(e) => setConsumption(e.target.value)}
+                  placeholder="例: 18.5"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 font-mono text-white focus:outline-none focus:border-cyber-green text-sm"
                 />
               </div>
             </div>

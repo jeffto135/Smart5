@@ -58,6 +58,9 @@ export interface RecordItem {
   odoKM?: number;
   currentSOC?: number;
   consumption?: number;
+  tripKM?: number;
+  deltaSOC?: number;
+  calculatedConsumption?: string;
 }
 
 export interface VehicleStats {

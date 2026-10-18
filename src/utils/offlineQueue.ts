@@ -175,6 +175,21 @@ export const syncOfflineQueue = async (
       if (record.consumption !== undefined && record.consumption !== null && !isNaN(Number(record.consumption))) {
         docData.consumption = Number(record.consumption);
       }
+      if (record.tripKM !== undefined && record.tripKM !== null && !isNaN(Number(record.tripKM))) {
+        docData.tripKM = Number(record.tripKM);
+      }
+      if (record.deltaSOC !== undefined && record.deltaSOC !== null && !isNaN(Number(record.deltaSOC))) {
+        docData.deltaSOC = Number(record.deltaSOC);
+      }
+      if (record.calculatedConsumption) {
+        docData.calculatedConsumption = String(record.calculatedConsumption);
+      }
+      if (record.startSoc !== undefined) {
+        docData.startSoc = Number(record.startSoc);
+      }
+      if (record.startOdo !== undefined) {
+        docData.startOdo = Number(record.startOdo);
+      }
       if (record.cost !== undefined && !isNaN(Number(record.cost))) {
         docData.cost = Number(record.cost);
       }

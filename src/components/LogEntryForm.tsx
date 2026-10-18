@@ -298,8 +298,26 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
       if (selectedType === 'driving') {
         payload.odoKM = parsedOdo;
         payload.currentSOC = parsedSoc;
+        payload.startSoc = previousSOC;
+        payload.startOdo = previousODO;
+
+        if (previousODO > 0 && parsedOdo > previousODO) {
+          payload.tripKM = parsedOdo - previousODO;
+        }
+        if (previousSOC > 0) {
+          payload.deltaSOC = parsedSoc - previousSOC;
+        }
+
         if (consumption !== '' && !isNaN(Number(consumption))) {
           payload.consumption = Number(consumption);
+        } else if (payload.tripKM && payload.tripKM > 0 && payload.deltaSOC && payload.deltaSOC < 0) {
+          const batteryCap = vehicle?.batteryCapacity || 100;
+          const drop = Math.abs(payload.deltaSOC);
+          const kwhUsed = (drop / 100) * batteryCap;
+          const kwhPer100Km = (kwhUsed / payload.tripKM) * 100;
+          if (kwhPer100Km > 0 && kwhPer100Km < 80) {
+            payload.calculatedConsumption = kwhPer100Km.toFixed(1);
+          }
         }
       }
 

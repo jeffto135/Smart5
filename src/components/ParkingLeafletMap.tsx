@@ -1,24 +1,16 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
-import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
   MapPin, 
   Youtube, 
   Navigation, 
-  Info, 
-  X, 
   Zap, 
-  AlertTriangle, 
   Star, 
-  MessageSquare, 
-  Send,
-  ChevronDown,
-  ChevronUp
+  Send
 } from 'lucide-react';
 import { ParkingLot } from '../types';
-import { CyberCard } from './ui/CyberCard';
 import { auth } from '../lib/firebase';
 
 interface ParkingLeafletMapProps {
@@ -58,7 +50,7 @@ const createCustomIcon = (color: string, isSelected: boolean, hasCharging?: bool
       position: absolute;
       top: -8px;
       right: -8px;
-      background: #CCFF00;
+      background: #d4ff00;
       color: black;
       border-radius: 50%;
       width: 18px;
@@ -68,10 +60,9 @@ const createCustomIcon = (color: string, isSelected: boolean, hasCharging?: bool
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 10px #CCFF00;
+      box-shadow: 0 0 10px #d4ff00;
       border: 1.5px solid #000;
       z-index: 999;
-      animation: pulse 2s infinite;
     ">⚡</div>
   ` : '';
 
@@ -88,7 +79,7 @@ const createCustomIcon = (color: string, isSelected: boolean, hasCharging?: bool
         align-items: center;
         justify-content: center;
         box-shadow: 0 0 ${isSelected ? '25px' : '6px'} ${color};
-        border: 2px solid rgba(255,255,255,0.5);
+        border: 2px solid rgba(255,255,255,0.7);
         position: relative;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       ">
@@ -122,14 +113,25 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | '輕易' | '中等' | '地獄' | '不可能的任務'>('all');
   const [onlyChargingFilter, setOnlyChargingFilter] = useState(false);
   
-  const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
+  // 統一選中狀態：單一 source of truth，保證地圖 Marker 與底部卡片 100% 同步
+  const [selectedParking, setSelectedParking] = useState<ParkingLot | null>(null);
   const [mapCenter, setMapCenter] = useState<[number, number]>(HK_CENTER);
   const [mapZoom, setMapZoom] = useState(11);
   const [flyTrigger, setFlyTrigger] = useState(0);
   const [mapTileStyle, setMapTileStyle] = useState<'osm_dark' | 'carto_voyager' | 'carto_dark'>('osm_dark');
+  const [showExtraDetails, setShowExtraDetails] = useState(false);
   
   const markerRefs = useRef<{ [key: string]: L.Marker | null }>({});
+  const detailCardRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+  // 保持 selectedParking 資料與最新 props 同步
+  useEffect(() => {
+    if (selectedParking) {
+      const updated = parkingLots.find(p => p.id === selectedParking.id);
+      if (updated) setSelectedParking(updated);
+    }
+  }, [parkingLots]);
 
   // 🧭 一鍵導航函式（支援 iOS/macOS 喚起 Apple Maps，Android/PC 喚起 Google Maps）
   const openNavigation = (lat: number, lng: number, name?: string) => {
@@ -141,35 +143,36 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
     window.open(url, '_blank');
   };
 
-  // 螢幕大小監測以判定是否為手機版
-  const isMobileScreen = typeof window !== 'undefined' && window.innerWidth < 640;
+  // 點擊地圖 Marker 或下方列表項目時，統一同步更新狀態與對焦
+  const handleLotClick = (lot: ParkingLot) => {
+    setSelectedParking(lot);
+    setMapCenter([lot.lat, lot.lng]);
+    setMapZoom(16);
+    setFlyTrigger(prev => prev + 1);
 
-  // 當車友在桌面端選取停車場時，對應的 Marker 自動開啟 Popup 視窗；手機端維持平滑置中並滾動下方卡片
-  useEffect(() => {
-    if (selectedLotId && markerRefs.current[selectedLotId]) {
-      const marker = markerRefs.current[selectedLotId];
-      if (marker && !isMobileScreen) {
-        const timer = setTimeout(() => {
-          marker.openPopup();
-        }, 350);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [selectedLotId, flyTrigger, isMobileScreen]);
+    // 重置回報表單狀態
+    setShowFeedbackForm(false);
+    setShowExtraDetails(false);
+    setFeedbackError('');
+    setFeedbackSuccess('');
+    setFeedbackKw('');
+    setFeedbackRating(5);
+    setFeedbackNote('');
+    setSelectedTestedGun('');
+  };
 
-  // 下方停車場列表自動平滑滾動（scrollIntoView）並保持置中顯示
+  // 當選中停車場時，自動平滑滾動至底部詳情卡片，確保車友目光直接鎖定
   useEffect(() => {
-    if (selectedLotId && cardRefs.current[selectedLotId]) {
-      const el = cardRefs.current[selectedLotId];
+    if (selectedParking && detailCardRef.current) {
       const timer = setTimeout(() => {
-        el?.scrollIntoView({
+        detailCardRef.current?.scrollIntoView({
           behavior: 'smooth',
-          block: 'center'
+          block: 'nearest'
         });
-      }, 150);
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [selectedLotId, flyTrigger]);
+  }, [selectedParking?.id, flyTrigger]);
 
   // Form states for adding crowdsourced feedbacks
   const [feedbackKw, setFeedbackKw] = useState('');
@@ -180,12 +183,6 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
   const [feedbackSuccess, setFeedbackSuccess] = useState('');
-
-  // Automatically refresh selected lot data whenever the underlying props update
-  const selectedLot = useMemo(() => {
-    if (!selectedLotId) return null;
-    return parkingLots.find(lot => lot.id === selectedLotId) || null;
-  }, [parkingLots, selectedLotId]);
 
   const filteredLots = useMemo(() => {
     return parkingLots.filter(lot => {
@@ -198,35 +195,20 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
     });
   }, [parkingLots, searchQuery, regionFilter, difficultyFilter, onlyChargingFilter]);
 
-  const handleLotClick = (lot: ParkingLot) => {
-    setSelectedLotId(lot.id);
-    setMapCenter([lot.lat, lot.lng]);
-    setMapZoom(16);
-    setFlyTrigger(prev => prev + 1);
-    // Reset form states when switching lots
-    setShowFeedbackForm(false);
-    setFeedbackError('');
-    setFeedbackSuccess('');
-    setFeedbackKw('');
-    setFeedbackRating(5);
-    setFeedbackNote('');
-    setSelectedTestedGun('');
-  };
-
   const getDifficultyColor = (tag: ParkingLot['difficultyTag'], hasDifficulty?: boolean) => {
-    if (hasDifficulty === false || !tag) return '#7e7e7e'; // Cool slate grey
+    if (hasDifficulty === false || !tag) return '#7e7e7e';
     switch (tag) {
-      case '輕易': return '#00FF66'; // Fluorescent Green
-      case '中等': return '#FFD700'; // Gold Warning
-      case '地獄': return '#FF3333'; // Deep Crimson
-      case '不可能的任務': return '#E000FF'; // Cyber Magenta
-      default: return '#00FF66';
+      case '輕易': return '#d4ff00';
+      case '中等': return '#FFD700';
+      case '地獄': return '#ff3b30';
+      case '不可能的任務': return '#E000FF';
+      default: return '#d4ff00';
     }
   };
 
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onAddChargingFeedback || !selectedLotId) return;
+    if (!onAddChargingFeedback || !selectedParking) return;
 
     const kwNum = parseInt(feedbackKw);
     if (!kwNum || kwNum <= 0) {
@@ -240,13 +222,13 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
 
     try {
       await onAddChargingFeedback(
-        selectedLotId,
+        selectedParking.id,
         kwNum,
         feedbackRating,
         feedbackNote,
         selectedTestedGun || undefined
       );
-      setFeedbackSuccess('🎉 感謝回報！您的充電大數據已同步更新！');
+      setFeedbackSuccess('🎉 感謝回報！充電實測大數據已同步更新！');
       setFeedbackKw('');
       setFeedbackNote('');
       setFeedbackRating(5);
@@ -264,406 +246,6 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
 
   const currentUser = auth.currentUser;
 
-  // 統一渲染詳細資訊（泊車心得、充電規格清單、收費明細、車友實測回報等）
-  const renderLotDetailContent = (lot: ParkingLot, isMobileEmbed = false) => {
-    return (
-      <div className="space-y-4 pt-1">
-        {/* Title Header */}
-        <div>
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            {lot.hasDifficulty !== false && lot.difficultyTag && (
-              <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider ${
-                lot.difficultyTag === '不可能的任務' ? 'bg-fuchsia-600 text-white shadow-[0_0_10px_rgba(224,0,255,0.4)]' :
-                lot.difficultyTag === '地獄' ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.4)]' : 
-                lot.difficultyTag === '中等' ? 'bg-yellow-500 text-black' : 'bg-cyber-green text-black'
-              }`}>
-                {lot.difficultyTag}難度
-              </span>
-            )}
-            {lot.hasCharging && (
-              <span className="px-2 py-0.5 rounded bg-lime-500/10 border border-lime-400 text-lime-400 text-[9px] font-mono font-bold uppercase tracking-wider flex items-center gap-0.5 shadow-[0_0_8px_rgba(163,230,53,0.15)]">
-                ⚡ 配備充電樁
-              </span>
-            )}
-            <span className="text-[10px] font-mono text-white/30 uppercase tracking-[0.2em]">{lot.region}</span>
-          </div>
-          <h4 className="text-lg sm:text-xl font-bold text-white tracking-tight leading-tight">{lot.name}</h4>
-          {lot.address && (
-            <p className="text-xs text-white/40 font-mono mt-1.5 flex items-center gap-1">
-              <MapPin size={11} className="text-cyber-green/60 shrink-0" /> {lot.address}
-            </p>
-          )}
-        </div>
-        
-        {/* Section A: 泊車資訊 */}
-        {lot.hasDifficulty !== false && lot.difficultyTag && lot.adminNotes && (
-          <div className="p-3.5 rounded-xl bg-white/5 border border-white/5 animate-fade-in text-left">
-            <h5 className="text-[10px] font-mono font-bold uppercase text-white/40 mb-1.5 tracking-wider flex items-center gap-1.5">
-              🚗 停車場泊位心得
-            </h5>
-            <p className="text-xs text-white/70 font-sans leading-relaxed flex gap-2">
-              <Info size={14} className="shrink-0 text-cyber-green/50 mt-0.5" />
-              {lot.adminNotes}
-            </p>
-          </div>
-        )}
-
-        {/* Section B: 充電資訊與大數據 Wiki */}
-        {lot.hasCharging ? (
-          <div className="p-3.5 sm:p-4 rounded-xl bg-[#ccff00]/[0.02] border-2 border-dashed border-[#ccff00]/20 space-y-3.5 animate-fade-in text-left">
-            {/* 標題欄高亮 */}
-            <div className="p-3 rounded-lg bg-cyber-green text-black font-mono font-bold text-xs uppercase tracking-tight flex items-center justify-between shadow-[0_0_15px_rgba(204,255,0,0.2)] text-left">
-              <span className="flex items-center gap-1 font-bold text-left">
-                🔋 {lot.chargingInfo?.provider || '未知供應商'} ｜ 全場共 {lot.gunGroups && lot.gunGroups.length > 0 ? lot.gunGroups.reduce((acc, g) => acc + g.count, 0) : (lot.totalGuns || 0)} 支充電槍
-              </span>
-            </div>
-
-            {/* 充電規格多重列表 */}
-            {lot.gunGroups && lot.gunGroups.length > 0 ? (
-              <div className="space-y-1.5">
-                <span className="block text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider pl-1">
-                  🔌 充電規格詳細清單
-                </span>
-                <div className="space-y-1.5 p-2.5 rounded-xl border border-white/5 bg-black/40">
-                  {lot.gunGroups.map((group, idx) => {
-                    const badgeColor = group.gunType === 'DC 快充' ? 'text-cyber-green bg-cyber-green/15' : 'text-blue-400 bg-blue-500/15';
-                    return (
-                      <div key={idx} className="text-xs font-mono text-white/90 flex flex-col gap-0.5 py-1.5 border-b border-white/5 last:border-0 last:pb-0 first:pt-0">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${badgeColor}`}>
-                              {group.gunType}
-                            </span>
-                            <span className="font-bold text-white font-mono">{group.kw} kW</span>
-                          </div>
-                          <span className="text-cyber-green font-bold bg-white/5 px-2 py-0.5 rounded text-[10px]">
-                            {group.count} 支
-                          </span>
-                        </div>
-                        {group.note && (
-                          <span className="text-white/40 text-[10px] pl-1 font-sans mt-0.5">
-                            📝 備註：{group.note}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (lot.maxKw || lot.totalGuns) ? (
-              <div className="space-y-1.5">
-                <span className="block text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider pl-1">
-                  🔌 充電規格清單
-                </span>
-                <div className="p-3 rounded-xl border border-white/5 bg-black/40 text-xs font-mono text-white/80 flex justify-between items-center">
-                  <span className="flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-bold text-cyber-green bg-cyber-green/15">DC 快充</span>
-                    <span className="font-bold text-white">{lot.maxKw || lot.chargingInfo?.officialKw} kW</span>
-                  </span>
-                  <span className="text-cyber-green font-bold bg-white/5 px-2 py-0.5 rounded text-[10px]">
-                    {lot.totalGuns || 2} 支
-                  </span>
-                </div>
-              </div>
-            ) : null}
-
-            {/* 收費明細表格 / 清單 */}
-            {lot.tariffs && lot.tariffs.length > 0 ? (
-              <div className="space-y-1.5">
-                <span className="block text-[10px] font-mono font-bold text-white/40 uppercase tracking-wider pl-1">
-                  📊 時段電費收費明細
-                </span>
-                <div className="overflow-hidden rounded-xl border border-white/5 bg-black/40">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-white/5 bg-white/[0.02] text-[9px] font-mono font-bold uppercase tracking-widest text-white/40">
-                        <th className="p-2">時段 range</th>
-                        <th className="p-2 text-right">單價 price</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {lot.tariffs.map((tariff, index) => (
-                        <tr key={index} className="text-xs font-mono text-white/80 hover:bg-white/[0.01] transition-colors">
-                          <td className="p-2">⏳ {tariff.timeSlot || '不限時段'}</td>
-                          <td className="p-2 text-right font-bold text-cyber-green">
-                            HKD ${tariff.price} / {tariff.unit ? tariff.unit.replace('元/', '') : (lot.feeType === 'time' ? '分鐘' : '度')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="p-2.5 rounded-lg bg-white/5 border border-white/5 flex items-center justify-between text-xs font-mono">
-                <span className="text-white/40 text-[10px] uppercase">計費模式</span>
-                <span className="text-white/85 font-bold text-[11px]">
-                  {lot.feeType === 'time' ? '⏱️ 按時間計費' : '🔌 按度數計費'}
-                </span>
-              </div>
-            )}
-
-            {/* Display Kw Grid */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="p-2.5 rounded-lg bg-white/5 border border-white/5 text-center">
-                <span className="text-[9px] font-mono text-white/40 uppercase block mb-0.5">規格最大功率</span>
-                <span className="text-base font-bold text-white font-mono">{lot.maxKw || lot.chargingInfo?.officialKw || '--'} kW</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-cyber-green/5 border border-cyber-green/10 text-center relative overflow-hidden group">
-                <span className="text-[9px] font-mono text-cyber-green uppercase block mb-0.5">車友實測速度</span>
-                <span className="text-base font-bold text-cyber-green font-mono">{lot.chargingInfo?.realKw || '--'} kW</span>
-                <div className="absolute inset-0 bg-cyber-green/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </div>
-
-            {/* Ratings and dynamic flags */}
-            <div className="flex items-center justify-between border-t border-b border-white/5 py-2.5">
-              {lot.chargingInfo?.rating === null || lot.chargingInfo?.ratingCount === 0 || !lot.chargingInfo?.rating ? (
-                <div className="w-full">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyber-green/10 border border-cyber-green/30 text-cyber-green text-xs font-mono font-bold shadow-[0_0_12px_rgba(204,255,0,0.1)] w-full justify-center">
-                    🔄 暫無實測（歡迎提交第一手充電報告）
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-white/45">相容性評級:</span>
-                  <div className="flex gap-0.5 ml-1">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star 
-                        key={i} 
-                        size={12} 
-                        className={i < Math.round(lot.chargingInfo?.rating || 0) ? "text-[#CCFF00] fill-[#CCFF00]" : "text-white/10"} 
-                      />
-                    ))}
-                  </div>
-                  <span className="text-xs text-white/80 font-mono font-bold ml-1">
-                    ⭐ {lot.chargingInfo.rating} (共 {lot.chargingInfo.ratingCount || lot.chargingInfo.userFeedbacks?.length || 1} 次實測)
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Dynamic Jump Warning Alert if rating <= 2 */}
-            {(lot.chargingInfo?.rating && lot.chargingInfo.rating <= 2) ? (
-              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs flex gap-2">
-                <AlertTriangle size={16} className="shrink-0 mt-0.5 animate-bounce" />
-                <div>
-                  <span className="font-bold">⚠️ 跳槍風險警告 (Warning):</span>
-                  <span className="block font-sans opacity-90 mt-0.5 text-[11px] leading-relaxed">
-                    車友實測平均評級低於 2.0，部分特定協議配合可能偶有跳槍、斷電或協議不符的狀況，建議提防！
-                  </span>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Description / Extra compatibility note */}
-            {lot.chargingInfo?.note && (
-              <p className="text-[11px] text-white/50 leading-relaxed italic bg-white/[0.01] p-2 rounded border border-white/[0.02]">
-                🎯 備註：{lot.chargingInfo.note}
-              </p>
-            )}
-
-            {/* Existing Crowdsourced feed list */}
-            <div className="space-y-2">
-              <h6 className="text-[10px] font-mono font-bold text-white/40 flex items-center justify-between uppercase">
-                <span>💬 車友實測報告 ({lot.chargingInfo?.userFeedbacks?.length || 0})</span>
-              </h6>
-              {lot.chargingInfo?.userFeedbacks && lot.chargingInfo.userFeedbacks.length > 0 ? (
-                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 thin-scrollbar">
-                  {lot.chargingInfo.userFeedbacks.map((fb, idx) => (
-                    <div key={idx} className="p-2 rounded bg-white/[0.02] border border-white/5 flex flex-col gap-1 text-[11px] text-left">
-                      <div className="flex justify-between text-[10px]">
-                        <span className="font-bold text-white/80 flex items-center gap-1">
-                          👤 {fb.userDisplayName || '匿名車友'}
-                        </span>
-                        <span className="text-white/30 font-mono">
-                          {fb.createdAt?.seconds ? new Date(fb.createdAt.seconds * 1000).toLocaleDateString() : '剛剛'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded">
-                        <span className="text-cyber-green font-mono font-bold">⚡ {fb.realKw} kW</span>
-                        <div className="flex gap-0.5">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star key={i} size={8} className={i < fb.rating ? "text-cyber-green fill-cyber-green" : "text-white/10"} />
-                          ))}
-                        </div>
-                      </div>
-                      {fb.testedGun && (
-                        <div className="text-[9px] text-[#ccff00]/70 font-mono bg-[#ccff00]/5 px-1.5 py-0.5 rounded self-start mt-0.5">
-                          🔌 實測規格: {fb.testedGun}
-                        </div>
-                      )}
-                      {fb.note && <span className="text-white/50 bg-transparent py-0.5">{fb.note}</span>}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[10px] text-white/30 italic py-2 text-center border border-dashed border-white/5 rounded">
-                  目前尚無實測回報，歡迎成為第一位分享的車友！
-                </p>
-              )}
-            </div>
-
-            {/* Crowdsourcing Form UI */}
-            {currentUser ? (
-              <div className="pt-2 border-t border-white/5">
-                {!showFeedbackForm ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowFeedbackForm(true);
-                      setFeedbackError('');
-                      setFeedbackSuccess('');
-                    }}
-                    className="w-full py-2 bg-cyber-green/10 hover:bg-cyber-green/20 border border-cyber-green/20 text-cyber-green rounded-xl text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-all animate-pulse"
-                  >
-                    <MessageSquare size={14} /> 我要求助 / 回報實測 💬
-                  </button>
-                ) : (
-                  <form onSubmit={handleFeedbackSubmit} className="space-y-3 bg-white/[0.02] p-3.5 rounded-xl border border-white/10 animate-fade-in text-left">
-                    <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                      <span className="text-xs font-bold text-white flex items-center gap-1">
-                        ✏️ 填寫實測數據
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowFeedbackForm(false)}
-                        className="text-white/30 hover:text-white"
-                      >
-                        取消
-                      </button>
-                    </div>
-
-                    {/* 選擇本次測試的充電槍規格 */}
-                    {lot.gunGroups && lot.gunGroups.length > 0 && (
-                      <div className="space-y-1 text-left">
-                        <label className="text-[10px] font-mono text-white/40 block ml-1">🔌 對接的充電槍規格 SPEED SPEC</label>
-                        <select
-                          value={selectedTestedGun}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setSelectedTestedGun(val);
-                            if (val) {
-                              const match = val.match(/^(\d+)\s*kW/i);
-                              if (match) {
-                                setFeedbackKw(match[1]);
-                              }
-                            }
-                          }}
-                          className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white font-sans focus:outline-none focus:border-cyber-green/50"
-                        >
-                          <option value="">-- 請選擇本次回報的充電設備規格 --</option>
-                          {lot.gunGroups.map((g, idx) => {
-                            const optLabel = `${g.kw} kW (${g.gunType})`;
-                            return (
-                              <option key={idx} value={optLabel}>
-                                ⚡ {optLabel} {g.note ? `[${g.note}]` : ''}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] font-mono text-white/40 block mb-1">實測速度 (kW)</label>
-                        <input
-                          type="number"
-                          required
-                          min="1"
-                          max="500"
-                          placeholder="例如：115"
-                          value={feedbackKw}
-                          onChange={(e) => setFeedbackKw(e.target.value)}
-                          className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs font-mono text-white focus:outline-none focus:border-cyber-green"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-mono text-white/40 block mb-1">相容評級 (1-5星)</label>
-                        <div className="flex gap-1 h-9 items-center justify-center bg-black rounded-lg border border-white/10 px-2">
-                          {Array.from({ length: 5 }).map((_, i) => {
-                            const starVal = i + 1;
-                            return (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => setFeedbackRating(starVal)}
-                                className="text-white/20 hover:text-cyber-green transition-transform hover:scale-110"
-                              >
-                                <Star
-                                  size={16}
-                                  className={starVal <= feedbackRating ? "text-cyber-green fill-cyber-green" : "text-white/20"}
-                                />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-mono text-white/40 block mb-1">實測心得 / 是否曾跳槍</label>
-                      <input
-                        type="text"
-                        placeholder="協議匹配完美/是否有偶爾跳槍...(限 40 字)"
-                        value={feedbackNote}
-                        onChange={(e) => setFeedbackNote(e.target.value)}
-                        maxLength={50}
-                        className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-cyber-green"
-                      />
-                    </div>
-
-                    {feedbackError && <p className="text-[10px] text-red-500 font-bold">{feedbackError}</p>}
-                    {feedbackSuccess && <p className="text-[10px] text-cyber-green font-bold">{feedbackSuccess}</p>}
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full py-2 bg-cyber-green text-black hover:bg-[#b0f000] rounded-lg text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
-                    >
-                      {isSubmitting ? '儲存中...' : (
-                        <>
-                          <Send size={12} /> 提交實測報告
-                        </>
-                      )}
-                    </button>
-                  </form>
-                )}
-              </div>
-            ) : (
-              <div className="p-3 text-center border border-dashed border-white/5 rounded-xl bg-white/[0.01]">
-                <p className="text-[11px] text-white/40">ℹ️ 請先登入帳戶以提交實測數據充電 WIKI。</p>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {/* Navigation & Video Guides buttons */}
-        <div className="flex gap-2 pt-1">
-          {lot.videoGuide && (
-            <a 
-              href={lot.videoGuide}
-              target="_blank"
-              rel="noreferrer"
-              className="flex-1 px-3 py-2.5 bg-white text-black rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-cyber-green transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)] text-center"
-            >
-              <Youtube size={15} /> 泊車指南
-            </a>
-          )}
-          <button 
-            type="button"
-            onClick={() => openNavigation(lot.lat, lot.lng, lot.name)}
-            className="flex-1 px-3 py-2.5 bg-cyber-green text-black rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center hover:bg-cyber-green/80 transition-all gap-1.5 shadow-[0_0_15px_rgba(204,255,0,0.3)] cursor-pointer active:scale-95"
-            title="一鍵開啟導航 / NAVIGATE"
-          >
-            <Navigation size={14} /> 🧭 一鍵導航
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full space-y-3 sm:space-y-4">
       {/* Search & Filter Header */}
@@ -676,7 +258,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
               placeholder="搜尋停車場名稱或地址..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-2.5 sm:py-3 text-sm text-white focus:outline-none focus:border-cyber-green/50 transition-all font-mono placeholder:text-white/20"
+              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-2.5 sm:py-3 text-sm text-white focus:outline-none focus:border-[#d4ff00]/50 transition-all font-mono placeholder:text-white/20"
             />
           </div>
           <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
@@ -687,7 +269,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
                 onClick={() => setRegionFilter(region)}
                 className={`flex-1 min-w-[70px] py-2 sm:py-3 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition-all border ${
                   regionFilter === region 
-                    ? 'bg-cyber-green border-cyber-green text-black shadow-[0_0_15px_rgba(204,255,0,0.35)]' 
+                    ? 'bg-[#d4ff00] border-[#d4ff00] text-black shadow-[0_0_15px_rgba(212,255,0,0.35)]' 
                     : 'bg-white/5 text-white/30 border-white/5 hover:border-white/25'
                 }`}
               >
@@ -728,21 +310,21 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
                 onChange={(e) => setOnlyChargingFilter(e.target.checked)}
                 className="sr-only"
               />
-              <div className={`w-8 h-4.5 rounded-full transition-colors ${onlyChargingFilter ? 'bg-cyber-green' : 'bg-white/10'}`} />
+              <div className={`w-8 h-4.5 rounded-full transition-colors ${onlyChargingFilter ? 'bg-[#d4ff00]' : 'bg-white/10'}`} />
               <div className={`absolute w-3.5 h-3.5 rounded-full bg-black top-[2px] left-[2px] transition-transform ${onlyChargingFilter ? 'translate-x-3.5' : 'translate-x-0 bg-white/40'}`} />
             </div>
           </label>
         </div>
       </div>
 
-      {/* Map and Detail display */}
-      <div className="flex-1 min-h-[300px] sm:min-h-[450px] relative rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 bg-[#121212] shadow-inner">
+      {/* Map display */}
+      <div className="h-[280px] sm:h-[380px] relative rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 bg-[#121212] shadow-inner shrink-0">
         {/* 地圖圖磚切換器 (免 Key 穩定底圖保證) */}
         <div className="absolute top-3 right-3 z-[400] flex bg-black/85 backdrop-blur-md border border-white/15 rounded-xl p-0.5 text-[10px] font-mono shadow-xl">
           <button
             type="button"
             onClick={() => setMapTileStyle('osm_dark')}
-            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'osm_dark' ? 'bg-cyber-green text-black font-bold shadow-[0_0_8px_rgba(204,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
+            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'osm_dark' ? 'bg-[#d4ff00] text-black font-bold shadow-[0_0_8px_rgba(212,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
             title="免 Key 穩定 OSM 搭配 CSS 暗黑濾鏡，永不變黑"
           >
             🌙 暗黑 OSM
@@ -750,7 +332,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
           <button
             type="button"
             onClick={() => setMapTileStyle('carto_voyager')}
-            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'carto_voyager' ? 'bg-cyber-green text-black font-bold shadow-[0_0_8px_rgba(204,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
+            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'carto_voyager' ? 'bg-[#d4ff00] text-black font-bold shadow-[0_0_8px_rgba(212,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
             title="CARTO Voyager 免費底圖"
           >
             🏙️ Voyager
@@ -758,7 +340,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
           <button
             type="button"
             onClick={() => setMapTileStyle('carto_dark')}
-            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'carto_dark' ? 'bg-cyber-green text-black font-bold shadow-[0_0_8px_rgba(204,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
+            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'carto_dark' ? 'bg-[#d4ff00] text-black font-bold shadow-[0_0_8px_rgba(212,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
             title="CARTO Dark 底圖"
           >
             ⬛ CARTO
@@ -803,12 +385,11 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
               ref={(ref) => {
                 if (ref) markerRefs.current[lot.id] = ref;
               }}
-              icon={createCustomIcon(getDifficultyColor(lot.difficultyTag, lot.hasDifficulty), selectedLotId === lot.id, lot.hasCharging)}
+              icon={createCustomIcon(getDifficultyColor(lot.difficultyTag, lot.hasDifficulty), selectedParking?.id === lot.id, lot.hasCharging)}
               eventHandlers={{
                 click: () => handleLotClick(lot)
               }}
             >
-              {/* 方案 1：限制 Leaflet Popup 尺寸與自動邊距，避免邊界被截斷 */}
               <Popup
                 maxWidth={290}
                 minWidth={240}
@@ -830,11 +411,16 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
                   <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-1 mb-1">
                     <span className="font-bold text-xs text-white truncate max-w-[140px]">{lot.name}</span>
                     {lot.hasDifficulty !== false && lot.difficultyTag && (
-                      <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded ${
-                        lot.difficultyTag === '不可能的任務' ? 'bg-fuchsia-600 text-white' :
-                        lot.difficultyTag === '地獄' ? 'bg-red-500 text-white' : 
-                        lot.difficultyTag === '中等' ? 'bg-yellow-500 text-black' : 'bg-cyber-green text-black'
-                      }`}>
+                      <span 
+                        style={{
+                          backgroundColor: lot.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
+                          color: lot.difficultyTag === '地獄' ? '#fff' : '#000',
+                          fontSize: '9px',
+                          fontWeight: 'bold',
+                          padding: '1px 6px',
+                          borderRadius: '4px'
+                        }}
+                      >
                         {lot.difficultyTag}
                       </span>
                     )}
@@ -842,14 +428,14 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
 
                   {lot.address && (
                     <p className="text-[10px] text-white/50 flex items-start gap-1 font-sans leading-tight">
-                      <MapPin size={11} className="text-cyber-green shrink-0 mt-0.5" />
+                      <MapPin size={11} className="text-[#d4ff00] shrink-0 mt-0.5" />
                       <span className="line-clamp-2">{lot.address}</span>
                     </p>
                   )}
 
                   {lot.hasCharging && (
-                    <div className="text-[10px] text-cyber-green flex items-center gap-1 bg-cyber-green/10 border border-cyber-green/20 px-1.5 py-0.5 rounded">
-                      <Zap size={11} className="text-cyber-green shrink-0" />
+                    <div className="text-[10px] text-[#d4ff00] flex items-center gap-1 bg-[#d4ff00]/10 border border-[#d4ff00]/20 px-1.5 py-0.5 rounded">
+                      <Zap size={11} className="text-[#d4ff00] shrink-0" />
                       <span>⚡ 充電 ({lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || 0} kW)</span>
                     </div>
                   )}
@@ -861,7 +447,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
                         e.stopPropagation();
                         openNavigation(lot.lat, lot.lng, lot.name);
                       }}
-                      className="flex-1 py-1 px-2 bg-cyber-green hover:bg-cyber-green/80 text-black font-bold text-[10px] rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all shadow-[0_0_10px_rgba(204,255,0,0.3)] active:scale-95"
+                      className="flex-1 py-1 px-2 bg-[#d4ff00] hover:bg-[#b0f000] text-black font-bold text-[10px] rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all shadow-[0_0_10px_rgba(212,255,0,0.3)] active:scale-95"
                     >
                       <Navigation size={11} />
                       <span>🧭 導航</span>
@@ -875,7 +461,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
                       }}
                       className="py-1 px-2.5 bg-white/10 hover:bg-white/20 text-white text-[10px] rounded-lg transition-colors cursor-pointer"
                     >
-                      詳情
+                      選取
                     </button>
                   </div>
                 </div>
@@ -883,131 +469,301 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
             </Marker>
           ))}
         </MapContainer>
-
-        {/* 方案 2：Selected Lot Cyber Detail Panel 僅在桌面端 (hidden sm:block) 浮動顯示，手機端改由下方卡片直接展開 */}
-        <AnimatePresence>
-          {selectedLot && (
-            <motion.div
-              initial={{ opacity: 0, y: 30, x: '-50%' }}
-              animate={{ opacity: 1, y: 0, x: '-50%' }}
-              exit={{ opacity: 0, y: 30, x: '-50%' }}
-              className="hidden sm:block absolute bottom-6 left-1/2 z-[1000] w-[calc(100%-32px)] max-w-md max-h-[80%] overflow-y-auto custom-scrollbar rounded-2xl"
-            >
-              <CyberCard className="border-cyber-green/50 shadow-[0_20px_60px_rgba(0,0,0,0.95)] bg-black/95 backdrop-blur-3xl p-5 relative">
-                <button 
-                  onClick={() => setSelectedLotId(null)}
-                  className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
-                >
-                  <X size={18} />
-                </button>
-                {renderLotDetailContent(selectedLot, false)}
-              </CyberCard>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
-      {/* Quick Access Grid - 支援點選雙向聯動、平滑滾動置中、手機端卡片內嵌完整心得與充電 WIKI */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 overflow-y-auto max-h-[35vh] sm:max-h-[30vh] pr-1 custom-scrollbar shrink-0">
-        {filteredLots.map(lot => {
-          const isSelected = selectedLotId === lot.id;
-          return (
-            <div 
-              key={lot.id}
-              ref={(el) => {
-                cardRefs.current[lot.id] = el;
-              }}
-              onClick={() => handleLotClick(lot)}
-              className={`p-3 sm:p-4 rounded-xl border transition-all text-left relative group cursor-pointer flex flex-col justify-between gap-2.5 ${
-                isSelected 
-                  ? 'bg-cyber-green/10 border-cyber-green shadow-[0_0_20px_rgba(204,255,0,0.25)] ring-2 ring-cyber-green/60 col-span-1 sm:col-span-2 lg:col-span-3' 
-                  : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08]'
-              }`}
-            >
-              <div>
-                <div className="flex justify-between items-start mb-1 gap-2">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-bold text-sm text-white group-hover:text-cyber-green transition-colors line-clamp-1">{lot.name}</span>
-                    {isSelected && (
-                      <span className="text-[9px] font-mono text-cyber-green px-1.5 py-0.5 rounded bg-cyber-green/15 border border-cyber-green/30">
-                        📍 正在對焦
-                      </span>
-                    )}
-                  </div>
-                  {lot.hasDifficulty !== false && lot.difficultyTag && (
-                    <span className={`shrink-0 text-[8px] font-mono px-1.5 py-0.5 rounded border ${
-                      lot.difficultyTag === '不可能的任務' ? 'text-fuchsia-400 border-fuchsia-500/20 bg-fuchsia-500/10' :
-                      lot.difficultyTag === '地獄' ? 'text-red-400 border-red-500/20 bg-red-500/10' : 
-                      lot.difficultyTag === '中等' ? 'text-yellow-400 border-yellow-500/20 bg-yellow-500/10' : 'text-cyber-green border-cyber-green/20 bg-cyber-green/10'
-                    }`}>
-                      {lot.difficultyTag}
+      {/* 底部區域：單一緊湊「底部選中詳情卡」+ 下方停車場快速切換清單 */}
+      <div className="flex-1 flex flex-col space-y-3 overflow-hidden">
+        {/* 1. 核心緊湊高效「底部選中詳情卡」 (無多餘外層、無重複標題與地址) */}
+        {selectedParking && (
+          <div 
+            ref={detailCardRef}
+            className="bg-[#161616] border border-[#d4ff00] rounded-2xl p-4 shadow-[0_4px_25px_rgba(212,255,0,0.2)] text-left shrink-0 animate-fade-in space-y-3"
+          >
+            {/* 1. 標題與標籤列 */}
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-lg font-bold text-white m-0 tracking-tight leading-tight">
+                    {selectedParking.name}
+                  </h3>
+                  {selectedParking.hasDifficulty !== false && selectedParking.difficultyTag && (
+                    <span 
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: selectedParking.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
+                        color: selectedParking.difficultyTag === '地獄' ? '#fff' : '#000',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {selectedParking.difficultyTag}
                     </span>
                   )}
+                  <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">{selectedParking.region}</span>
                 </div>
-                {lot.address && (
-                  <p className="text-[10px] text-white/40 truncate font-mono">
-                    {lot.address}
+                {selectedParking.address && (
+                  <p className="text-xs text-[#888] m-0 mt-1 flex items-center gap-1 font-sans">
+                    <MapPin size={12} className="text-[#d4ff00] shrink-0" />
+                    <span className="truncate">{selectedParking.address}</span>
                   </p>
                 )}
               </div>
 
-              {/* 手機端選中時：直接在卡片內部完整呈現泊車心得、充電樁 WIKI 與實測回報表單 */}
-              {isSelected && (
-                <div 
-                  className="sm:hidden pt-3 border-t border-cyber-green/20 space-y-3"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {renderLotDetailContent(lot, true)}
-                </div>
+              {/* 關閉/取消選中按鈕 */}
+              <button 
+                type="button"
+                onClick={() => setSelectedParking(null)} 
+                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-colors text-sm font-bold shrink-0 cursor-pointer"
+                title="關閉選中狀態"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 2. 充電配備與狀態膠囊 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {selectedParking.hasCharging && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold bg-[#d4ff00]/10 border border-[#d4ff00]/30 text-[#d4ff00] px-2.5 py-1 rounded-full shadow-[0_0_10px_rgba(212,255,0,0.15)]">
+                  ⚡ {selectedParking.chargingInfo?.provider 
+                    ? `${selectedParking.chargingInfo.provider} ｜ ${selectedParking.chargingInfo.realKw || selectedParking.chargingInfo.officialKw || selectedParking.maxKw || ''} kW` 
+                    : (selectedParking.maxKw ? `${selectedParking.maxKw} kW 快充` : '配備充電樁')}
+                </span>
               )}
+              {selectedParking.heightLimit && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-white/60 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+                  📏 限高 {selectedParking.heightLimit}
+                </span>
+              )}
+              {selectedParking.chargingInfo?.rating && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-white/70 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+                  ⭐ {selectedParking.chargingInfo.rating} (共 {selectedParking.chargingInfo.ratingCount || selectedParking.chargingInfo.userFeedbacks?.length || 1} 次實測)
+                </span>
+              )}
+            </div>
 
-              <div className="text-[9px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between pt-1 border-t border-white/5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="shrink-0">{lot.region}</span>
-                  {lot.hasCharging && (
-                    <span className="flex items-center gap-0.5 text-cyber-green text-[8px] tracking-normal font-bold truncate">
-                      ⚡ {lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || ''}kW
-                    </span>
-                  )}
-                  {lot.videoGuide && (
-                    <span className="flex items-center gap-0.5 text-white/50 text-[8px] border-l border-white/10 pl-1.5 tracking-normal shrink-0">
-                      <Youtube size={9} /> 片段
-                    </span>
-                  )}
-                </div>
+            {/* 3. 泊車心得（重點高亮） */}
+            <div className="p-3 rounded-xl bg-white/[0.03] border border-[#d4ff00]/25 text-left">
+              <div className="text-[#d4ff00] text-xs font-mono font-bold mb-1 flex items-center gap-1.5">
+                🚗 Smart #5 泊位心得：
+              </div>
+              <div className="text-[13px] text-[#ddd] leading-relaxed font-sans">
+                {selectedParking.adminNotes || selectedParking.difficultyNote || '暫無特殊泊位心得，一般車輛可順暢出入，請注意場內劃線與轉彎死角。'}
+              </div>
+            </div>
 
-                {/* 🧭 一鍵導航按鈕 */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openNavigation(lot.lat, lot.lng, lot.name);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-cyber-green text-black font-bold text-[10px] font-mono flex items-center gap-1 hover:bg-cyber-green/80 transition-all shadow-[0_0_8px_rgba(204,255,0,0.25)] active:scale-95 cursor-pointer shrink-0 ml-1"
-                    title="開啟 Apple Maps 或 Google Maps 一鍵導航"
-                  >
-                    <Navigation size={10} />
-                    <span>🧭 導航</span>
-                  </button>
-                  {isSelected && (
+            {/* 折疊式充電規格與車友大數據 Wiki */}
+            {selectedParking.hasCharging && (
+              <div className="pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowExtraDetails(prev => !prev)}
+                  className="text-[11px] font-mono text-white/50 hover:text-[#d4ff00] flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <span>{showExtraDetails ? '▼ 收起充電詳細規格與電費' : '▶ 查看充電槍規格、電費時段與車友實測回報'}</span>
+                </button>
+
+                {showExtraDetails && (
+                  <div className="mt-2 space-y-2.5 p-3 rounded-xl bg-black/50 border border-white/10 text-xs font-mono animate-fade-in">
+                    {/* 充電槍規格 */}
+                    {selectedParking.gunGroups && selectedParking.gunGroups.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-white/40 block">🔌 充電槍規格清單：</span>
+                        <div className="space-y-1">
+                          {selectedParking.gunGroups.map((g, i) => (
+                            <div key={i} className="flex justify-between items-center text-white/80 bg-white/5 px-2 py-1 rounded">
+                              <span className="text-[#d4ff00] font-bold">{g.gunType} - {g.kw} kW</span>
+                              <span className="text-white/60">{g.count} 支 {g.note ? `(${g.note})` : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 時段電費 */}
+                    {selectedParking.tariffs && selectedParking.tariffs.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-white/40 block">📊 時段電費收費明細：</span>
+                        <div className="space-y-1">
+                          {selectedParking.tariffs.map((t, i) => (
+                            <div key={i} className="flex justify-between items-center text-white/80 bg-white/5 px-2 py-1 rounded">
+                              <span>⏳ {t.timeSlot}</span>
+                              <span className="text-[#d4ff00] font-bold">HKD ${t.price} / {t.unit || '度'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 車友實測報告與回報表單 */}
+                    <div className="pt-1 border-t border-white/10 flex justify-between items-center">
+                      <span className="text-[10px] text-white/40">💬 車友回報 ({selectedParking.chargingInfo?.userFeedbacks?.length || 0} 則)</span>
+                      {currentUser && (
+                        <button
+                          type="button"
+                          onClick={() => setShowFeedbackForm(prev => !prev)}
+                          className="text-[10px] text-[#d4ff00] underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                        >
+                          {showFeedbackForm ? '取消回報' : '我要求助 / 回報實測'}
+                        </button>
+                      )}
+                    </div>
+
+                    {showFeedbackForm && (
+                      <form onSubmit={handleFeedbackSubmit} className="space-y-2 pt-2 border-t border-white/10 text-left">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] text-white/40 block">實測功率 (kW)</label>
+                            <input 
+                              type="number"
+                              required
+                              placeholder="例如 115"
+                              value={feedbackKw}
+                              onChange={(e) => setFeedbackKw(e.target.value)}
+                              className="w-full bg-black border border-white/20 rounded p-1.5 text-xs text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-white/40 block">相容評級 (1-5星)</label>
+                            <div className="flex gap-1 h-7 items-center bg-black rounded border border-white/20 px-2">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => setFeedbackRating(i + 1)}
+                                  className={i < feedbackRating ? "text-[#d4ff00]" : "text-white/20"}
+                                >
+                                  ★
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-white/40 block">實測心得 (選填)</label>
+                          <input 
+                            type="text"
+                            placeholder="協議匹配/是否曾跳槍..."
+                            value={feedbackNote}
+                            onChange={(e) => setFeedbackNote(e.target.value)}
+                            className="w-full bg-black border border-white/20 rounded p-1.5 text-xs text-white"
+                          />
+                        </div>
+                        {feedbackError && <p className="text-[10px] text-red-400">{feedbackError}</p>}
+                        {feedbackSuccess && <p className="text-[10px] text-[#d4ff00]">{feedbackSuccess}</p>}
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full py-1.5 bg-[#d4ff00] text-black font-bold rounded text-[11px] disabled:opacity-50 cursor-pointer"
+                        >
+                          {isSubmitting ? '提交中...' : '確認提交實測報告'}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4. 底部動作欄 */}
+            <div className="flex gap-2.5 pt-1">
+              {selectedParking.videoGuide && (
+                <a 
+                  href={selectedParking.videoGuide}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2.5 px-3 bg-white text-black rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-[#d4ff00] transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)] text-center cursor-pointer"
+                >
+                  <Youtube size={15} /> 泊車指南
+                </a>
+              )}
+              <button 
+                type="button"
+                onClick={() => openNavigation(selectedParking.lat, selectedParking.lng, selectedParking.name)}
+                className="flex-1 py-2.5 px-3 bg-[#d4ff00] hover:bg-[#b0f000] text-black rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center transition-all gap-1.5 shadow-[0_0_15px_rgba(212,255,0,0.3)] cursor-pointer active:scale-95"
+              >
+                <Navigation size={15} /> 🧭 一鍵導航
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2. 停車場快速切換清單 (乾淨單層卡片，點擊即時聯動地圖與上方詳情卡) */}
+        <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-[140px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
+            {filteredLots.map(lot => {
+              const isSelected = selectedParking?.id === lot.id;
+              return (
+                <div 
+                  key={lot.id}
+                  ref={(el) => {
+                    cardRefs.current[lot.id] = el;
+                  }}
+                  onClick={() => handleLotClick(lot)}
+                  className={`p-3 rounded-xl border transition-all text-left relative group cursor-pointer flex flex-col justify-between gap-2 ${
+                    isSelected 
+                      ? 'bg-[#d4ff00]/10 border-[#d4ff00] shadow-[0_0_15px_rgba(212,255,0,0.2)] ring-1 ring-[#d4ff00]/60' 
+                      : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <div>
+                    <div className="flex justify-between items-start mb-1 gap-2">
+                      <span className={`font-bold text-xs sm:text-sm line-clamp-1 transition-colors ${
+                        isSelected ? 'text-[#d4ff00]' : 'text-white group-hover:text-[#d4ff00]'
+                      }`}>
+                        {lot.name}
+                      </span>
+                      {lot.hasDifficulty !== false && lot.difficultyTag && (
+                        <span 
+                          style={{
+                            fontSize: '9px',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: lot.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
+                            color: lot.difficultyTag === '地獄' ? '#fff' : '#000',
+                            fontWeight: 'bold',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {lot.difficultyTag}
+                        </span>
+                      )}
+                    </div>
+                    {lot.address && (
+                      <p className="text-[10px] text-white/40 truncate font-mono">
+                        {lot.address}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="text-[9px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between pt-1 border-t border-white/5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="shrink-0">{lot.region}</span>
+                      {lot.hasCharging && (
+                        <span className="flex items-center gap-0.5 text-[#d4ff00] text-[8px] tracking-normal font-bold truncate">
+                          ⚡ {lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || ''}kW
+                        </span>
+                      )}
+                    </div>
+
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedLotId(null);
+                        openNavigation(lot.lat, lot.lng, lot.name);
                       }}
-                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-white/60 text-[9px] font-mono transition-colors"
-                      title="收起詳情"
+                      className="px-2 py-0.5 rounded bg-[#d4ff00] text-black font-bold text-[9px] font-mono flex items-center gap-1 hover:bg-[#b0f000] transition-all cursor-pointer shrink-0"
+                      title="一鍵導航"
                     >
-                      收起
+                      <Navigation size={9} />
+                      <span>導航</span>
                     </button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

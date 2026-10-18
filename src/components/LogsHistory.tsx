@@ -62,6 +62,11 @@ export type TimelineItem = {
   odometer?: number;
   batteryPercent?: number;
   segmentDiff?: number;
+  currentSOC?: number;
+  consumption?: number;
+  calculatedConsumption?: string;
+  tripKM?: number;
+  deltaSOC?: number;
 };
 
 export const LogsHistory: React.FC<LogsHistoryProps> = ({ 
@@ -111,6 +116,8 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
   const allTimelineItems = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = [];
     const seenRecordDatesAndCosts = new Set<string>();
+    const seenRecordOdos = new Set<string>();
+    const seenRecordTimestamps = new Set<number>();
 
     // 1. Process items from `records` collection
     records.forEach(r => {
@@ -121,6 +128,11 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
 
       // Fingerprint to avoid duplicate display if record was mirrored from a log
       seenRecordDatesAndCosts.add(`${dateStr}_${r.amountHKD}_${r.type}`);
+      const odoVal = r.odoKM ?? r.odometer;
+      if (odoVal !== undefined && odoVal !== null) {
+        seenRecordOdos.add(`${dateStr}_${odoVal}`);
+      }
+      seenRecordTimestamps.add(Math.floor(timestampMillis / 60000));
 
       items.push({
         id: `rec_${r.id}`,
@@ -134,7 +146,12 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
         dateStr,
         timeStr,
         timestampMillis,
-        odometer: r.odometer
+        odometer: r.odoKM ?? r.odometer,
+        currentSOC: r.currentSOC ?? r.endSoc ?? (r as any).batteryPercent,
+        consumption: r.consumption,
+        tripKM: r.tripKM,
+        deltaSOC: r.deltaSOC,
+        calculatedConsumption: r.calculatedConsumption
       });
     });
 
@@ -145,9 +162,17 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
       const timeStr = format(dateObj, 'HH:mm');
       const timestampMillis = dateObj.getTime();
       const isCharge = l.isCharging || l.type === 'charge';
-      const logType: RecordType | 'drive' = isCharge ? 'charging' : 'drive';
+      const logType: RecordType | 'drive' = isCharge ? 'charging' : 'driving';
 
       // If we already have this record from the records collection, don't show duplicate
+      const logOdo = Number(l.odo ?? l.odometer ?? 0);
+      if (logOdo > 0 && seenRecordOdos.has(`${dateStr}_${logOdo}`)) {
+        return;
+      }
+      const logMinute = Math.floor(timestampMillis / 60000);
+      if (seenRecordTimestamps.has(logMinute) && (logType === 'driving' || seenRecordDatesAndCosts.has(`${dateStr}_${l.cost || 0}_${logType}`))) {
+        return;
+      }
       const fp = `${dateStr}_${l.cost || 0}_${logType}`;
       if (seenRecordDatesAndCosts.has(fp) && (l.cost || 0) > 0) {
         return;
@@ -171,11 +196,81 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
         timestampMillis,
         odometer: Number(l.odo ?? l.odometer ?? 0),
         batteryPercent: Number(l.soc ?? l.batteryPercent ?? 100),
-        segmentDiff: Number(l.segmentDiff ?? l.batteryDiff ?? 0)
+        segmentDiff: Number(l.segmentDiff ?? l.batteryDiff ?? 0),
+        currentSOC: Number(l.soc ?? l.batteryPercent ?? 100),
+        consumption: (l as any).consumption ? Number((l as any).consumption) : undefined
       });
     });
 
-    // Sort strictly descending by timestamp
+    // 3. 先依時間順序 (Ascending) 排序，自動比對計算前後行程的 Trip KM、Delta SOC 及電耗
+    items.sort((a, b) => a.timestampMillis - b.timestampMillis);
+
+    const batteryCapacity = vehicle?.batteryCapacity || 100;
+    let lastKnownOdo: number | null = vehicle?.initialOdometer || null;
+    let lastKnownSOC: number | null = null;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const isDriving = item.type === 'driving' || item.type === 'drive';
+
+      if (isDriving) {
+        const currentOdo = item.odometer ?? item.rawRecord?.odoKM ?? item.rawLog?.odo;
+        const currentSOC = item.currentSOC ?? item.rawRecord?.currentSOC ?? item.batteryPercent ?? item.rawLog?.soc;
+
+        // 1. 該程里程 (tripKM): 優先讀取紀錄保存值或 rawLog 的 odoDiff
+        let tripKM: number | undefined = item.tripKM || (item.rawRecord as any)?.tripKM || item.rawLog?.odoDiff;
+
+        // 若無直接記錄，自動比對計算差額：比對當前筆 odoKM 與上一筆已知里程
+        if ((tripKM === undefined || tripKM <= 0) && currentOdo && lastKnownOdo && currentOdo > lastKnownOdo) {
+          const diff = currentOdo - lastKnownOdo;
+          if (diff > 0 && diff < 3000) {
+            tripKM = diff;
+          }
+        }
+
+        // 2. 該程耗電百分比 (deltaSOC)
+        let deltaSOC: number | undefined = item.deltaSOC || (item.rawRecord as any)?.deltaSOC;
+        if (deltaSOC === undefined) {
+          if (currentSOC !== undefined && lastKnownSOC !== undefined) {
+            deltaSOC = currentSOC - lastKnownSOC;
+          } else if (item.segmentDiff && item.segmentDiff > 0) {
+            deltaSOC = -item.segmentDiff;
+          } else if ((item.rawRecord as any)?.startSoc && currentSOC !== undefined) {
+            deltaSOC = currentSOC - (item.rawRecord as any).startSoc;
+          }
+        }
+
+        // 3. 該程平均電耗 (kWh/100km):
+        // 優先顯示手動填寫值；若無手動填寫，則依公式自動計算：
+        // 該程電耗 = (ΔSOC% * batteryCapacity / ΔKM) * 100
+        let calculatedConsumption: string | undefined = item.calculatedConsumption || (item.rawRecord as any)?.calculatedConsumption;
+        if (!item.consumption && !calculatedConsumption && tripKM && tripKM > 0 && deltaSOC && deltaSOC < 0) {
+          const dropPercent = Math.abs(deltaSOC);
+          const energyUsedKwh = (dropPercent / 100) * batteryCapacity;
+          const kwhPer100Km = (energyUsedKwh / tripKM) * 100;
+          if (kwhPer100Km > 0 && kwhPer100Km < 80) {
+            calculatedConsumption = kwhPer100Km.toFixed(1);
+          }
+        }
+
+        item.tripKM = tripKM;
+        item.currentSOC = currentSOC;
+        item.deltaSOC = deltaSOC;
+        item.calculatedConsumption = calculatedConsumption;
+
+        // 更新最新已知里程與電量供下一節點比對
+        if (currentOdo && currentOdo > 0) lastKnownOdo = currentOdo;
+        if (currentSOC !== undefined && currentSOC >= 0) lastKnownSOC = currentSOC;
+      } else {
+        // 充電或保養等節點：若帶有行駛里程或充後 SOC，更新為下一趟行車的起始基準
+        const nodeOdo = item.odometer ?? item.rawRecord?.odoKM ?? item.rawRecord?.odometer;
+        const nodeSOC = item.rawRecord?.endSoc ?? item.currentSOC ?? item.batteryPercent;
+        if (nodeOdo && nodeOdo > 0) lastKnownOdo = nodeOdo;
+        if (nodeSOC !== undefined && nodeSOC >= 0) lastKnownSOC = nodeSOC;
+      }
+    }
+
+    // 4. 重排為最新記錄在頂部 (Descending)
     items.sort((a, b) => b.timestampMillis - a.timestampMillis);
 
     return items;
@@ -268,7 +363,7 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
       if (item.type === 'charging') {
         chargingCost += item.amountHKD;
         kwh += item.kwhAdded;
-      } else if (item.type !== 'drive') {
+      } else if (item.type !== 'drive' && item.type !== 'driving') {
         otherCost += item.amountHKD;
       }
     });
@@ -842,7 +937,7 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
                             {item.notes ? (
                               <span className="truncate">{item.notes}</span>
                             ) : (item.rawRecord?.odoKM || item.odometer) ? (
-                              <span>里程: {(item.rawRecord?.odoKM ?? item.odometer)?.toLocaleString()} KM</span>
+                              <span>總里程: {(item.rawRecord?.odoKM ?? item.odometer)?.toLocaleString()} KM</span>
                             ) : (
                               <span className="text-white/20">無詳細備註</span>
                             )}
@@ -850,45 +945,44 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
                         </div>
                       </div>
 
-                      {/* Right: Amount & kWh */}
-                      <div className="text-right shrink-0 space-y-0.5">
-                        <div className="text-base sm:text-lg font-mono font-black text-white group-hover:text-cyber-green transition-colors">
-                          {item.amountHKD > 0 ? (
-                            <span>HK$ {item.amountHKD.toLocaleString()}</span>
-                          ) : (
-                            <span className="text-xs text-cyber-green font-normal">免費 / $0</span>
+                      {/* Right: Driving metrics or Charging/Expense cost */}
+                      {(item.type === 'driving' || item.type === 'drive') ? (
+                        <div style={{ textAlign: 'right' }} className="shrink-0 font-mono">
+                          {/* 第一行（高亮主數據）：優先顯示該程平均電耗 */}
+                          <div style={{ color: '#d4ff00', fontSize: '15px', fontWeight: 'bold' }}>
+                            {item.consumption 
+                              ? `${Number(item.consumption).toFixed(1)} kWh/100km` 
+                              : (item.calculatedConsumption ? `${item.calculatedConsumption} kWh/100km` : '-- kWh/100km')}
+                          </div>
+                          {/* 第二行（里程與電量變化）：顯示該程里程增量與耗電百分比 */}
+                          <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
+                            {item.tripKM ? `+${item.tripKM} KM · ` : ''}
+                            {item.currentSOC !== undefined ? (
+                              <span style={{ color: '#5ac8fa' }}>剩餘 {item.currentSOC}%</span>
+                            ) : null}
+                            {item.deltaSOC && Math.abs(item.deltaSOC) > 0 ? (
+                              <span style={{ color: '#ff3b30' }}> (-{Math.abs(item.deltaSOC)}%)</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        /* 充電與其他支出的原有收費顯示 */
+                        <div style={{ textAlign: 'right' }} className="shrink-0 space-y-0.5 font-mono">
+                          <div style={{ color: '#d4ff00', fontSize: '15px', fontWeight: 'bold' }}>
+                            {item.amountHKD > 0 ? `HK$ ${item.amountHKD.toLocaleString()}` : '免費 / $0'}
+                          </div>
+                          {item.type === 'charging' && (
+                            <div style={{ color: '#d4ff00', fontSize: '12px' }}>
+                              +{item.kwhAdded.toFixed(1)} kWh
+                              {unitPrice && (
+                                <span className="text-[10px] text-white/40 font-normal ml-1">
+                                  (${unitPrice}/度)
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
-
-                        {/* Charging kWh & Unit Price */}
-                        {isCharging && item.kwhAdded > 0 && (
-                          <div className="text-[10.5px] font-mono text-cyber-green font-semibold flex items-center justify-end gap-1">
-                            <span>+{item.kwhAdded.toFixed(1)} kWh</span>
-                            {unitPrice && (
-                              <span className="text-[9px] text-white/40 font-normal">
-                                (${unitPrice}/度)
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Driving SOC & consumption */}
-                        {(item.type === 'driving' || item.type === 'drive') && (
-                          <div className="text-[10px] font-mono text-emerald-400 font-medium flex items-center justify-end gap-1.5">
-                            {item.rawRecord?.currentSOC !== undefined ? (
-                              <span>剩餘 {item.rawRecord.currentSOC}%</span>
-                            ) : item.batteryPercent !== undefined ? (
-                              <span>剩餘 {item.batteryPercent}%</span>
-                            ) : null}
-                            {item.rawRecord?.consumption ? (
-                              <span className="text-white/40">({item.rawRecord.consumption} kWh/100km)</span>
-                            ) : null}
-                            {item.type === 'drive' && item.segmentDiff !== undefined && item.segmentDiff > 0 && (
-                              <span className="text-red-400">-{item.segmentDiff}%</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </motion.div>
                   );
                 })}

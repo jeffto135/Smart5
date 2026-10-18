@@ -606,6 +606,10 @@ export function useEVStore() {
     odoKM?: number;
     currentSOC?: number;
     consumption?: number;
+    tripKM?: number;
+    deltaSOC?: number;
+    calculatedConsumption?: string;
+    startOdo?: number;
   }) => {
     if (!auth.currentUser) return;
 
@@ -671,6 +675,21 @@ export function useEVStore() {
       if (data.consumption !== undefined && data.consumption !== null && !isNaN(Number(data.consumption))) {
         docData.consumption = Number(data.consumption);
       }
+      if (data.tripKM !== undefined && data.tripKM !== null && !isNaN(Number(data.tripKM))) {
+        docData.tripKM = Number(data.tripKM);
+      }
+      if (data.deltaSOC !== undefined && data.deltaSOC !== null && !isNaN(Number(data.deltaSOC))) {
+        docData.deltaSOC = Number(data.deltaSOC);
+      }
+      if (data.calculatedConsumption) {
+        docData.calculatedConsumption = String(data.calculatedConsumption);
+      }
+      if (data.startSoc !== undefined) {
+        docData.startSoc = Number(data.startSoc);
+      }
+      if (data.startOdo !== undefined) {
+        docData.startOdo = Number(data.startOdo);
+      }
 
       const docRef = await addDoc(collection(db, 'records'), docData);
 
@@ -727,7 +746,10 @@ export function useEVStore() {
             isCharging: false,
             date: format(recordTimestamp.toDate(), 'yyyy-MM-dd'),
             timestamp: recordTimestamp,
-            type: 'drive'
+            type: 'drive',
+            distance: Number(data.tripKM || 0),
+            odoDiff: Number(data.tripKM || 0),
+            consumption: data.consumption !== undefined ? Number(data.consumption) : undefined
           });
         } catch (logErr) {
           console.warn("Optional driving log sync notice:", logErr);
@@ -980,6 +1002,8 @@ export function useEVStore() {
     startSoc?: number;
     endSoc?: number;
     type?: 'charge' | 'drive';
+    odoDiff?: number;
+    consumption?: number;
   }) => {
     if (!vehicle || !auth.currentUser) return;
 
