@@ -247,7 +247,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
   const currentUser = auth.currentUser;
 
   return (
-    <div className="flex flex-col h-full space-y-3 sm:space-y-4">
+    <div className="parking-map-page-container flex flex-col min-h-full h-auto space-y-3 sm:space-y-4">
       {/* Search & Filter Header */}
       <div className="space-y-3 p-3 sm:p-4 bg-white/[0.02] border border-white/10 rounded-2xl backdrop-blur-xl shrink-0">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -472,12 +472,18 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
       </div>
 
       {/* 底部區域：單一緊湊「底部選中詳情卡」+ 下方停車場快速切換清單 */}
-      <div className="flex-1 flex flex-col space-y-3 overflow-hidden">
+      <div className="flex-1 flex flex-col space-y-3 overflow-visible">
         {/* 1. 核心緊湊高效「底部選中詳情卡」 (無多餘外層、無重複標題與地址) */}
         {selectedParking && (
           <div 
             ref={detailCardRef}
-            className="bg-[#161616] border border-[#d4ff00] rounded-2xl p-4 shadow-[0_4px_25px_rgba(212,255,0,0.2)] text-left shrink-0 animate-fade-in space-y-3"
+            className="selected-parking-card bg-[#161616] border border-[#d4ff00] rounded-2xl p-4 shadow-[0_4px_25px_rgba(212,255,0,0.2)] text-left shrink-0 animate-fade-in space-y-3 custom-scrollbar"
+            style={{
+              maxHeight: '55vh',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              marginBottom: '30px'
+            }}
           >
             {/* 1. 標題與標籤列 */}
             <div className="flex justify-between items-start gap-2">
@@ -665,8 +671,8 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
               </div>
             )}
 
-            {/* 4. 底部動作欄 */}
-            <div className="flex gap-2.5 pt-1">
+            {/* 4. 底部動作欄 (固定浮動於卡片底部) */}
+            <div className="flex gap-2.5 pt-2 sticky bottom-0 bg-[#161616]/95 backdrop-blur-md -mx-4 -mb-4 p-4 border-t border-white/10 rounded-b-2xl z-10 shadow-lg">
               {selectedParking.videoGuide && (
                 <a 
                   href={selectedParking.videoGuide}
@@ -689,7 +695,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
         )}
 
         {/* 2. 停車場快速切換清單 (乾淨單層卡片，點擊即時聯動地圖與上方詳情卡) */}
-        <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-[140px]">
+        <div className="flex-1 pr-1 custom-scrollbar min-h-[140px] pb-10">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
             {filteredLots.map(lot => {
               const isSelected = selectedParking?.id === lot.id;

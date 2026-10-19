@@ -1014,7 +1014,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
                 <p className="text-[9px] sm:text-[10px] font-mono text-white/30 uppercase tracking-widest">Parking Difficulty Guide</p>
               </div>
             </div>
-            <div className="flex-1 overflow-hidden p-3 sm:p-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 parking-map-page-container custom-scrollbar">
               <ParkingLeafletMap parkingLots={parkingLots} onAddChargingFeedback={onAddChargingFeedback} />
             </div>
           </motion.div>

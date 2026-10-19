@@ -119,3 +119,19 @@ input[type="range"] {
   color: #ccff00 !important;
 }
 
+/* 停車場難度地圖容器與底部卡片滾動修復 */
+.parking-map-page-container {
+  min-height: 100vh;
+  height: auto;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: env(safe-area-inset-bottom, 80px); /* 🌟 保留 iPhone 底部安全區與按鈕空間 */
+}
+
+.selected-parking-card {
+  max-height: 55vh; /* 最多佔螢幕一半稍多 */
+  overflow-y: auto; /* 內部內容過長時允許上下滑動 */
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 30px;
+}
+

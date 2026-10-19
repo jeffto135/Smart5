@@ -1708,7 +1708,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               <div className="pt-8 border-t border-white/5 space-y-4">
                 <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-white/30">地圖預覽 PREVIEW</h3>
-                <div className="h-[600px] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+                <div className="h-[680px] border border-white/10 rounded-3xl overflow-y-auto overflow-x-hidden shadow-2xl p-2 bg-[#0a0a0a] custom-scrollbar">
                   <ParkingLeafletMap parkingLots={parkingLots} onAddChargingFeedback={onAddChargingFeedback} />
                 </div>
               </div>
