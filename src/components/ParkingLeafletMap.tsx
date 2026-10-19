@@ -23,10 +23,16 @@ import {
   Check,
   AlertTriangle,
   RotateCcw,
-  DollarSign
+  DollarSign,
+  RefreshCw
 } from 'lucide-react';
-import { ParkingLot, GunGroup, Feedback } from '../types';
+import { ParkingLot, GunGroup, Feedback, ParkingMeter } from '../types';
 import { auth } from '../lib/firebase';
+import { CCTV_CAMERAS, TrafficCamera } from '../data/cctvCameras';
+import { TrafficCCTVModal } from './TrafficCCTVModal';
+import { TunnelDashboard } from './TunnelDashboard';
+import { TrafficNewsModal } from './TrafficNewsModal';
+import { fetchParkingMeterVacancy } from '../services/parkingMeterService';
 
 interface ParkingLeafletMapProps {
   parkingLots: ParkingLot[];
@@ -81,6 +87,51 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
   const [onlyChargingFilter, setOnlyChargingFilter] = useState<boolean>(false);
   const [onlyVideoFilter, setOnlyVideoFilter] = useState<boolean>(false);
 
+  // 模式切換：'parking' (停車場難度) | 'cctv' (實時路面快拍) | 'meter' (實時咪錶空置)
+  const [activeMapMode, setActiveMapMode] = useState<'parking' | 'cctv' | 'meter'>('parking');
+  const [selectedCamera, setSelectedCamera] = useState<TrafficCamera | null>(null);
+  const [showTunnelModal, setShowTunnelModal] = useState<boolean>(false);
+  const [showNewsModal, setShowNewsModal] = useState<boolean>(false);
+
+  // 實時停車收費錶 (咪錶) 狀態
+  const [meters, setMeters] = useState<ParkingMeter[]>([]);
+  const [selectedMeter, setSelectedMeter] = useState<ParkingMeter | null>(null);
+  const [meterSearch, setMeterSearch] = useState<string>('');
+  const [meterRegion, setMeterRegion] = useState<'all' | '港島' | '九龍' | '新界'>('all');
+  const [metersLoading, setMetersLoading] = useState<boolean>(true);
+  const [metersLastUpdated, setMetersLastUpdated] = useState<string>('');
+  const [meterStats, setMeterStats] = useState<{ totalSpots: number; totalVacant: number }>({ totalSpots: 0, totalVacant: 0 });
+  const [isRefreshingMeters, setIsRefreshingMeters] = useState<boolean>(false);
+
+  // 抓取與定期自動更新咪錶
+  const loadMeters = async (isManual = false) => {
+    if (isManual) setIsRefreshingMeters(true);
+    try {
+      const res = await fetchParkingMeterVacancy();
+      setMeters(res.meters);
+      setMetersLastUpdated(res.lastUpdated);
+      setMeterStats({ totalSpots: res.totalSpots, totalVacant: res.totalVacant });
+    } catch (e) {
+      console.warn('Meter vacancy load fallback:', e);
+    } finally {
+      setMetersLoading(false);
+      if (isManual) setTimeout(() => setIsRefreshingMeters(false), 500);
+    }
+  };
+
+  useEffect(() => {
+    loadMeters();
+    // 運輸署咪錶空置數據每 45 秒定時自動更新
+    const timer = setInterval(() => {
+      loadMeters();
+    }, 45000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // CCTV 專屬搜尋與分區
+  const [cctvSearch, setCctvSearch] = useState<string>('');
+  const [cctvRegion, setCctvRegion] = useState<'all' | '香港島' | '九龍' | '新界'>('all');
+
   // 底圖風格: 'osm_dark' | 'carto_voyager' | 'carto_dark'
   const [mapTileStyle, setMapTileStyle] = useState<'osm_dark' | 'carto_voyager' | 'carto_dark'>('osm_dark');
 
@@ -111,7 +162,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
 
   // 顏色輔助
   const getDifficultyColor = (tag?: ParkingLot['difficultyTag'], hasDifficulty?: boolean) => {
-    if (hasDifficulty === false || !tag || tag === '未有回報') return '#71717a';
+    if (hasDifficulty === false || !tag || tag === '未有回報' || tag === 'pending') return '#71717a';
     switch (tag) {
       case '輕易': return '#d4ff00';
       case '中等': return '#FFD700';
@@ -119,6 +170,101 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
       case '不可能的任務': return '#E000FF';
       default: return '#71717a';
     }
+  };
+
+  // 篩選 CCTV 攝影機
+  const filteredCctvCameras = useMemo(() => {
+    return CCTV_CAMERAS.filter(cam => {
+      const matchRegion = cctvRegion === 'all' || cam.region === cctvRegion;
+      const matchSearch = !cctvSearch || 
+        cam.description.toLowerCase().includes(cctvSearch.toLowerCase()) ||
+        cam.district.toLowerCase().includes(cctvSearch.toLowerCase()) ||
+        cam.key.toLowerCase().includes(cctvSearch.toLowerCase());
+      return matchRegion && matchSearch;
+    });
+  }, [cctvRegion, cctvSearch]);
+
+  // 地圖上渲染攝影機 Marker
+  const visibleCctvMarkers = useMemo(() => {
+    if (cctvSearch.trim().length > 0) {
+      return filteredCctvCameras.slice(0, 150);
+    }
+    if (cctvRegion !== 'all') {
+      return filteredCctvCameras.slice(0, 120);
+    }
+    return filteredCctvCameras.slice(0, 80);
+  }, [filteredCctvCameras, cctvSearch, cctvRegion]);
+
+  // 篩選路旁停車收費錶 (咪錶)
+  const filteredMeters = useMemo(() => {
+    return meters.filter(m => {
+      const matchRegion = meterRegion === 'all' || m.region === meterRegion;
+      const matchSearch = !meterSearch || 
+        m.streetName.toLowerCase().includes(meterSearch.toLowerCase()) ||
+        m.district.toLowerCase().includes(meterSearch.toLowerCase());
+      return matchRegion && matchSearch;
+    });
+  }, [meters, meterRegion, meterSearch]);
+
+  // 自定義路旁咪錶 Marker 圖標 (小圓點，有空位時標記綠色圓圈，選中時帶光暈與外圈)
+  const createMeterMarkerIcon = (meter: ParkingMeter, isSelected: boolean) => {
+    const hasVacancy = meter.vacantSpaces > 0;
+    const dotColor = hasVacancy ? '#d4ff00' : '#ef4444';
+    const ringColor = hasVacancy ? 'rgba(212, 255, 0, 0.9)' : 'rgba(239, 68, 68, 0.7)';
+    const glow = hasVacancy ? '0 0 10px rgba(212, 255, 0, 0.8)' : '0 0 6px rgba(239, 68, 68, 0.4)';
+
+    const html = `
+      <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+        <!-- 頂部微型空位標籤 -->
+        <div class="px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-md border text-[9.5px] font-mono font-bold whitespace-nowrap mb-0.5"
+             style="background-color: #000000; border-color: ${isSelected ? '#d4ff00' : ringColor}; color: ${dotColor};">
+          <span>🅿️</span>
+          <span>${hasVacancy ? `${meter.vacantSpaces}空位` : '滿額'}</span>
+        </div>
+
+        <!-- 小圓點帶綠色圓圈 -->
+        <div class="relative flex items-center justify-center">
+          ${isSelected ? `<div class="absolute -inset-1.5 rounded-full animate-ping opacity-60" style="background-color: ${dotColor};"></div>` : ''}
+          <div class="w-4 h-4 rounded-full flex items-center justify-center border-2"
+               style="background-color: #0d0d0d; border-color: ${isSelected ? '#ffffff' : ringColor}; box-shadow: ${glow};">
+            <div class="w-2 h-2 rounded-full" style="background-color: ${dotColor};"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return L.divIcon({
+      html,
+      className: 'custom-leaflet-meter-marker',
+      iconSize: [0, 0],
+      iconAnchor: [0, 0]
+    });
+  };
+
+  // 自定義 CCTV Marker 圖標
+  const createCCTVMarkerIcon = (cam: TrafficCamera, isSelected: boolean) => {
+    const html = `
+      <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+        <div class="px-2 py-0.5 rounded-full flex items-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.85)] border text-[10px] font-mono font-bold whitespace-nowrap mb-0.5"
+             style="background-color: #09090b; border-color: ${isSelected ? '#ff3b30' : 'rgba(239,68,68,0.5)'}; color: #ffffff;">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+          <span class="max-w-[75px] truncate">${cam.key}</span>
+        </div>
+        <div class="w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2"
+             style="background-color: ${isSelected ? '#ff3b30' : '#dc2626'}; border-color: #ffffff; color: #ffffff;">
+          <span style="font-size: 11px;">📹</span>
+        </div>
+        <div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] mx-auto"
+             style="border-top-color: #dc2626;"></div>
+      </div>
+    `;
+
+    return L.divIcon({
+      html,
+      className: 'custom-leaflet-cctv-marker',
+      iconSize: [0, 0],
+      iconAnchor: [0, 0]
+    });
   };
 
   // 自定義 Leaflet Marker 圖標 (Kilowatt Style: 常駐黑色圓角膠囊價格標籤 + 藍色圓形停車場 Pin)
@@ -357,8 +503,8 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
 
           <MapController center={mapCenter} zoom={mapZoom} flyTrigger={flyTrigger} />
 
-          {/* 渲染全港停車場 Markers */}
-          {filteredLots.map(lot => {
+          {/* 渲染停車場 Markers (parking 模式) */}
+          {activeMapMode === 'parking' && filteredLots.map(lot => {
             const isSelected = selectedParking?.id === lot.id;
             return (
               <Marker
@@ -371,12 +517,55 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
               />
             );
           })}
+
+          {/* 渲染香港運輸署實時路面 CCTV Markers (cctv 模式) */}
+          {activeMapMode === 'cctv' && visibleCctvMarkers.map(cam => {
+            const isSelected = selectedCamera?.key === cam.key;
+            return (
+              <Marker
+                key={cam.key}
+                position={[cam.lat, cam.lng]}
+                icon={createCCTVMarkerIcon(cam, isSelected)}
+                eventHandlers={{
+                  click: () => {
+                    setSelectedCamera(cam);
+                    setMapCenter([cam.lat, cam.lng]);
+                    setMapZoom(16);
+                    setFlyTrigger(prev => prev + 1);
+                  }
+                }}
+              />
+            );
+          })}
+
+          {/* 渲染香港運輸署實時停車收費錶 Markers (meter 模式) */}
+          {activeMapMode === 'meter' && filteredMeters.map(meter => {
+            const isSelected = selectedMeter?.meterId === meter.meterId;
+            return (
+              <Marker
+                key={meter.meterId}
+                position={[meter.lat, meter.lng]}
+                icon={createMeterMarkerIcon(meter, isSelected)}
+                eventHandlers={{
+                  click: () => {
+                    setSelectedMeter(meter);
+                    setSelectedParking(null);
+                    setSelectedCamera(null);
+                    setMapCenter([meter.lat, meter.lng]);
+                    setMapZoom(16);
+                    setFlyTrigger(prev => prev + 1);
+                    setSheetStage('half');
+                  }
+                }}
+              />
+            );
+          })}
         </MapContainer>
       </div>
 
-      {/* 2. 頂部浮動控制膠囊 (Top Floating Pill) */}
-      <div className="absolute top-3 sm:top-5 left-1/2 -translate-x-1/2 z-[500] w-[calc(100%-24px)] max-w-xl pointer-events-auto">
-        <div className="bg-black/80 backdrop-blur-xl border border-white/15 rounded-full px-2.5 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.7)] flex items-center justify-between gap-1.5">
+      {/* 2. 頂部浮動控制膠囊 (Top Floating Pill - Kilowatt Style) */}
+      <div className="absolute top-3 sm:top-5 left-1/2 -translate-x-1/2 z-[500] w-[calc(100%-20px)] max-w-2xl pointer-events-auto">
+        <div className="bg-black/85 backdrop-blur-xl border border-white/15 rounded-full px-2.5 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.7)] flex items-center justify-between gap-1.5">
           {/* 返回鍵 */}
           {onClose && (
             <button
@@ -389,53 +578,129 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
             </button>
           )}
 
-          {/* 快速切換篩選膠囊 (Kilowatt 專屬設計) */}
+          {/* 頂部核心功能 Tab 與篩選切換膠囊 */}
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide py-0.5">
-            {/* ⚡ 充電 */}
+            {/* 全部 */}
             <button
               type="button"
-              onClick={() => setOnlyChargingFilter(prev => !prev)}
+              onClick={() => {
+                setActiveMapMode('parking');
+                setOnlyChargingFilter(false);
+                setSelectedCamera(null);
+                setSelectedMeter(null);
+              }}
               className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
-                onlyChargingFilter
+                activeMapMode === 'parking' && !onlyChargingFilter && !selectedMeter
                   ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.4)]'
                   : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <Zap size={13} className={onlyChargingFilter ? "text-black" : "text-[#d4ff00]"} />
-              <span>充電</span>
+              <span>全部</span>
             </button>
 
-            {/* 🅿️ 泊車難度 */}
+            {/* 🅿️ 地圖難度 */}
             <button
               type="button"
               onClick={() => {
-                // 循環切換：全部 -> 地獄 -> 中等 -> 輕易
-                const order: Array<typeof difficultyFilter> = ['all', '地獄', '中等', '輕易'];
-                const nextIdx = (order.indexOf(difficultyFilter) + 1) % order.length;
-                setDifficultyFilter(order[nextIdx]);
+                setActiveMapMode('parking');
+                setSelectedCamera(null);
+                setSelectedMeter(null);
               }}
               className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
-                difficultyFilter !== 'all'
-                  ? 'bg-amber-400 text-black shadow-[0_0_12px_rgba(251,191,36,0.4)]'
+                activeMapMode === 'parking'
+                  ? 'bg-[#d4ff00]/20 border border-[#d4ff00] text-[#d4ff00]'
                   : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <span>🅿️</span>
-              <span>{difficultyFilter === 'all' ? '難度評級' : difficultyFilter}</span>
+              <span>🅿️ 地圖難度</span>
             </button>
 
-            {/* 📹 實錄影片 */}
+            {/* ⚡ 充電 */}
             <button
               type="button"
-              onClick={() => setOnlyVideoFilter(prev => !prev)}
-              className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
-                onlyVideoFilter
+              onClick={() => {
+                setActiveMapMode('parking');
+                setOnlyChargingFilter(prev => !prev);
+                setSelectedCamera(null);
+                setSelectedMeter(null);
+              }}
+              className={`px-2.5 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                onlyChargingFilter && activeMapMode === 'parking'
+                  ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.4)]'
+                  : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+              title="僅看設有充電之停車場"
+            >
+              <Zap size={11} className={onlyChargingFilter && activeMapMode === 'parking' ? "text-black" : "text-[#d4ff00]"} />
+              <span>充電</span>
+            </button>
+
+            {/* 🅿️ 咪錶 快捷開關 */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeMapMode === 'meter') {
+                  setActiveMapMode('parking');
+                  setSelectedMeter(null);
+                } else {
+                  setActiveMapMode('meter');
+                  setSelectedParking(null);
+                  setSelectedCamera(null);
+                  setSheetStage('half');
+                }
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeMapMode === 'meter'
+                  ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.5)]'
+                  : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10 border border-[#d4ff00]/30'
+              }`}
+              title="香港運輸署實時路旁停車收費錶空置資訊"
+            >
+              <span>🅿️ 咪錶</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${activeMapMode === 'meter' ? 'bg-black' : 'bg-[#d4ff00]'} animate-pulse`} />
+            </button>
+
+            <span className="text-white/20 select-none">│</span>
+
+            {/* 📹 實時快拍 (CCTV) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMapMode('cctv');
+                setSelectedParking(null);
+                setSelectedMeter(null);
+                setSheetStage('half');
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeMapMode === 'cctv'
                   ? 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]'
                   : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <Video size={13} />
-              <span>實錄影片</span>
+              <Video size={13} className={activeMapMode === 'cctv' ? 'text-white' : 'text-red-400'} />
+              <span>快拍</span>
+            </button>
+
+            {/* 🚇 過海三隧分流即時收費與時間 */}
+            <button
+              type="button"
+              onClick={() => setShowTunnelModal(true)}
+              className="px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer bg-white/5 text-white/70 hover:text-white hover:bg-white/10"
+              title="查看三隧分流即時收費與過海行車時間"
+            >
+              <Navigation size={13} className="text-sky-400" />
+              <span>三隧分流</span>
+            </button>
+
+            {/* ⚠️ 特別交通消息 */}
+            <button
+              type="button"
+              onClick={() => setShowNewsModal(true)}
+              className="px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer bg-white/5 text-white/70 hover:text-white hover:bg-white/10"
+              title="查看香港特別交通消息通告"
+            >
+              <AlertTriangle size={13} className="text-amber-400" />
+              <span>特別消息</span>
             </button>
           </div>
 
@@ -529,7 +794,15 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
           <div className="flex items-center justify-between mt-1 text-[10px] font-mono text-white/40">
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-[#d4ff00]"></span>
-              {selectedParking ? '選中停車場詳情' : `全港難度庫 (${filteredLots.length} 場)`}
+              {selectedMeter
+                ? '選中路旁咪錶'
+                : selectedParking 
+                ? '選中停車場詳情' 
+                : activeMapMode === 'meter'
+                ? `香港路旁咪錶 (${filteredMeters.length} 處)`
+                : activeMapMode === 'cctv'
+                ? `交通快拍鏡頭 (${filteredCctvCameras.length} 處)`
+                : `全港難度庫 (${filteredLots.length} 場)`}
             </span>
             <span className="text-[#d4ff00] hover:underline flex items-center gap-0.5">
               {sheetStage === 'collapsed' ? '向上展開 ⌃' : sheetStage === 'half' ? '完整詳情 ⌃' : '向下收合 ⌄'}
@@ -547,9 +820,142 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
           }}
         >
           {/* ======================================================== */}
-          {/* A. 若當前【已選中特定停車場】：展示高互動詳情與回報 */}
+          {/* A1. 若當前【已選中特定咪錶】：展示路旁停車收費錶詳情 */}
           {/* ======================================================== */}
-          {selectedParking ? (
+          {selectedMeter ? (
+            <div className="space-y-4 pb-6 text-left">
+              {/* 1. 標題、分區標籤與關閉按鈕 */}
+              <div className="flex items-start justify-between gap-3 pt-1 border-b border-white/5 pb-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-cyber-green/20 text-[#d4ff00] border border-[#d4ff00]/40 flex items-center gap-1">
+                      <span>🅿️</span>
+                      <span>實時停車收費錶</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono text-white/60 bg-white/5 border border-white/10">
+                      {selectedMeter.district} ({selectedMeter.region})
+                    </span>
+                    <span className="flex items-center gap-1 text-[10px] font-mono text-white/40">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyber-green animate-ping inline-block" />
+                      運輸署 Open Data
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight m-0">
+                    {selectedMeter.streetName}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedMeter(null)}
+                  className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer shrink-0"
+                  title="關閉咪錶詳情"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* 2. 【空置車位：X 個】與【總車位：Y 個】核心卡片 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-2xl bg-black/60 border border-[#d4ff00]/30 shadow-[0_0_20px_rgba(212,255,0,0.12)]">
+                  <div className="text-[10px] font-mono uppercase text-white/50 tracking-wider">
+                    即時空置車位
+                  </div>
+                  <div className="text-3xl sm:text-4xl font-mono font-black text-[#d4ff00] flex items-baseline gap-1 mt-1">
+                    {selectedMeter.vacantSpaces}
+                    <span className="text-xs font-sans text-white/60 font-normal">個車位</span>
+                  </div>
+                  <div className="text-[11px] font-mono mt-1.5 flex items-center gap-1">
+                    {selectedMeter.vacantSpaces > 0 ? (
+                      <span className="text-[#d4ff00] flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#d4ff00]" />
+                        目前尚有空位可停泊
+                      </span>
+                    ) : (
+                      <span className="text-red-400 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                        目前已滿額 (流動性高)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-black/60 border border-white/10">
+                  <div className="text-[10px] font-mono uppercase text-white/50 tracking-wider">
+                    路段總設咪錶位
+                  </div>
+                  <div className="text-3xl sm:text-4xl font-mono font-black text-white flex items-baseline gap-1 mt-1">
+                    {selectedMeter.totalSpaces}
+                    <span className="text-xs font-sans text-white/60 font-normal">個總位</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-white/40 mt-1.5">
+                    佔用率: {Math.round(((selectedMeter.totalSpaces - selectedMeter.vacantSpaces) / selectedMeter.totalSpaces) * 100)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. 空置比率進度條 */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-mono text-white/40">
+                  <span>車位流動佔用狀態</span>
+                  <span>剩餘可用 {Math.round((selectedMeter.vacantSpaces / selectedMeter.totalSpaces) * 100)}%</span>
+                </div>
+                <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden border border-white/10">
+                  <div 
+                    className="h-full bg-gradient-to-r from-red-500 via-amber-400 to-[#d4ff00] transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(8, (selectedMeter.vacantSpaces / selectedMeter.totalSpaces) * 100))}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* 4. 【收費時段】與費率規格 */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2.5">
+                <div className="flex items-start gap-2.5">
+                  <Clock size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-bold text-white font-mono">
+                      收費時段：{selectedMeter.chargingPeriod}
+                    </div>
+                    <div className="text-[11px] font-mono text-white/45 mt-0.5">
+                      非收費時段免費停泊 (請注意現場禁泊標誌與黃線管制)
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5 pt-2 border-t border-white/5">
+                  <DollarSign size={16} className="text-[#d4ff00] shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-bold text-[#d4ff00] font-mono">
+                      收費標準：每 15 分鐘 HK$ {selectedMeter.ratePer15Min?.toFixed(1) || '2.0'}（最長泊車：{selectedMeter.maxDuration || '2小時'}）
+                    </div>
+                    <div className="text-[11px] font-mono text-white/45 mt-0.5">
+                      支援支付：{selectedMeter.paymentMethods?.join('、') || '八達通、感應式信用卡、轉數快'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. 導航直達與返回按鈕 */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => openNavigation(selectedMeter.lat, selectedMeter.lng, selectedMeter.streetName)}
+                  className="flex-1 py-3 px-4 rounded-xl bg-[#d4ff00] text-black font-mono font-bold text-xs uppercase flex items-center justify-center gap-2 hover:bg-[#bce600] transition-all shadow-[0_0_15px_rgba(212,255,0,0.3)] cursor-pointer"
+                >
+                  <Navigation size={15} />
+                  <span>導航直達此路段咪錶</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedMeter(null)}
+                  className="py-3 px-4 rounded-xl bg-white/10 text-white font-mono font-bold text-xs hover:bg-white/20 transition-all cursor-pointer"
+                >
+                  返回列表
+                </button>
+              </div>
+            </div>
+          ) : selectedParking ? (
             <div className="space-y-4 pb-6">
               {/* 1. 標題、難度標籤與快速關閉按鈕 */}
               <div className="flex items-start justify-between gap-3 pt-1 border-b border-white/5 pb-3">
@@ -954,124 +1360,400 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
             </div>
           ) : (
             /* ======================================================== */
-            /* B. 若未選中特定停車場：展示搜尋列、分區膠囊與全港列表 */
             /* ======================================================== */
-            <div className="space-y-3 pb-8 text-left">
-              {/* 搜尋列 */}
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={15} />
-                <input
-                  type="text"
-                  placeholder="搜尋停車場名稱、商場或地址..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 pr-9 py-2.5 text-xs text-white placeholder:text-white/30 font-mono focus:outline-none focus:border-[#d4ff00] transition-all"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-
-              {/* 分區快速篩選膠囊 */}
-              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
-                {(['all', '港島', '九龍', '新界'] as const).map(reg => (
-                  <button
-                    key={reg}
-                    type="button"
-                    onClick={() => setRegionFilter(reg)}
-                    className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
-                      regionFilter === reg
-                        ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.3)]'
-                        : 'bg-white/5 text-white/50 hover:bg-white/10'
-                    }`}
-                  >
-                    {reg === 'all' ? '全部區域' : reg}
-                  </button>
-                ))}
-              </div>
-
-              {/* 停車場列表卡片 */}
-              <div className="space-y-2 pt-1">
-                <div className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between">
-                  <span>附近推薦停車場 ({filteredLots.length})</span>
-                  <span>點擊對焦地圖</span>
+            /* B. 若未選中特定停車場：展示搜尋列、分區膠囊與清單列表 */
+            /* ======================================================== */
+            activeMapMode === 'meter' ? (
+              /* B0. 實時路旁停車收費錶 (咪錶) 清單 */
+              <div className="space-y-3 pb-8 text-left">
+                {/* 咪錶搜尋列 */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={15} />
+                  <input
+                    type="text"
+                    placeholder="搜尋路段名稱、如「士丹利街」、「謝斐道」、「沙田」..."
+                    value={meterSearch}
+                    onChange={(e) => setMeterSearch(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 pr-9 py-2.5 text-xs text-white placeholder:text-white/30 font-mono focus:outline-none focus:border-[#d4ff00] transition-all"
+                  />
+                  {meterSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setMeterSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {filteredLots.map(lot => {
-                    const diffColor = getDifficultyColor(lot.difficultyTag, lot.hasDifficulty);
-                    return (
-                      <div
-                        key={lot.id}
-                        onClick={() => handleSelectLot(lot)}
-                        className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-[#d4ff00]/40 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left group"
+                {/* 分區快速篩選膠囊與刷新 */}
+                <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-hide py-0.5">
+                  <div className="flex gap-1.5">
+                    {(['all', '港島', '九龍', '新界'] as const).map(reg => (
+                      <button
+                        key={reg}
+                        type="button"
+                        onClick={() => setMeterRegion(reg)}
+                        className={`px-3 py-1 rounded-full text-xs font-mono font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          meterRegion === reg
+                            ? 'bg-[#d4ff00] text-black shadow-[0_0_8px_rgba(212,255,0,0.3)]'
+                            : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'
+                        }`}
                       >
-                        <div>
-                          <div className="flex justify-between items-start gap-2">
-                            <span className="font-bold text-xs sm:text-sm text-white group-hover:text-[#d4ff00] transition-colors truncate">
-                              {lot.name}
+                        {reg === 'all' ? '全部區域' : reg}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 手動刷新按鈕 */}
+                  <button
+                    type="button"
+                    onClick={() => loadMeters(true)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono text-white/50 hover:text-[#d4ff00] bg-white/5 hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+                    title="刷新實時咪錶空置數據"
+                  >
+                    <RefreshCw size={11} className={isRefreshingMeters ? 'animate-spin text-[#d4ff00]' : ''} />
+                    <span>刷新</span>
+                  </button>
+                </div>
+
+                {/* 狀態條：連線與總車位統計 */}
+                <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between text-[11px] font-mono">
+                  <span className="flex items-center gap-1.5 text-white/60">
+                    <span className="w-2 h-2 rounded-full bg-cyber-green animate-pulse" />
+                    運輸署開放數據 (定時自動更新)
+                  </span>
+                  <span className="text-[#d4ff00] font-bold">
+                    全港即時空置: {meterStats.totalVacant} / {meterStats.totalSpots} 位
+                  </span>
+                </div>
+
+                {/* 咪錶列表 */}
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                  {filteredMeters.length > 0 ? (
+                    filteredMeters.map(meter => {
+                      const hasVacancy = meter.vacantSpaces > 0;
+                      return (
+                        <div
+                          key={meter.meterId}
+                          onClick={() => {
+                            setSelectedMeter(meter);
+                            setSelectedParking(null);
+                            setSelectedCamera(null);
+                            setMapCenter([meter.lat, meter.lng]);
+                            setMapZoom(16);
+                            setFlyTrigger(prev => prev + 1);
+                          }}
+                          className="p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-[#d4ff00]/40 transition-all cursor-pointer flex items-center justify-between gap-3 group"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-[10px] font-mono text-white/40 mb-0.5">
+                              <span className="text-[#d4ff00] font-bold">🅿️ 咪錶</span>
+                              <span>·</span>
+                              <span>{meter.district}</span>
+                              <span>·</span>
+                              <span>{meter.region}</span>
+                            </div>
+                            <div className="text-xs sm:text-[13px] font-bold text-white group-hover:text-[#d4ff00] transition-colors truncate">
+                              {meter.streetName}
+                            </div>
+                            <div className="text-[10px] font-mono text-white/40 mt-0.5 truncate">
+                              時段: {meter.chargingPeriod}
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold inline-block ${
+                              hasVacancy
+                                ? 'bg-[#d4ff00]/15 text-[#d4ff00] border border-[#d4ff00]/30 shadow-[0_0_8px_rgba(212,255,0,0.15)]'
+                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                            }`}>
+                              {hasVacancy ? `${meter.vacantSpaces} 空位` : '滿額'}
                             </span>
-                            {lot.hasDifficulty !== false && lot.difficultyTag && (
-                              <span 
-                                style={{
-                                  fontSize: '9px',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  backgroundColor: lot.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
-                                  color: lot.difficultyTag === '地獄' ? '#fff' : '#000',
-                                  fontWeight: 'bold',
-                                  whiteSpace: 'nowrap'
-                                }}
-                              >
-                                {lot.difficultyTag}
-                              </span>
-                            )}
+                            <div className="text-[10px] font-mono text-white/30 mt-0.5">
+                              共 {meter.totalSpaces} 位
+                            </div>
                           </div>
-                          {lot.address && (
-                            <p className="text-[10px] text-white/40 truncate font-mono mt-0.5 m-0">
-                              {lot.address}
-                            </p>
-                          )}
                         </div>
-
-                        <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[9px] font-mono text-white/50">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-white/40">{lot.region}</span>
-                            {lot.hasCharging && (
-                              <span className="text-[#d4ff00] font-bold">
-                                ⚡ {lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || ''}kW
-                              </span>
-                            )}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openNavigation(lot.lat, lot.lng, lot.name);
-                            }}
-                            className="px-2 py-0.5 rounded-lg bg-[#d4ff00] text-black font-bold text-[9px] flex items-center gap-1 hover:bg-[#b0f000] transition-all cursor-pointer shadow-sm"
-                            title="一鍵導航"
-                          >
-                            <Navigation size={9} />
-                            <span>導航</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    <div className="py-8 text-center text-xs font-mono text-white/30">
+                      無符合條件之路旁咪錶
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : activeMapMode === 'cctv' ? (
+              /* B1. 實時路面 CCTV 快拍清單 */
+              <div className="space-y-3 pb-8 text-left">
+                {/* CCTV 搜尋列 */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={15} />
+                  <input
+                    type="text"
+                    placeholder="搜尋道路、行政區或鏡頭代號 (如 告士打道、紅隧、K101)..."
+                    value={cctvSearch}
+                    onChange={(e) => setCctvSearch(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 pr-9 py-2.5 text-xs text-white placeholder:text-white/30 font-mono focus:outline-none focus:border-red-500 transition-all"
+                  />
+                  {cctvSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setCctvSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* CCTV 分區快速篩選膠囊 */}
+                <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
+                  {(['all', '香港島', '九龍', '新界'] as const).map(reg => (
+                    <button
+                      key={reg}
+                      type="button"
+                      onClick={() => setCctvRegion(reg)}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                        cctvRegion === reg
+                          ? 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]'
+                          : 'bg-white/5 text-white/50 hover:bg-white/10'
+                      }`}
+                    >
+                      {reg === 'all' ? '全部區域' : reg}
+                    </button>
+                  ))}
+                </div>
+
+                {/* CCTV 鏡頭列表 */}
+                <div className="space-y-2 pt-1">
+                  <div className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      <span>即時路面快拍鏡頭 ({filteredCctvCameras.length})</span>
+                    </span>
+                    <span>點擊查看即時截圖</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {filteredCctvCameras.slice(0, 30).map(cam => (
+                      <div
+                        key={cam.key}
+                        onClick={() => {
+                          setSelectedCamera(cam);
+                          setMapCenter([cam.lat, cam.lng]);
+                          setMapZoom(16);
+                          setFlyTrigger(prev => prev + 1);
+                        }}
+                        className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-red-500/40 transition-all cursor-pointer flex items-center justify-between gap-3 text-left group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            <span className="font-bold text-xs sm:text-sm text-white group-hover:text-red-400 transition-colors truncate">
+                              {cam.description}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-white/40 font-mono mt-0.5 flex items-center gap-1.5">
+                            <span>{cam.region} · {cam.district}</span>
+                            <span className="text-white/20">│</span>
+                            <span className="text-white/30">{cam.key}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCamera(cam);
+                            setMapCenter([cam.lat, cam.lng]);
+                            setMapZoom(16);
+                            setFlyTrigger(prev => prev + 1);
+                          }}
+                          className="px-2.5 py-1 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white font-mono font-bold text-[10px] flex items-center gap-1 transition-all shrink-0 cursor-pointer"
+                        >
+                          <Video size={11} />
+                          <span>看畫面</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* B2. 停車場列表 */
+              <div className="space-y-3 pb-8 text-left">
+                {/* 搜尋列 */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={15} />
+                  <input
+                    type="text"
+                    placeholder="搜尋停車場名稱、商場或地址..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 pr-9 py-2.5 text-xs text-white placeholder:text-white/30 font-mono focus:outline-none focus:border-[#d4ff00] transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* 分區快速篩選膠囊 */}
+                <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
+                  {(['all', '港島', '九龍', '新界'] as const).map(reg => (
+                    <button
+                      key={reg}
+                      type="button"
+                      onClick={() => setRegionFilter(reg)}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                        regionFilter === reg
+                          ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.3)]'
+                          : 'bg-white/5 text-white/50 hover:bg-white/10'
+                      }`}
+                    >
+                      {reg === 'all' ? '全部區域' : reg}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 停車場列表卡片 */}
+                <div className="space-y-2 pt-1">
+                  <div className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between">
+                    <span>附近推薦停車場 ({filteredLots.length})</span>
+                    <span>點擊對焦地圖</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {filteredLots.map(lot => {
+                      const diffColor = getDifficultyColor(lot.difficultyTag, lot.hasDifficulty);
+                      return (
+                        <div
+                          key={lot.id}
+                          onClick={() => handleSelectLot(lot)}
+                          className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-[#d4ff00]/40 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left group"
+                        >
+                          <div>
+                            <div className="flex justify-between items-start gap-2">
+                              <span className="font-bold text-xs sm:text-sm text-white group-hover:text-[#d4ff00] transition-colors truncate">
+                                {lot.name}
+                              </span>
+                              {lot.hasDifficulty !== false && lot.difficultyTag && (
+                                <span 
+                                  style={{
+                                    fontSize: '9px',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    backgroundColor: (lot.difficultyTag === '未有回報' || lot.difficultyTag === 'pending')
+                                      ? '#71717a'
+                                      : lot.difficultyTag === '地獄' 
+                                        ? '#ff3b30' 
+                                        : lot.difficultyTag === '不可能的任務' 
+                                          ? '#a855f7' 
+                                          : '#d4ff00',
+                                    color: (lot.difficultyTag === '未有回報' || lot.difficultyTag === 'pending' || lot.difficultyTag === '地獄' || lot.difficultyTag === '不可能的任務') ? '#fff' : '#000',
+                                    fontWeight: 'bold',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {lot.difficultyTag === 'pending' ? '未有回報' : lot.difficultyTag}
+                                </span>
+                              )}
+                            </div>
+                            {lot.address && (
+                              <p className="text-[10px] text-white/40 truncate font-mono mt-0.5 m-0">
+                                {lot.address}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[9px] font-mono text-white/50">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-white/40">{lot.region}</span>
+                              {lot.hasCharging && (
+                                <span className="text-[#d4ff00] font-bold">
+                                  ⚡ {lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || ''}kW
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openNavigation(lot.lat, lot.lng, lot.name);
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-[#d4ff00] text-black font-bold text-[9px] flex items-center gap-1 hover:bg-[#b0f000] transition-all cursor-pointer shadow-sm"
+                              title="一鍵導航"
+                            >
+                              <Navigation size={9} />
+                              <span>導航</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )
           )}
         </div>
       </motion.div>
+
+      {/* 3. 實時路面交通快拍 CCTV 彈窗 */}
+      <AnimatePresence>
+        {selectedCamera && (
+          <TrafficCCTVModal
+            camera={selectedCamera}
+            onClose={() => setSelectedCamera(null)}
+            onSelectCamera={(cam) => {
+              setSelectedCamera(cam);
+              setMapCenter([cam.lat, cam.lng]);
+              setMapZoom(16);
+              setFlyTrigger(prev => prev + 1);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 4. 過海三隧分流即時收費與時間面板 */}
+      <AnimatePresence>
+        {showTunnelModal && (
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowTunnelModal(false)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-md cursor-pointer"
+            />
+            <motion.div
+              initial={{ y: '100%', opacity: 0.5 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="relative w-full max-w-xl bg-[#141414] border-t sm:border border-white/15 rounded-t-[28px] sm:rounded-2xl shadow-3xl overflow-hidden z-10 p-4 sm:p-6 max-h-[90vh] overflow-y-auto custom-scrollbar"
+            >
+              <TunnelDashboard onClose={() => setShowTunnelModal(false)} />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. 道路事故與特別交通消息通告彈窗 */}
+      <AnimatePresence>
+        {showNewsModal && (
+          <TrafficNewsModal onClose={() => setShowNewsModal(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

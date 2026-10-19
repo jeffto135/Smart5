@@ -156,7 +156,7 @@ export interface GunGroup {
   note: string;
 }
 
-export type ParkingLotDifficulty = '未有回報' | '輕易' | '中等' | '地獄' | '不可能的任務' | null;
+export type ParkingLotDifficulty = '未有回報' | 'pending' | '輕易' | '中等' | '地獄' | '不可能的任務' | null;
 
 export interface ParkingLot {
   id: string;
@@ -183,6 +183,7 @@ export interface ParkingLot {
   // 泊車收費資訊
   hourlyRateWeekday?: number; // 平日時租 (HKD)
   hourlyRateWeekend?: number; // 假日時租 (HKD)
+  dayNightRate?: string; // 日泊/夜泊收費 (如 日泊 $120 / 夜泊 $80)
   parkingDiscountNote?: string; // 泊車優惠備忘
 
   // 充電設施與費用
@@ -261,5 +262,21 @@ export interface ClubPerk {
   address?: string;
   googleMapsUrl?: string;
   createdAt: any;
+}
+
+export interface ParkingMeter {
+  meterId: string;
+  streetName: string; // 路段名稱
+  district: string; // 行政分區
+  region: '港島' | '九龍' | '新界';
+  lat: number;
+  lng: number;
+  vacantSpaces: number; // 空置車位：X 個
+  totalSpaces: number; // 總車位：Y 個
+  chargingPeriod: string; // 收費時段
+  ratePer15Min?: number; // 每次或每15分鐘收費 (HKD)
+  maxDuration?: string; // 最長泊車時間 (如 2小時、30分鐘)
+  paymentMethods?: string[]; // 支援支付方式 (如 八達通, 信用卡, 轉數快)
+  lastUpdated?: string;
 }
 

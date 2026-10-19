@@ -9,7 +9,7 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { Zap, TrendingDown, Battery, DollarSign, ArrowUpRight, ArrowDownRight, Minus, UserCheck, Vote, ShoppingBag, Gift, Clock, Sparkles, PlusCircle } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { CyberCard } from './ui/CyberCard';
 import { LogEntry, Vehicle, Activity, Poll, GroupBuy, UserProfile, RecordItem } from '../types';
 import { format } from 'date-fns';
@@ -18,6 +18,8 @@ import { auth, db } from '../lib/firebase';
 import { doc, setDoc, updateDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { MaintenanceHistoryModal } from './MaintenanceHistoryModal';
 import { getStoredTimer } from './ParkingTimerModal';
+import { TrafficNewsCard } from './TrafficNewsCard';
+import { TrafficNewsModal } from './TrafficNewsModal';
 
 interface DashboardProps {
   logs: LogEntry[];
@@ -75,6 +77,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [tempLicenseDate, setTempLicenseDate] = useState('');
   const [tempInsuranceDate, setTempInsuranceDate] = useState('');
   const [isUpdatingReminder, setIsUpdatingReminder] = useState(false);
+  const [showTrafficNewsModal, setShowTrafficNewsModal] = useState(false);
 
   const toggleDate = (date: string, e: React.MouseEvent) => {
     // Prevent event bubbling if necessary, but keep it simple
@@ -846,15 +849,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
         </div>
 
-        {/* 對比油車節省 & 平均能耗 雙指標卡 */}
-        <div className="grid grid-cols-2 gap-4">
-          <CyberCard title="對比油車節省" icon={<DollarSign size={18} />} className="border-cyber-green/20">
-            <div className="text-3xl font-mono font-bold text-cyber-green flex items-baseline gap-1">
-              <span className="text-sm opacity-50">$</span>
-              {stats.totalSavings}
-            </div>
-            <div className="text-[10px] uppercase opacity-40 mt-1 tracking-tighter">節省 (HKD)</div>
-          </CyberCard>
+        {/* 運輸署即時交通消息 & 平均能耗 雙指標卡 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <TrafficNewsCard 
+            onOpenModal={() => setShowTrafficNewsModal(true)} 
+            className="min-h-[140px]"
+          />
           
           <CyberCard 
             title="平均能耗" 
@@ -1301,6 +1301,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </motion.div>
         </div>
       )}
+
+      {/* 運輸署特別交通消息完整列表彈窗 */}
+      <AnimatePresence>
+        {showTrafficNewsModal && (
+          <TrafficNewsModal onClose={() => setShowTrafficNewsModal(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

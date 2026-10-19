@@ -32,13 +32,14 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
     lat: 22.3193,
     lng: 114.1694,
     hasDifficulty: true,
-    difficultyTag: '未有回報' as any,
+    difficultyTag: 'pending' as any,
     difficultyNote: '',
     heightLimit: '',
     videoGuide: '',
     // 泊車收費資訊
     hourlyRateWeekday: '' as number | '',
     hourlyRateWeekend: '' as number | '',
+    dayNightRate: '',
     parkingDiscountNote: '',
     // 充電資訊與收費
     hasCharging: false,
@@ -175,6 +176,7 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
       // 泊車收費資訊
       hourlyRateWeekday: formState.hourlyRateWeekday !== '' ? Number(formState.hourlyRateWeekday) : undefined,
       hourlyRateWeekend: formState.hourlyRateWeekend !== '' ? Number(formState.hourlyRateWeekend) : undefined,
+      dayNightRate: formState.dayNightRate || '',
       parkingDiscountNote: formState.parkingDiscountNote || '',
 
       // 充電設施與費用
@@ -216,6 +218,7 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
         // 泊車收費
         hourlyRateWeekday: lot.hourlyRateWeekday !== undefined ? lot.hourlyRateWeekday : '',
         hourlyRateWeekend: lot.hourlyRateWeekend !== undefined ? lot.hourlyRateWeekend : '',
+        dayNightRate: lot.dayNightRate || '',
         parkingDiscountNote: lot.parkingDiscountNote || '',
         // 充電資訊
         hasCharging: lot.hasCharging || false,
@@ -242,12 +245,13 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
         lat: 22.3193,
         lng: 114.1694,
         hasDifficulty: true,
-        difficultyTag: '未有回報',
+        difficultyTag: 'pending',
         difficultyNote: '',
         heightLimit: '',
         videoGuide: '',
         hourlyRateWeekday: '',
         hourlyRateWeekend: '',
+        dayNightRate: '',
         parkingDiscountNote: '',
         hasCharging: false,
         chargingProvider: '',
@@ -504,6 +508,63 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
                         </div>
                       </div>
 
+                      {/* 泊車收費擴充 (PARKING RATES) */}
+                      <div className="p-3.5 rounded-xl border border-white/10 bg-white/[0.02] space-y-3">
+                        <div className="text-xs font-mono font-bold text-cyber-green flex items-center gap-1.5">
+                          <span>💰 泊車時租與收費擴充 (PARKING RATES)</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-white/50 uppercase ml-1">平日時租 HOURLY (HKD)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="例如：22"
+                              value={formState.hourlyRateWeekday}
+                              onChange={(e) => setFormState({ ...formState, hourlyRateWeekday: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                              className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyber-green/50 placeholder:text-white/20"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-white/50 uppercase ml-1">假日時租 WEEKEND (HKD)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="例如：28"
+                              value={formState.hourlyRateWeekend}
+                              onChange={(e) => setFormState({ ...formState, hourlyRateWeekend: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                              className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyber-green/50 placeholder:text-white/20"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-white/50 uppercase ml-1">日泊 / 夜泊收費 DAY/NIGHT RATE</label>
+                            <input
+                              type="text"
+                              placeholder="例如：日泊 $120 (08:00-18:00) / 夜泊 $80"
+                              value={formState.dayNightRate}
+                              onChange={(e) => setFormState({ ...formState, dayNightRate: e.target.value })}
+                              className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyber-green/50 placeholder:text-white/20"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-white/50 uppercase ml-1">泊車優惠備忘 PARKING DISCOUNT</label>
+                            <input
+                              type="text"
+                              placeholder="例如：消費滿 $300 免 1 小時，最多 3 小時"
+                              value={formState.parkingDiscountNote}
+                              onChange={(e) => setFormState({ ...formState, parkingDiscountNote: e.target.value })}
+                              className="w-full bg-black border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyber-green/50 placeholder:text-white/20"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -545,19 +606,21 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
                         <div className="space-y-4 animate-fade-in">
                           <div className="space-y-2">
                             <label className="text-[10px] font-mono text-white/30 uppercase ml-1">難度評級 DIFFICULTY LEVEL *</label>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                               {[
+                                { value: 'pending', label: '⚪ 待實測 / 未有回報', desc: '待車友實測' },
                                 { value: '輕易', label: '🟢 輕易', desc: '新手無痛' },
                                 { value: '中等', label: '🟡 普通', desc: '難度一般' },
                                 { value: '地獄', label: '🔴 地獄級', desc: '考驗迴旋技術' },
                                 { value: '不可能的任務', label: '🟣 魔王級', desc: '極限地獄考驗' },
                               ].map((opt) => {
-                                const isSel = formState.difficultyTag === opt.value;
+                                const isSel = formState.difficultyTag === opt.value || 
+                                  (opt.value === 'pending' && (formState.difficultyTag === '未有回報' || !formState.difficultyTag));
                                 return (
                                   <button
                                     key={opt.value}
                                     type="button"
-                                    onClick={() => setFormState({ ...formState, difficultyTag: opt.value as any })}
+                                    onClick={() => setFormState({ ...formState, difficultyTag: (opt.value === 'pending' ? 'pending' : opt.value) as any })}
                                     className={`p-2.5 rounded-xl border text-left transition-all ${
                                       isSel
                                         ? 'bg-white/10 border-white text-white shadow-[0_0_12px_rgba(255,255,255,0.1)]'
@@ -658,6 +721,84 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
                               onChange={(e) => setFormState({ ...formState, provider: e.target.value })}
                               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyber-green/50 placeholder:text-white/20"
                             />
+                          </div>
+
+                          {/* 充電費用、罰款與槍數擴充 */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-white/[0.02] border border-white/5">
+                            {/* 充電計費模式 (按度數 / 按時段) */}
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-[10px] font-mono text-white/40 uppercase ml-1">充電計費模式 CHARGING FEE MODE *</label>
+                              <div className="flex gap-4 p-2 rounded-lg bg-black border border-white/10">
+                                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-white/80">
+                                  <input
+                                    type="radio"
+                                    name="feeType"
+                                    value="kwh"
+                                    checked={formState.feeType === 'kwh'}
+                                    onChange={() => handleFeeTypeChange('kwh')}
+                                    className="accent-cyber-green"
+                                  />
+                                  <span>⚡ 按度數計費 (HKD/kWh)</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-white/80">
+                                  <input
+                                    type="radio"
+                                    name="feeType"
+                                    value="time"
+                                    checked={formState.feeType === 'time'}
+                                    onChange={() => handleFeeTypeChange('time')}
+                                    className="accent-cyber-green"
+                                  />
+                                  <span>⏱️ 按時段/時間計費</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-mono text-white/40 uppercase ml-1">充電收費單價 (如 HK$ 2.33/kWh 或 免費)</label>
+                              <input
+                                type="text"
+                                placeholder="如：HK$ 2.33/kWh 或 免費"
+                                value={formState.chargingPriceNote}
+                                onChange={(e) => setFormState({ ...formState, chargingPriceNote: e.target.value })}
+                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white font-mono placeholder:text-white/20 focus:border-cyber-green/50"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-mono text-white/40 uppercase ml-1">逾時佔位罰款 (HK$/分鐘)</label>
+                              <input
+                                type="text"
+                                placeholder="如：HK$ 5/分鐘 或 滿電後每分鐘 $5"
+                                value={formState.idleFeeNote}
+                                onChange={(e) => setFormState({ ...formState, idleFeeNote: e.target.value })}
+                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white font-mono placeholder:text-white/20 focus:border-cyber-green/50"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-mono text-white/40 uppercase ml-1">充電槍總數 TOTAL GUNS</label>
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="例如：2"
+                                value={formState.totalGuns || ''}
+                                onChange={(e) => setFormState({ ...formState, totalGuns: parseInt(e.target.value) || 0 })}
+                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white font-mono placeholder:text-white/20 focus:border-cyber-green/50"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-mono text-white/40 uppercase ml-1">最高充電功率 MAX POWER (kW)</label>
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="例如：120"
+                                value={formState.maxKw || ''}
+                                onChange={(e) => setFormState({ ...formState, maxKw: parseInt(e.target.value) || 0 })}
+                                className="w-full bg-black border border-white/10 rounded-lg p-2 text-xs text-white font-mono placeholder:text-white/20 focus:border-cyber-green/50"
+                              />
+                            </div>
                           </div>
 
                           {/* 動態充電規格 (GunGroup Repeater) */}
