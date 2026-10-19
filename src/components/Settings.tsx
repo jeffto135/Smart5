@@ -996,27 +996,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ user, userProfile, v
       <AnimatePresence>
         {showParkingMap && (
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed inset-0 z-[120] bg-[#0a0a0a] flex flex-col"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[120] bg-black overflow-hidden"
           >
-            <div className="px-4 py-3 sm:p-4 border-b border-white/5 flex items-center gap-4 bg-black/50 backdrop-blur-md shrink-0">
-              <button 
-                onClick={() => setShowParkingMap(false)}
-                className="p-2 hover:bg-white/5 rounded-full text-white/50 hover:text-white transition-colors"
-              >
-                <ArrowLeft size={24} />
-              </button>
-              <div>
-                <h3 className="text-base sm:text-lg font-mono font-bold text-white uppercase tracking-tight">停車場難度地圖</h3>
-                <p className="text-[9px] sm:text-[10px] font-mono text-white/30 uppercase tracking-widest">Parking Difficulty Guide</p>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 parking-map-page-container custom-scrollbar">
-              <ParkingLeafletMap parkingLots={parkingLots} onAddChargingFeedback={onAddChargingFeedback} />
-            </div>
+            <ParkingLeafletMap 
+              parkingLots={parkingLots} 
+              onAddChargingFeedback={onAddChargingFeedback} 
+              onClose={() => setShowParkingMap(false)}
+            />
           </motion.div>
         )}
       </AnimatePresence>

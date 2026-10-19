@@ -32,11 +32,19 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
     lat: 22.3193,
     lng: 114.1694,
     hasDifficulty: true,
-    difficultyTag: '輕易' as '輕易' | '中等' | '地獄' | '不可能的任務' | null,
+    difficultyTag: '未有回報' as any,
     difficultyNote: '',
     heightLimit: '',
     videoGuide: '',
+    // 泊車收費資訊
+    hourlyRateWeekday: '' as number | '',
+    hourlyRateWeekend: '' as number | '',
+    parkingDiscountNote: '',
+    // 充電資訊與收費
     hasCharging: false,
+    chargingProvider: '',
+    chargingPriceNote: '',
+    idleFeeNote: '',
     provider: '',
     officialKw: 120,
     realKw: 95,
@@ -126,22 +134,22 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
     }
 
     const existingLot = parkingLots.find(l => l.id === formState.id);
-
     const hasCharging = formState.hasCharging;
     
     // Automatically calculate maximum kW and total guns from gunGroups if available
     const computedMaxKw = hasCharging && formState.gunGroups && formState.gunGroups.length > 0
       ? Math.max(...formState.gunGroups.map(g => g.kw))
-      : 0;
+      : (Number(formState.maxKw) || 60);
     const computedTotalGuns = hasCharging && formState.gunGroups && formState.gunGroups.length > 0
       ? formState.gunGroups.reduce((acc, g) => acc + g.count, 0)
-      : 0;
+      : (Number(formState.totalGuns) || 2);
 
     // Assembly chargingInfo block
+    const providerName = formState.chargingProvider || formState.provider || '未知';
     const chargingInfo = hasCharging ? {
-      provider: formState.provider || '未知',
+      provider: providerName,
       officialKw: computedMaxKw,
-      realKw: Number(formState.realKw) || 0,
+      realKw: Number(formState.realKw) || computedMaxKw,
       rating: existingLot?.chargingInfo ? (existingLot.chargingInfo.rating !== undefined ? existingLot.chargingInfo.rating : null) : null,
       ratingCount: existingLot?.chargingInfo ? (existingLot.chargingInfo.ratingCount || 0) : 0,
       totalRatingPoints: existingLot?.chargingInfo ? (existingLot.chargingInfo.totalRatingPoints || 0) : 0,
@@ -158,12 +166,22 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
       lat: Number(formState.lat),
       lng: Number(formState.lng),
       hasDifficulty: hasDifficulty,
-      difficultyTag: hasDifficulty ? formState.difficultyTag : null,
+      difficultyTag: hasDifficulty ? formState.difficultyTag : '未有回報',
       difficultyNote: hasDifficulty ? formState.difficultyNote : '',
       adminNotes: hasDifficulty ? formState.difficultyNote : '', // Sync with adminNotes for compatibility with other views
-      heightLimit: hasDifficulty ? (formState.heightLimit || '') : '',
+      heightLimit: formState.heightLimit || '',
       videoGuide: formState.videoGuide || '',
+
+      // 泊車收費資訊
+      hourlyRateWeekday: formState.hourlyRateWeekday !== '' ? Number(formState.hourlyRateWeekday) : undefined,
+      hourlyRateWeekend: formState.hourlyRateWeekend !== '' ? Number(formState.hourlyRateWeekend) : undefined,
+      parkingDiscountNote: formState.parkingDiscountNote || '',
+
+      // 充電設施與費用
       hasCharging: hasCharging,
+      chargingProvider: hasCharging ? providerName : undefined,
+      chargingPriceNote: hasCharging ? formState.chargingPriceNote : undefined,
+      idleFeeNote: hasCharging ? formState.idleFeeNote : undefined,
       chargingInfo: chargingInfo,
       chargingNote: hasCharging ? (formState.chargingNote || '') : '',
       maxKw: hasCharging ? computedMaxKw : null,
@@ -190,14 +208,22 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
         address: lot.address || '',
         lat: lot.lat || 22.3193,
         lng: lot.lng || 114.1694,
-        hasDifficulty: lot.hasDifficulty !== undefined ? !!lot.hasDifficulty : !!lot.difficultyTag,
-        difficultyTag: lot.difficultyTag || '輕易',
+        hasDifficulty: lot.hasDifficulty !== undefined ? !!lot.hasDifficulty : true,
+        difficultyTag: (lot.difficultyTag as any) || '未有回報',
         difficultyNote: lot.difficultyNote || lot.adminNotes || '',
         heightLimit: lot.heightLimit || '',
         videoGuide: lot.videoGuide || '',
+        // 泊車收費
+        hourlyRateWeekday: lot.hourlyRateWeekday !== undefined ? lot.hourlyRateWeekday : '',
+        hourlyRateWeekend: lot.hourlyRateWeekend !== undefined ? lot.hourlyRateWeekend : '',
+        parkingDiscountNote: lot.parkingDiscountNote || '',
+        // 充電資訊
         hasCharging: lot.hasCharging || false,
-        provider: lot.chargingInfo?.provider || '',
-        officialKw: lot.chargingInfo?.officialKw || 120,
+        chargingProvider: lot.chargingProvider || lot.chargingInfo?.provider || '',
+        chargingPriceNote: lot.chargingPriceNote || (lot.tariffs?.[0] ? `HK$ ${lot.tariffs[0].price}/${lot.tariffs[0].unit}` : ''),
+        idleFeeNote: lot.idleFeeNote || '',
+        provider: lot.chargingProvider || lot.chargingInfo?.provider || '',
+        officialKw: lot.maxKw || lot.chargingInfo?.officialKw || 120,
         realKw: lot.chargingInfo?.realKw || 95,
         rating: lot.chargingInfo?.rating || 4,
         chargingNote: lot.chargingNote || lot.chargingInfo?.note || '',
@@ -216,11 +242,17 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
         lat: 22.3193,
         lng: 114.1694,
         hasDifficulty: true,
-        difficultyTag: '輕易',
+        difficultyTag: '未有回報',
         difficultyNote: '',
         heightLimit: '',
         videoGuide: '',
+        hourlyRateWeekday: '',
+        hourlyRateWeekend: '',
+        parkingDiscountNote: '',
         hasCharging: false,
+        chargingProvider: '',
+        chargingPriceNote: '',
+        idleFeeNote: '',
         provider: '',
         officialKw: 120,
         realKw: 95,
@@ -237,13 +269,14 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
     setIsEditing(true);
   };
 
-  const getDifficultyColor = (tag: ParkingLot['difficultyTag']) => {
+  const getDifficultyColor = (tag?: ParkingLot['difficultyTag']) => {
     switch (tag) {
-      case '輕易': return 'text-cyber-green';
-      case '中等': return 'text-yellow-400';
-      case '地獄': return 'text-red-500';
-      case '不可能的任務': return 'text-fuchsia-500';
-      default: return 'text-white/40';
+      case '輕易': return 'text-cyber-green border-cyber-green/40 bg-cyber-green/10';
+      case '中等': return 'text-yellow-400 border-yellow-400/40 bg-yellow-400/10';
+      case '地獄': return 'text-red-500 border-red-500/40 bg-red-500/10';
+      case '不可能的任務': return 'text-fuchsia-500 border-fuchsia-500/40 bg-fuchsia-500/10';
+      case '未有回報':
+      default: return 'text-white/40 border-white/20 bg-white/5';
     }
   };
 
@@ -286,15 +319,26 @@ export const AdminParkingManager: React.FC<AdminParkingManagerProps> = ({
                       <span className="text-sm font-mono font-bold text-white uppercase group-hover:text-cyber-green transition-colors">
                         {lot.name}
                       </span>
-                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border border-current ${getDifficultyColor(lot.difficultyTag)}`}>
-                        {lot.difficultyTag}
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${getDifficultyColor(lot.difficultyTag)}`}>
+                        {lot.difficultyTag === '未有回報' || !lot.difficultyTag ? '❓ 待實測' : lot.difficultyTag}
                       </span>
+                      {lot.hourlyRateWeekday !== undefined && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyber-green/10 border border-cyber-green/30 text-cyber-green font-bold">
+                          💰 平日 ${lot.hourlyRateWeekday}{lot.hourlyRateWeekend ? ` / 假日 $${lot.hourlyRateWeekend}` : ''}
+                        </span>
+                      )}
+                      {lot.hasCharging && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-[#38bdf8]">
+                          ⚡ {lot.chargingProvider || lot.chargingInfo?.provider || '設充電'} {lot.maxKw ? `${lot.maxKw}kW` : ''} {lot.chargingPriceNote ? `· ${lot.chargingPriceNote}` : ''}
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-mono text-white/30 uppercase">
                       <span className="flex items-center gap-1">
                         <MapPin size={10} /> {lot.region}
                       </span>
                       {lot.address && <span>{lot.address}</span>}
+                      {lot.parkingDiscountNote && <span className="text-amber-400/80">🎁 {lot.parkingDiscountNote}</span>}
                       <span>LAT: {lot.lat} / LNG: {lot.lng}</span>
                       {lot.videoGuide && (
                         <a href={lot.videoGuide} target="_blank" rel="noopener noreferrer" className="text-cyber-green/60 hover:text-cyber-green flex items-center gap-1">

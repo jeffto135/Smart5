@@ -135,6 +135,7 @@ export interface Feedback {
   createdAt: any;
   note?: string;
   testedGun?: string;
+  reportedDifficulty?: ParkingLotDifficulty;
 }
 
 export interface ChargingInfo {
@@ -155,6 +156,8 @@ export interface GunGroup {
   note: string;
 }
 
+export type ParkingLotDifficulty = '未有回報' | '輕易' | '中等' | '地獄' | '不可能的任務' | null;
+
 export interface ParkingLot {
   id: string;
   name: string;
@@ -162,7 +165,7 @@ export interface ParkingLot {
   address?: string;
   lat: number;
   lng: number;
-  difficultyTag?: '輕易' | '中等' | '地獄' | '不可能的任務' | null;
+  difficultyTag?: ParkingLotDifficulty;
   adminNotes?: string;
   videoGuide?: string;
   hasCharging?: boolean;
@@ -176,6 +179,16 @@ export interface ParkingLot {
   feeType?: 'kwh' | 'time';
   tariffs?: Array<{ timeSlot: string; price: number; unit: string }>;
   gunGroups?: GunGroup[];
+
+  // 泊車收費資訊
+  hourlyRateWeekday?: number; // 平日時租 (HKD)
+  hourlyRateWeekend?: number; // 假日時租 (HKD)
+  parkingDiscountNote?: string; // 泊車優惠備忘
+
+  // 充電設施與費用
+  chargingProvider?: string; // 充電商名稱 (如 The Point、Evoasis)
+  chargingPriceNote?: string; // 充電收費 (如 HK$ 2.33/kWh 或 免費)
+  idleFeeNote?: string; // 逾時佔位費 (如 HK$ 5/分鐘)
 }
 
 export interface PollOption {

@@ -1,141 +1,176 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
   MapPin, 
   Youtube, 
   Navigation, 
+  ArrowLeft, 
   Zap, 
+  Video, 
   Star, 
-  Send
+  ThumbsUp, 
+  ChevronUp, 
+  ChevronDown, 
+  X, 
+  Layers, 
+  Compass, 
+  SlidersHorizontal, 
+  Car, 
+  Clock, 
+  Check,
+  AlertTriangle,
+  RotateCcw,
+  DollarSign
 } from 'lucide-react';
-import { ParkingLot } from '../types';
+import { ParkingLot, GunGroup, Feedback } from '../types';
 import { auth } from '../lib/firebase';
 
 interface ParkingLeafletMapProps {
   parkingLots: ParkingLot[];
-  onAddChargingFeedback?: (lotId: string, realKw: number, rating: number, note: string, testedGun?: string) => Promise<void>;
+  onAddChargingFeedback?: (
+    lotId: string, 
+    kw: number, 
+    rating: number, 
+    note: string, 
+    gunType?: string
+  ) => Promise<void>;
+  onClose?: () => void;
+  isEmbedded?: boolean;
 }
 
+// 香港中心基準座標
 const HK_CENTER: [number, number] = [22.3193, 114.1694];
 
-// Component to handle smooth animated map flyTo and zoom
-const MapController: React.FC<{ 
-  targetCoords: [number, number]; 
-  targetZoom: number; 
-  trigger: number;
-}> = ({ targetCoords, targetZoom, trigger }) => {
+// 動態平滑平移控制組件
+function MapController({ 
+  center, 
+  zoom, 
+  flyTrigger 
+}: { 
+  center: [number, number]; 
+  zoom: number; 
+  flyTrigger: number;
+}) {
   const map = useMap();
   useEffect(() => {
-    if (trigger > 0 && targetCoords) {
-      map.flyTo(targetCoords, targetZoom, {
+    if (flyTrigger > 0) {
+      map.flyTo(center, zoom, {
         animate: true,
-        duration: 1.2,
+        duration: 1.0,
         easeLinearity: 0.25
       });
-    } else if (targetCoords) {
-      map.setView(targetCoords, targetZoom);
     }
-  }, [targetCoords, targetZoom, trigger, map]);
+  }, [center, zoom, flyTrigger, map]);
   return null;
-};
+}
 
-// Create a custom marker icon component with difficulty color framing and optional charging badge
-const createCustomIcon = (color: string, isSelected: boolean, hasCharging?: boolean) => {
-  const size = isSelected ? 42 : 32;
-  
-  const chargingBadgeHtml = hasCharging ? `
-    <div style="
-      position: absolute;
-      top: -8px;
-      right: -8px;
-      background: #d4ff00;
-      color: black;
-      border-radius: 50%;
-      width: 18px;
-      height: 18px;
-      font-size: 10px;
-      font-weight: 900;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 10px #d4ff00;
-      border: 1.5px solid #000;
-      z-index: 999;
-    ">⚡</div>
-  ` : '';
-
-  return L.divIcon({
-    className: 'custom-div-icon',
-    html: `
-      <div style="
-        width: ${size}px;
-        height: ${size}px;
-        background-color: ${color};
-        border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 0 ${isSelected ? '25px' : '6px'} ${color};
-        border: 2px solid rgba(255,255,255,0.7);
-        position: relative;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      ">
-        <div style="
-          width: 38%;
-          height: 38%;
-          background: #000;
-          border-radius: 50%;
-          transform: rotate(45deg);
-        "></div>
-        ${chargingBadgeHtml}
-        ${isSelected ? `
-          <div style="
-            position: absolute;
-            inset: -4px;
-            border-radius: 50%;
-            border: 2px solid ${color};
-            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-          "></div>
-        ` : ''}
-      </div>
-    `,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size],
-  });
-};
-
-export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLots, onAddChargingFeedback }) => {
+export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ 
+  parkingLots = [], 
+  onAddChargingFeedback,
+  onClose,
+  isEmbedded = false
+}) => {
+  // --- 狀態管理 ---
+  const [selectedParking, setSelectedParking] = useState<ParkingLot | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState<'all' | '港島' | '九龍' | '新界'>('all');
   const [difficultyFilter, setDifficultyFilter] = useState<'all' | '輕易' | '中等' | '地獄' | '不可能的任務'>('all');
-  const [onlyChargingFilter, setOnlyChargingFilter] = useState(false);
-  
-  // 統一選中狀態：單一 source of truth，保證地圖 Marker 與底部卡片 100% 同步
-  const [selectedParking, setSelectedParking] = useState<ParkingLot | null>(null);
-  const [mapCenter, setMapCenter] = useState<[number, number]>(HK_CENTER);
-  const [mapZoom, setMapZoom] = useState(11);
-  const [flyTrigger, setFlyTrigger] = useState(0);
+  const [onlyChargingFilter, setOnlyChargingFilter] = useState<boolean>(false);
+  const [onlyVideoFilter, setOnlyVideoFilter] = useState<boolean>(false);
+
+  // 底圖風格: 'osm_dark' | 'carto_voyager' | 'carto_dark'
   const [mapTileStyle, setMapTileStyle] = useState<'osm_dark' | 'carto_voyager' | 'carto_dark'>('osm_dark');
-  const [showExtraDetails, setShowExtraDetails] = useState(false);
-  
-  const markerRefs = useRef<{ [key: string]: L.Marker | null }>({});
-  const detailCardRef = useRef<HTMLDivElement | null>(null);
-  const cardRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
-  // 保持 selectedParking 資料與最新 props 同步
-  useEffect(() => {
-    if (selectedParking) {
-      const updated = parkingLots.find(p => p.id === selectedParking.id);
-      if (updated) setSelectedParking(updated);
+  // 地圖視角
+  const [mapCenter, setMapCenter] = useState<[number, number]>(HK_CENTER);
+  const [mapZoom, setMapZoom] = useState<number>(11.5);
+  const [flyTrigger, setFlyTrigger] = useState<number>(0);
+
+  // 三段式底部滑動抽屜 (Snap Points: 'collapsed' 130px | 'half' 55vh | 'full' 90vh)
+  const [sheetStage, setSheetStage] = useState<'collapsed' | 'half' | 'full'>('collapsed');
+
+  // 車友點讚本地記錄
+  const [likedFeedbacks, setLikedFeedbacks] = useState<Record<string, number>>({});
+
+  // 回報實測表單狀態
+  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
+  const [feedbackKw, setFeedbackKw] = useState('');
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackNote, setFeedbackNote] = useState('');
+  const [selectedTestedGun, setSelectedTestedGun] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+  const [feedbackSuccess, setFeedbackSuccess] = useState('');
+
+  // 抽屜拖拽觸控處理
+  const touchStartY = useRef<number | null>(null);
+  const sheetContentRef = useRef<HTMLDivElement>(null);
+
+  // 顏色輔助
+  const getDifficultyColor = (tag?: ParkingLot['difficultyTag'], hasDifficulty?: boolean) => {
+    if (hasDifficulty === false || !tag || tag === '未有回報') return '#71717a';
+    switch (tag) {
+      case '輕易': return '#d4ff00';
+      case '中等': return '#FFD700';
+      case '地獄': return '#ff3b30';
+      case '不可能的任務': return '#E000FF';
+      default: return '#71717a';
     }
-  }, [parkingLots]);
+  };
 
-  // 🧭 一鍵導航函式（支援 iOS/macOS 喚起 Apple Maps，Android/PC 喚起 Google Maps）
-  const openNavigation = (lat: number, lng: number, name?: string) => {
-    const isApple = typeof navigator !== 'undefined' && /(iPhone|iPad|iPod|Mac)/i.test(navigator.userAgent);
+  // 自定義 Leaflet Marker 圖標 (Kilowatt Style: 常駐黑色圓角膠囊價格標籤 + 藍色圓形停車場 Pin)
+  const createMarkerIcon = (lot: ParkingLot, isSelected: boolean) => {
+    const diffColor = getDifficultyColor(lot.difficultyTag, lot.hasDifficulty);
+    const hasCharging = lot.hasCharging;
+
+    // 價格標籤判定：平日時租優先、假日時租次之，咪錶顯示「咪錶」，未知顯示「P」
+    let priceText = 'P';
+    if (lot.hourlyRateWeekday && Number(lot.hourlyRateWeekday) > 0) {
+      priceText = `$${lot.hourlyRateWeekday}`;
+    } else if (lot.hourlyRateWeekend && Number(lot.hourlyRateWeekend) > 0) {
+      priceText = `$${lot.hourlyRateWeekend}`;
+    } else if (lot.name.includes('咪錶') || (lot.address && lot.address.includes('咪錶'))) {
+      priceText = '咪錶';
+    }
+
+    const html = `
+      <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+        <!-- 1. 頂部常駐黑色圓角膠囊價格標籤 -->
+        <div class="px-2 py-0.5 rounded-full flex items-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.85)] border text-[11px] font-mono font-bold whitespace-nowrap mb-0.5"
+             style="background-color: #09090b; border-color: ${isSelected ? '#d4ff00' : 'rgba(255,255,255,0.2)'}; color: ${isSelected ? '#d4ff00' : '#ffffff'};">
+          ${hasCharging ? `<span style="color: #d4ff00; font-size: 10px;">⚡</span>` : ''}
+          <span>${priceText}</span>
+        </div>
+
+        <!-- 2. 下方經典藍色圓形停車場 Pin (帶難度外圈高亮) -->
+        <div class="relative flex items-center justify-center">
+          ${isSelected ? `<div class="absolute -inset-1.5 rounded-full animate-ping opacity-60" style="background-color: ${diffColor};"></div>` : ''}
+          <div class="w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2"
+               style="background-color: ${isSelected ? '#0284c7' : '#007aff'}; border-color: ${isSelected ? '#d4ff00' : '#ffffff'}; color: #ffffff;">
+            <span style="font-size: 11px; font-weight: 900; font-family: monospace;">P</span>
+          </div>
+        </div>
+
+        <!-- 3. 指向地圖的尖端小箭頭 -->
+        <div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] mx-auto"
+             style="border-top-color: ${isSelected ? '#d4ff00' : '#007aff'};"></div>
+      </div>
+    `;
+
+    return L.divIcon({
+      html,
+      className: 'custom-leaflet-marker',
+      iconSize: [0, 0],
+      iconAnchor: [0, 0]
+    });
+  };
+
+  // 一鍵喚起原生導航
+  const openNavigation = (lat: number, lng: number, name: string) => {
+    const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/i.test(navigator.userAgent);
     const destination = `${lat},${lng}`;
     const url = isApple
       ? `http://maps.apple.com/?daddr=${destination}&dirflg=d`
@@ -143,47 +178,77 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
     window.open(url, '_blank');
   };
 
-  // 點擊地圖 Marker 或下方列表項目時，統一同步更新狀態與對焦
-  const handleLotClick = (lot: ParkingLot) => {
+  // 當選中停車場時，地圖置中並將抽屜自動平滑彈出至 'half' (55vh)
+  const handleSelectLot = (lot: ParkingLot) => {
     setSelectedParking(lot);
     setMapCenter([lot.lat, lot.lng]);
     setMapZoom(16);
     setFlyTrigger(prev => prev + 1);
+    setSheetStage('half');
 
     // 重置回報表單狀態
     setShowFeedbackForm(false);
-    setShowExtraDetails(false);
     setFeedbackError('');
     setFeedbackSuccess('');
     setFeedbackKw('');
     setFeedbackRating(5);
     setFeedbackNote('');
     setSelectedTestedGun('');
+
+    // 將抽屜滾動重置至頂部
+    if (sheetContentRef.current) {
+      sheetContentRef.current.scrollTop = 0;
+    }
   };
 
-  // 當選中停車場時，自動平滑滾動至底部詳情卡片，確保車友目光直接鎖定
-  useEffect(() => {
-    if (selectedParking && detailCardRef.current) {
-      const timer = setTimeout(() => {
-        detailCardRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest'
-        });
-      }, 100);
-      return () => clearTimeout(timer);
+  // 關閉選中停車場，收合抽屜
+  const handleCloseSelected = () => {
+    setSelectedParking(null);
+    setSheetStage('collapsed');
+    setShowFeedbackForm(false);
+  };
+
+  // 抽屜觸控滑動手勢
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartY.current === null) return;
+    const touchEndY = e.changedTouches[0].clientY;
+    const deltaY = touchEndY - touchStartY.current;
+    touchStartY.current = null;
+
+    // 向上滑動超過 40px -> 提升展開階段
+    if (deltaY < -40) {
+      if (sheetStage === 'collapsed') {
+        setSheetStage(selectedParking ? 'half' : 'half');
+      } else if (sheetStage === 'half') {
+        setSheetStage('full');
+      }
+    } 
+    // 向下滑動超過 40px -> 降低展開階段
+    else if (deltaY > 40) {
+      if (sheetStage === 'full') {
+        setSheetStage('half');
+      } else if (sheetStage === 'half') {
+        setSheetStage('collapsed');
+      }
     }
-  }, [selectedParking?.id, flyTrigger]);
+  };
 
-  // Form states for adding crowdsourced feedbacks
-  const [feedbackKw, setFeedbackKw] = useState('');
-  const [feedbackRating, setFeedbackRating] = useState(5);
-  const [feedbackNote, setFeedbackNote] = useState('');
-  const [selectedTestedGun, setSelectedTestedGun] = useState('');
-  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedbackError, setFeedbackError] = useState('');
-  const [feedbackSuccess, setFeedbackSuccess] = useState('');
+  // 切換抽屜階段
+  const toggleSheetStage = () => {
+    if (sheetStage === 'collapsed') {
+      setSheetStage('half');
+    } else if (sheetStage === 'half') {
+      setSheetStage('full');
+    } else {
+      setSheetStage('half');
+    }
+  };
 
+  // 篩選停車場清單
   const filteredLots = useMemo(() => {
     return parkingLots.filter(lot => {
       const matchSearch = lot.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -191,21 +256,12 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
       const matchRegion = regionFilter === 'all' || lot.region === regionFilter;
       const matchDifficulty = difficultyFilter === 'all' || lot.difficultyTag === difficultyFilter;
       const matchCharging = !onlyChargingFilter || lot.hasCharging === true;
-      return matchSearch && matchRegion && matchDifficulty && matchCharging;
+      const matchVideo = !onlyVideoFilter || Boolean(lot.videoGuide);
+      return matchSearch && matchRegion && matchDifficulty && matchCharging && matchVideo;
     });
-  }, [parkingLots, searchQuery, regionFilter, difficultyFilter, onlyChargingFilter]);
+  }, [parkingLots, searchQuery, regionFilter, difficultyFilter, onlyChargingFilter, onlyVideoFilter]);
 
-  const getDifficultyColor = (tag: ParkingLot['difficultyTag'], hasDifficulty?: boolean) => {
-    if (hasDifficulty === false || !tag) return '#7e7e7e';
-    switch (tag) {
-      case '輕易': return '#d4ff00';
-      case '中等': return '#FFD700';
-      case '地獄': return '#ff3b30';
-      case '不可能的任務': return '#E000FF';
-      default: return '#d4ff00';
-    }
-  };
-
+  // 回報實測提交
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onAddChargingFeedback || !selectedParking) return;
@@ -236,7 +292,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
       setTimeout(() => {
         setShowFeedbackForm(false);
         setFeedbackSuccess('');
-      }, 3000);
+      }, 2500);
     } catch (err: any) {
       setFeedbackError(err.message || '提交失敗，請重試！');
     } finally {
@@ -244,113 +300,37 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
     }
   };
 
-  const currentUser = auth.currentUser;
+  // 車友點讚
+  const handleLikeFeedback = (feedbackId: string) => {
+    setLikedFeedbacks(prev => ({
+      ...prev,
+      [feedbackId]: (prev[feedbackId] || 0) + 1
+    }));
+  };
+
+
+  // 高度設定映射 (Snap Points)
+  const getSheetHeight = () => {
+    switch (sheetStage) {
+      case 'collapsed': return isEmbedded ? '130px' : '135px';
+      case 'half': return isEmbedded ? '60%' : '55vh';
+      case 'full': return isEmbedded ? '92%' : '90vh';
+      default: return '135px';
+    }
+  };
+
+  const containerClasses = isEmbedded 
+    ? 'relative w-full h-full overflow-hidden bg-[#0a0a0a] rounded-3xl'
+    : 'fixed inset-0 w-screen h-screen overflow-hidden bg-[#0a0a0a] z-[120]';
 
   return (
-    <div className="parking-map-page-container flex flex-col min-h-full h-auto space-y-3 sm:space-y-4">
-      {/* Search & Filter Header */}
-      <div className="space-y-3 p-3 sm:p-4 bg-white/[0.02] border border-white/10 rounded-2xl backdrop-blur-xl shrink-0">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-            <input 
-              type="text" 
-              placeholder="搜尋停車場名稱或地址..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-2.5 sm:py-3 text-sm text-white focus:outline-none focus:border-[#d4ff00]/50 transition-all font-mono placeholder:text-white/20"
-            />
-          </div>
-          <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
-            {(['all', '港島', '九龍', '新界'] as const).map(region => (
-              <button
-                key={region}
-                type="button"
-                onClick={() => setRegionFilter(region)}
-                className={`flex-1 min-w-[70px] py-2 sm:py-3 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition-all border ${
-                  regionFilter === region 
-                    ? 'bg-[#d4ff00] border-[#d4ff00] text-black shadow-[0_0_15px_rgba(212,255,0,0.35)]' 
-                    : 'bg-white/5 text-white/30 border-white/5 hover:border-white/25'
-                }`}
-              >
-                {region === 'all' ? '全部區域' : region}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Filters (Difficulty Select + Has charging switch) */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-2.5 border-t border-white/5">
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide py-1">
-            <span className="text-[10px] text-white/40 font-mono flex items-center pr-1.5 uppercase shrink-0">難度評級:</span>
-            {(['all', '輕易', '中等', '地獄', '不可能的任務'] as const).map(diff => (
-              <button
-                key={diff}
-                type="button"
-                onClick={() => setDifficultyFilter(diff)}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold transition-all border ${
-                  difficultyFilter === diff
-                    ? 'bg-white/10 border-white text-white font-black'
-                    : 'bg-white/5 text-white/40 border-white/5 hover:border-white/10'
-                }`}
-              >
-                {diff === 'all' ? '全部' : diff}
-              </button>
-            ))}
-          </div>
-
-          <label className="flex items-center justify-between md:justify-start gap-3 cursor-pointer select-none bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-1.5 transition-all text-xs shrink-0 duration-250">
-            <span className="font-mono text-[10px] text-white/70 uppercase tracking-widest flex items-center gap-1.5">
-              💡 只顯示有充電設備 ⚡
-            </span>
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={onlyChargingFilter}
-                onChange={(e) => setOnlyChargingFilter(e.target.checked)}
-                className="sr-only"
-              />
-              <div className={`w-8 h-4.5 rounded-full transition-colors ${onlyChargingFilter ? 'bg-[#d4ff00]' : 'bg-white/10'}`} />
-              <div className={`absolute w-3.5 h-3.5 rounded-full bg-black top-[2px] left-[2px] transition-transform ${onlyChargingFilter ? 'translate-x-3.5' : 'translate-x-0 bg-white/40'}`} />
-            </div>
-          </label>
-        </div>
-      </div>
-
-      {/* Map display */}
-      <div className="h-[280px] sm:h-[380px] relative rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 bg-[#121212] shadow-inner shrink-0">
-        {/* 地圖圖磚切換器 (免 Key 穩定底圖保證) */}
-        <div className="absolute top-3 right-3 z-[400] flex bg-black/85 backdrop-blur-md border border-white/15 rounded-xl p-0.5 text-[10px] font-mono shadow-xl">
-          <button
-            type="button"
-            onClick={() => setMapTileStyle('osm_dark')}
-            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'osm_dark' ? 'bg-[#d4ff00] text-black font-bold shadow-[0_0_8px_rgba(212,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
-            title="免 Key 穩定 OSM 搭配 CSS 暗黑濾鏡，永不變黑"
-          >
-            🌙 暗黑 OSM
-          </button>
-          <button
-            type="button"
-            onClick={() => setMapTileStyle('carto_voyager')}
-            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'carto_voyager' ? 'bg-[#d4ff00] text-black font-bold shadow-[0_0_8px_rgba(212,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
-            title="CARTO Voyager 免費底圖"
-          >
-            🏙️ Voyager
-          </button>
-          <button
-            type="button"
-            onClick={() => setMapTileStyle('carto_dark')}
-            className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${mapTileStyle === 'carto_dark' ? 'bg-[#d4ff00] text-black font-bold shadow-[0_0_8px_rgba(212,255,0,0.3)]' : 'text-white/60 hover:text-white'}`}
-            title="CARTO Dark 底圖"
-          >
-            ⬛ CARTO
-          </button>
-        </div>
-
+    <div className={containerClasses}>
+      {/* 1. 全螢幕沉浸式地圖底圖 (Full-screen Map Canvas) */}
+      <div className="absolute inset-0 w-full h-full z-0">
         <MapContainer
           center={HK_CENTER}
-          zoom={11}
-          style={{ width: '100%', height: '100%', background: '#121212' }}
+          zoom={11.5}
+          style={{ width: '100%', height: '100%', background: '#0a0a0a' }}
           zoomControl={false}
           attributionControl={false}
         >
@@ -371,406 +351,727 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({ parkingLot
             <TileLayer
               attribution='&copy; OpenStreetMap &copy; CARTO'
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              className="map-tiles-dark"
               maxZoom={19}
             />
           )}
-          <ZoomControl position="bottomright" />
-          <MapController targetCoords={mapCenter} targetZoom={mapZoom} trigger={flyTrigger} />
-          
-          {filteredLots.map(lot => (
-            <Marker 
-              key={lot.id} 
-              position={[lot.lat, lot.lng]}
-              ref={(ref) => {
-                if (ref) markerRefs.current[lot.id] = ref;
-              }}
-              icon={createCustomIcon(getDifficultyColor(lot.difficultyTag, lot.hasDifficulty), selectedParking?.id === lot.id, lot.hasCharging)}
-              eventHandlers={{
-                click: () => handleLotClick(lot)
-              }}
-            >
-              <Popup
-                maxWidth={290}
-                minWidth={240}
-                maxHeight={180}
-                autoPan={true}
-                autoPanPaddingTopLeft={[10, 20]}
-                autoPanPaddingBottomRight={[10, 20]}
-                className="custom-parking-popup"
-              >
-                <div 
-                  style={{
-                    maxHeight: '160px',
-                    overflowY: 'auto',
-                    padding: '4px',
-                    fontSize: '13px'
-                  }} 
-                  className="custom-scrollbar font-mono text-left space-y-1.5"
-                >
-                  <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-1 mb-1">
-                    <span className="font-bold text-xs text-white truncate max-w-[140px]">{lot.name}</span>
-                    {lot.hasDifficulty !== false && lot.difficultyTag && (
-                      <span 
-                        style={{
-                          backgroundColor: lot.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
-                          color: lot.difficultyTag === '地獄' ? '#fff' : '#000',
-                          fontSize: '9px',
-                          fontWeight: 'bold',
-                          padding: '1px 6px',
-                          borderRadius: '4px'
-                        }}
-                      >
-                        {lot.difficultyTag}
-                      </span>
-                    )}
-                  </div>
 
-                  {lot.address && (
-                    <p className="text-[10px] text-white/50 flex items-start gap-1 font-sans leading-tight">
-                      <MapPin size={11} className="text-[#d4ff00] shrink-0 mt-0.5" />
-                      <span className="line-clamp-2">{lot.address}</span>
-                    </p>
-                  )}
+          <MapController center={mapCenter} zoom={mapZoom} flyTrigger={flyTrigger} />
 
-                  {lot.hasCharging && (
-                    <div className="text-[10px] text-[#d4ff00] flex items-center gap-1 bg-[#d4ff00]/10 border border-[#d4ff00]/20 px-1.5 py-0.5 rounded">
-                      <Zap size={11} className="text-[#d4ff00] shrink-0" />
-                      <span>⚡ 充電 ({lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || 0} kW)</span>
-                    </div>
-                  )}
-
-                  <div className="pt-1 flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openNavigation(lot.lat, lot.lng, lot.name);
-                      }}
-                      className="flex-1 py-1 px-2 bg-[#d4ff00] hover:bg-[#b0f000] text-black font-bold text-[10px] rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all shadow-[0_0_10px_rgba(212,255,0,0.3)] active:scale-95"
-                    >
-                      <Navigation size={11} />
-                      <span>🧭 導航</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleLotClick(lot);
-                      }}
-                      className="py-1 px-2.5 bg-white/10 hover:bg-white/20 text-white text-[10px] rounded-lg transition-colors cursor-pointer"
-                    >
-                      選取
-                    </button>
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {/* 渲染全港停車場 Markers */}
+          {filteredLots.map(lot => {
+            const isSelected = selectedParking?.id === lot.id;
+            return (
+              <Marker
+                key={lot.id}
+                position={[lot.lat, lot.lng]}
+                icon={createMarkerIcon(lot, isSelected)}
+                eventHandlers={{
+                  click: () => handleSelectLot(lot)
+                }}
+              />
+            );
+          })}
         </MapContainer>
       </div>
 
-      {/* 底部區域：單一緊湊「底部選中詳情卡」+ 下方停車場快速切換清單 */}
-      <div className="flex-1 flex flex-col space-y-3 overflow-visible">
-        {/* 1. 核心緊湊高效「底部選中詳情卡」 (無多餘外層、無重複標題與地址) */}
-        {selectedParking && (
-          <div 
-            ref={detailCardRef}
-            className="selected-parking-card bg-[#161616] border border-[#d4ff00] rounded-2xl p-4 shadow-[0_4px_25px_rgba(212,255,0,0.2)] text-left shrink-0 animate-fade-in space-y-3 custom-scrollbar"
-            style={{
-              maxHeight: '55vh',
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              marginBottom: '30px'
+      {/* 2. 頂部浮動控制膠囊 (Top Floating Pill) */}
+      <div className="absolute top-3 sm:top-5 left-1/2 -translate-x-1/2 z-[500] w-[calc(100%-24px)] max-w-xl pointer-events-auto">
+        <div className="bg-black/80 backdrop-blur-xl border border-white/15 rounded-full px-2.5 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.7)] flex items-center justify-between gap-1.5">
+          {/* 返回鍵 */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer shrink-0"
+              title="返回設定 / 主選單"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
+
+          {/* 快速切換篩選膠囊 (Kilowatt 專屬設計) */}
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide py-0.5">
+            {/* ⚡ 充電 */}
+            <button
+              type="button"
+              onClick={() => setOnlyChargingFilter(prev => !prev)}
+              className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                onlyChargingFilter
+                  ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.4)]'
+                  : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Zap size={13} className={onlyChargingFilter ? "text-black" : "text-[#d4ff00]"} />
+              <span>充電</span>
+            </button>
+
+            {/* 🅿️ 泊車難度 */}
+            <button
+              type="button"
+              onClick={() => {
+                // 循環切換：全部 -> 地獄 -> 中等 -> 輕易
+                const order: Array<typeof difficultyFilter> = ['all', '地獄', '中等', '輕易'];
+                const nextIdx = (order.indexOf(difficultyFilter) + 1) % order.length;
+                setDifficultyFilter(order[nextIdx]);
+              }}
+              className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                difficultyFilter !== 'all'
+                  ? 'bg-amber-400 text-black shadow-[0_0_12px_rgba(251,191,36,0.4)]'
+                  : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <span>🅿️</span>
+              <span>{difficultyFilter === 'all' ? '難度評級' : difficultyFilter}</span>
+            </button>
+
+            {/* 📹 實錄影片 */}
+            <button
+              type="button"
+              onClick={() => setOnlyVideoFilter(prev => !prev)}
+              className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                onlyVideoFilter
+                  ? 'bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]'
+                  : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Video size={13} />
+              <span>實錄影片</span>
+            </button>
+          </div>
+
+          {/* 底圖圖磚快速切換 */}
+          <button
+            type="button"
+            onClick={() => {
+              const styles: Array<typeof mapTileStyle> = ['osm_dark', 'carto_voyager', 'carto_dark'];
+              const nextIdx = (styles.indexOf(mapTileStyle) + 1) % styles.length;
+              setMapTileStyle(styles[nextIdx]);
             }}
+            className="p-2 text-white/60 hover:text-[#d4ff00] hover:bg-white/10 rounded-full transition-colors cursor-pointer shrink-0"
+            title={`當前底圖: ${mapTileStyle} (點擊切換)`}
           >
-            {/* 1. 標題與標籤列 */}
-            <div className="flex justify-between items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-lg font-bold text-white m-0 tracking-tight leading-tight">
-                    {selectedParking.name}
-                  </h3>
-                  {selectedParking.hasDifficulty !== false && selectedParking.difficultyTag && (
-                    <span 
-                      style={{
-                        fontSize: '11px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: selectedParking.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
-                        color: selectedParking.difficultyTag === '地獄' ? '#fff' : '#000',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      {selectedParking.difficultyTag}
-                    </span>
-                  )}
-                  <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">{selectedParking.region}</span>
-                </div>
-                {selectedParking.address && (
-                  <p className="text-xs text-[#888] m-0 mt-1 flex items-center gap-1 font-sans">
-                    <MapPin size={12} className="text-[#d4ff00] shrink-0" />
-                    <span className="truncate">{selectedParking.address}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* 關閉/取消選中按鈕 */}
-              <button 
-                type="button"
-                onClick={() => setSelectedParking(null)} 
-                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-colors text-sm font-bold shrink-0 cursor-pointer"
-                title="關閉選中狀態"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* 2. 充電配備與狀態膠囊 */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {selectedParking.hasCharging && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold bg-[#d4ff00]/10 border border-[#d4ff00]/30 text-[#d4ff00] px-2.5 py-1 rounded-full shadow-[0_0_10px_rgba(212,255,0,0.15)]">
-                  ⚡ {selectedParking.chargingInfo?.provider 
-                    ? `${selectedParking.chargingInfo.provider} ｜ ${selectedParking.chargingInfo.realKw || selectedParking.chargingInfo.officialKw || selectedParking.maxKw || ''} kW` 
-                    : (selectedParking.maxKw ? `${selectedParking.maxKw} kW 快充` : '配備充電樁')}
-                </span>
-              )}
-              {selectedParking.heightLimit && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-white/60 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
-                  📏 限高 {selectedParking.heightLimit}
-                </span>
-              )}
-              {selectedParking.chargingInfo?.rating && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-white/70 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
-                  ⭐ {selectedParking.chargingInfo.rating} (共 {selectedParking.chargingInfo.ratingCount || selectedParking.chargingInfo.userFeedbacks?.length || 1} 次實測)
-                </span>
-              )}
-            </div>
-
-            {/* 3. 泊車心得（重點高亮） */}
-            <div className="p-3 rounded-xl bg-white/[0.03] border border-[#d4ff00]/25 text-left">
-              <div className="text-[#d4ff00] text-xs font-mono font-bold mb-1 flex items-center gap-1.5">
-                🚗 Smart #5 泊位心得：
-              </div>
-              <div className="text-[13px] text-[#ddd] leading-relaxed font-sans">
-                {selectedParking.adminNotes || selectedParking.difficultyNote || '暫無特殊泊位心得，一般車輛可順暢出入，請注意場內劃線與轉彎死角。'}
-              </div>
-            </div>
-
-            {/* 折疊式充電規格與車友大數據 Wiki */}
-            {selectedParking.hasCharging && (
-              <div className="pt-0.5">
-                <button
-                  type="button"
-                  onClick={() => setShowExtraDetails(prev => !prev)}
-                  className="text-[11px] font-mono text-white/50 hover:text-[#d4ff00] flex items-center gap-1 transition-colors cursor-pointer"
-                >
-                  <span>{showExtraDetails ? '▼ 收起充電詳細規格與電費' : '▶ 查看充電槍規格、電費時段與車友實測回報'}</span>
-                </button>
-
-                {showExtraDetails && (
-                  <div className="mt-2 space-y-2.5 p-3 rounded-xl bg-black/50 border border-white/10 text-xs font-mono animate-fade-in">
-                    {/* 充電槍規格 */}
-                    {selectedParking.gunGroups && selectedParking.gunGroups.length > 0 && (
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-white/40 block">🔌 充電槍規格清單：</span>
-                        <div className="space-y-1">
-                          {selectedParking.gunGroups.map((g, i) => (
-                            <div key={i} className="flex justify-between items-center text-white/80 bg-white/5 px-2 py-1 rounded">
-                              <span className="text-[#d4ff00] font-bold">{g.gunType} - {g.kw} kW</span>
-                              <span className="text-white/60">{g.count} 支 {g.note ? `(${g.note})` : ''}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 時段電費 */}
-                    {selectedParking.tariffs && selectedParking.tariffs.length > 0 && (
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-white/40 block">📊 時段電費收費明細：</span>
-                        <div className="space-y-1">
-                          {selectedParking.tariffs.map((t, i) => (
-                            <div key={i} className="flex justify-between items-center text-white/80 bg-white/5 px-2 py-1 rounded">
-                              <span>⏳ {t.timeSlot}</span>
-                              <span className="text-[#d4ff00] font-bold">HKD ${t.price} / {t.unit || '度'}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 車友實測報告與回報表單 */}
-                    <div className="pt-1 border-t border-white/10 flex justify-between items-center">
-                      <span className="text-[10px] text-white/40">💬 車友回報 ({selectedParking.chargingInfo?.userFeedbacks?.length || 0} 則)</span>
-                      {currentUser && (
-                        <button
-                          type="button"
-                          onClick={() => setShowFeedbackForm(prev => !prev)}
-                          className="text-[10px] text-[#d4ff00] underline underline-offset-2 hover:opacity-80 cursor-pointer"
-                        >
-                          {showFeedbackForm ? '取消回報' : '我要求助 / 回報實測'}
-                        </button>
-                      )}
-                    </div>
-
-                    {showFeedbackForm && (
-                      <form onSubmit={handleFeedbackSubmit} className="space-y-2 pt-2 border-t border-white/10 text-left">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[9px] text-white/40 block">實測功率 (kW)</label>
-                            <input 
-                              type="number"
-                              required
-                              placeholder="例如 115"
-                              value={feedbackKw}
-                              onChange={(e) => setFeedbackKw(e.target.value)}
-                              className="w-full bg-black border border-white/20 rounded p-1.5 text-xs text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9px] text-white/40 block">相容評級 (1-5星)</label>
-                            <div className="flex gap-1 h-7 items-center bg-black rounded border border-white/20 px-2">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <button
-                                  key={i}
-                                  type="button"
-                                  onClick={() => setFeedbackRating(i + 1)}
-                                  className={i < feedbackRating ? "text-[#d4ff00]" : "text-white/20"}
-                                >
-                                  ★
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[9px] text-white/40 block">實測心得 (選填)</label>
-                          <input 
-                            type="text"
-                            placeholder="協議匹配/是否曾跳槍..."
-                            value={feedbackNote}
-                            onChange={(e) => setFeedbackNote(e.target.value)}
-                            className="w-full bg-black border border-white/20 rounded p-1.5 text-xs text-white"
-                          />
-                        </div>
-                        {feedbackError && <p className="text-[10px] text-red-400">{feedbackError}</p>}
-                        {feedbackSuccess && <p className="text-[10px] text-[#d4ff00]">{feedbackSuccess}</p>}
-                        <button
-                          type="submit"
-                          disabled={isSubmitting}
-                          className="w-full py-1.5 bg-[#d4ff00] text-black font-bold rounded text-[11px] disabled:opacity-50 cursor-pointer"
-                        >
-                          {isSubmitting ? '提交中...' : '確認提交實測報告'}
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 4. 底部動作欄 (固定浮動於卡片底部) */}
-            <div className="flex gap-2.5 pt-2 sticky bottom-0 bg-[#161616]/95 backdrop-blur-md -mx-4 -mb-4 p-4 border-t border-white/10 rounded-b-2xl z-10 shadow-lg">
-              {selectedParking.videoGuide && (
-                <a 
-                  href={selectedParking.videoGuide}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 py-2.5 px-3 bg-white text-black rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-[#d4ff00] transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)] text-center cursor-pointer"
-                >
-                  <Youtube size={15} /> 泊車指南
-                </a>
-              )}
-              <button 
-                type="button"
-                onClick={() => openNavigation(selectedParking.lat, selectedParking.lng, selectedParking.name)}
-                className="flex-1 py-2.5 px-3 bg-[#d4ff00] hover:bg-[#b0f000] text-black rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center transition-all gap-1.5 shadow-[0_0_15px_rgba(212,255,0,0.3)] cursor-pointer active:scale-95"
-              >
-                <Navigation size={15} /> 🧭 一鍵導航
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 2. 停車場快速切換清單 (乾淨單層卡片，點擊即時聯動地圖與上方詳情卡) */}
-        <div className="flex-1 pr-1 custom-scrollbar min-h-[140px] pb-10">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5">
-            {filteredLots.map(lot => {
-              const isSelected = selectedParking?.id === lot.id;
-              return (
-                <div 
-                  key={lot.id}
-                  ref={(el) => {
-                    cardRefs.current[lot.id] = el;
-                  }}
-                  onClick={() => handleLotClick(lot)}
-                  className={`p-3 rounded-xl border transition-all text-left relative group cursor-pointer flex flex-col justify-between gap-2 ${
-                    isSelected 
-                      ? 'bg-[#d4ff00]/10 border-[#d4ff00] shadow-[0_0_15px_rgba(212,255,0,0.2)] ring-1 ring-[#d4ff00]/60' 
-                      : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/[0.08]'
-                  }`}
-                >
-                  <div>
-                    <div className="flex justify-between items-start mb-1 gap-2">
-                      <span className={`font-bold text-xs sm:text-sm line-clamp-1 transition-colors ${
-                        isSelected ? 'text-[#d4ff00]' : 'text-white group-hover:text-[#d4ff00]'
-                      }`}>
-                        {lot.name}
-                      </span>
-                      {lot.hasDifficulty !== false && lot.difficultyTag && (
-                        <span 
-                          style={{
-                            fontSize: '9px',
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            backgroundColor: lot.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
-                            color: lot.difficultyTag === '地獄' ? '#fff' : '#000',
-                            fontWeight: 'bold',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          {lot.difficultyTag}
-                        </span>
-                      )}
-                    </div>
-                    {lot.address && (
-                      <p className="text-[10px] text-white/40 truncate font-mono">
-                        {lot.address}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="text-[9px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between pt-1 border-t border-white/5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="shrink-0">{lot.region}</span>
-                      {lot.hasCharging && (
-                        <span className="flex items-center gap-0.5 text-[#d4ff00] text-[8px] tracking-normal font-bold truncate">
-                          ⚡ {lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || ''}kW
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openNavigation(lot.lat, lot.lng, lot.name);
-                      }}
-                      className="px-2 py-0.5 rounded bg-[#d4ff00] text-black font-bold text-[9px] font-mono flex items-center gap-1 hover:bg-[#b0f000] transition-all cursor-pointer shrink-0"
-                      title="一鍵導航"
-                    >
-                      <Navigation size={9} />
-                      <span>導航</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            <Layers size={17} />
+          </button>
         </div>
       </div>
+
+      {/* 3. 地圖懸浮功能按鍵 (全港對焦 & 放大縮小) */}
+      <div className="absolute right-3.5 top-20 z-[400] flex flex-col gap-2 pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setMapCenter(HK_CENTER);
+            setMapZoom(11.5);
+            setFlyTrigger(prev => prev + 1);
+          }}
+          className="w-10 h-10 rounded-2xl bg-black/80 backdrop-blur-md border border-white/15 text-white/80 hover:text-[#d4ff00] hover:border-[#d4ff00]/50 flex items-center justify-center transition-all shadow-xl cursor-pointer"
+          title="回位全港中心"
+        >
+          <Compass size={18} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setMapZoom(prev => Math.min(prev + 1, 18));
+            setFlyTrigger(prev => prev + 1);
+          }}
+          className="w-10 h-10 rounded-2xl bg-black/80 backdrop-blur-md border border-white/15 text-white/80 hover:text-white flex items-center justify-center text-lg font-bold transition-all shadow-xl cursor-pointer"
+          title="放大地圖"
+        >
+          +
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setMapZoom(prev => Math.max(prev - 1, 10));
+            setFlyTrigger(prev => prev + 1);
+          }}
+          className="w-10 h-10 rounded-2xl bg-black/80 backdrop-blur-md border border-white/15 text-white/80 hover:text-white flex items-center justify-center text-lg font-bold transition-all shadow-xl cursor-pointer"
+          title="縮小地圖"
+        >
+          -
+        </button>
+      </div>
+
+      {/* 4. 遮罩層 (當抽屜在 Full 階段時可點擊收合) */}
+      <AnimatePresence>
+        {sheetStage === 'full' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSheetStage('half')}
+            className="absolute inset-0 bg-black/50 backdrop-blur-[2px] z-[550] cursor-pointer"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 5. 三段式底部滑動抽屜 (Bottom Sheet) */}
+      <motion.div
+        animate={{ height: getSheetHeight() }}
+        transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+        className="absolute bottom-0 left-0 right-0 z-[600] bg-[#141414] border-t border-white/15 rounded-t-[28px] shadow-[0_-8px_32px_rgba(0,0,0,0.85)] flex flex-col pointer-events-auto"
+        style={{
+          boxShadow: '0 -10px 40px rgba(0,0,0,0.9), 0 -1px 0 rgba(212,255,0,0.15)'
+        }}
+      >
+        {/* 抽屜頂部手柄 (Drag Handle) */}
+        <div 
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onClick={toggleSheetStage}
+          className="pt-2.5 pb-2 px-4 cursor-grab active:cursor-grabbing select-none shrink-0"
+        >
+          <div className="w-11 h-1.5 rounded-full bg-white/25 hover:bg-white/40 transition-colors mx-auto" />
+          
+          <div className="flex items-center justify-between mt-1 text-[10px] font-mono text-white/40">
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#d4ff00]"></span>
+              {selectedParking ? '選中停車場詳情' : `全港難度庫 (${filteredLots.length} 場)`}
+            </span>
+            <span className="text-[#d4ff00] hover:underline flex items-center gap-0.5">
+              {sheetStage === 'collapsed' ? '向上展開 ⌃' : sheetStage === 'half' ? '完整詳情 ⌃' : '向下收合 ⌄'}
+            </span>
+          </div>
+        </div>
+
+        {/* 抽屜可滾動主體 (Overflow-y Auto + iOS 慣性滑動 + 底部安全區) */}
+        <div 
+          ref={sheetContentRef}
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 custom-scrollbar"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: 'env(safe-area-inset-bottom, 30px)'
+          }}
+        >
+          {/* ======================================================== */}
+          {/* A. 若當前【已選中特定停車場】：展示高互動詳情與回報 */}
+          {/* ======================================================== */}
+          {selectedParking ? (
+            <div className="space-y-4 pb-6">
+              {/* 1. 標題、難度標籤與快速關閉按鈕 */}
+              <div className="flex items-start justify-between gap-3 pt-1 border-b border-white/5 pb-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight m-0">
+                      {selectedParking.name}
+                    </h2>
+                    
+                    {/* 難度標籤 (輕易為螢光綠、地獄為紅色、未有回報為深灰色 [ ❓ 待車友回報 ]) */}
+                    {(!selectedParking.difficultyTag || selectedParking.difficultyTag === '未有回報' || selectedParking.hasDifficulty === false) ? (
+                      <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700 font-bold flex items-center gap-1">
+                        <span>❓</span>
+                        <span>待車友回報</span>
+                      </span>
+                    ) : (
+                      <span 
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: selectedParking.difficultyTag === '地獄' 
+                            ? '#ff3b30' 
+                            : selectedParking.difficultyTag === '中等' 
+                              ? '#eab308' 
+                              : selectedParking.difficultyTag === '不可能的任務' 
+                                ? '#a855f7' 
+                                : '#d4ff00',
+                          color: (selectedParking.difficultyTag === '地獄' || selectedParking.difficultyTag === '不可能的任務') ? '#fff' : '#000',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {selectedParking.difficultyTag}
+                      </span>
+                    )}
+
+                    <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded">
+                      {selectedParking.region}
+                    </span>
+                  </div>
+
+                  {selectedParking.address && (
+                    <p className="text-xs text-[#888] m-0 mt-1.5 flex items-center gap-1.5">
+                      <MapPin size={13} className="text-[#d4ff00] shrink-0" />
+                      <span className="truncate">{selectedParking.address}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* 關閉按鈕 */}
+                <button
+                  type="button"
+                  onClick={handleCloseSelected}
+                  className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer text-sm font-bold"
+                  title="收起詳情"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* 2. 雙核心行動按鈕：[ 🧭 導航至此 ] ＋ [ 📹 泊車指南 ] */}
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => openNavigation(selectedParking.lat, selectedParking.lng, selectedParking.name)}
+                  className="flex-1 py-3 px-4 bg-[#d4ff00] hover:bg-[#b0f000] text-black rounded-xl font-mono font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(212,255,0,0.35)] active:scale-95 transition-all cursor-pointer"
+                >
+                  <Navigation size={17} />
+                  <span>🧭 導航至此</span>
+                </button>
+
+                {selectedParking.videoGuide && (
+                  <a
+                    href={selectedParking.videoGuide}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/15 text-white rounded-xl font-mono font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Youtube size={17} className="text-red-500" />
+                    <span>實錄</span>
+                  </a>
+                )}
+              </div>
+
+              {/* 3. 💰 泊車收費區塊 (條列平日時租、假日時租與優惠) */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2 text-left">
+                <div className="text-white text-xs font-mono font-bold flex items-center gap-1.5 text-cyber-green">
+                  <DollarSign size={14} className="text-[#d4ff00]" />
+                  <span>💰 泊車時租與優惠收費</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                    <span className="text-white/40 block text-[10px]">平日時租</span>
+                    <span className="text-white font-bold text-sm mt-0.5 block">
+                      {selectedParking.hourlyRateWeekday && Number(selectedParking.hourlyRateWeekday) > 0 
+                        ? `HK$ ${selectedParking.hourlyRateWeekday} / 小時` 
+                        : '依現場公布'}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                    <span className="text-white/40 block text-[10px]">假日時租</span>
+                    <span className="text-white font-bold text-sm mt-0.5 block">
+                      {selectedParking.hourlyRateWeekend && Number(selectedParking.hourlyRateWeekend) > 0 
+                        ? `HK$ ${selectedParking.hourlyRateWeekend} / 小時` 
+                        : (selectedParking.hourlyRateWeekday && Number(selectedParking.hourlyRateWeekday) > 0 
+                            ? `HK$ ${selectedParking.hourlyRateWeekday} / 小時` 
+                            : '依現場公布')}
+                    </span>
+                  </div>
+                </div>
+                {selectedParking.parkingDiscountNote && (
+                  <div className="text-[11px] font-mono text-white/70 bg-white/5 border border-white/5 p-2 rounded-xl flex items-start gap-1.5">
+                    <span className="text-[#d4ff00] shrink-0">🎁 泊車優惠:</span>
+                    <span>{selectedParking.parkingDiscountNote}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 4. ⚡ 充電規格區塊 (充電商、快充功率、單價與逾時佔位費) */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-[#d4ff00]/25 space-y-2.5 text-left">
+                <div className="text-white text-xs font-mono font-bold flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[#d4ff00]">
+                    <Zap size={14} className="text-[#d4ff00]" />
+                    <span>⚡ 充電規格與計費</span>
+                  </span>
+                  {selectedParking.hasCharging ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#d4ff00]/15 text-[#d4ff00] font-bold">
+                      設有充電樁
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/40">
+                      暫無充電
+                    </span>
+                  )}
+                </div>
+
+                {selectedParking.hasCharging ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                        <span className="text-white/40 block text-[10px]">充電服務商</span>
+                        <span className="text-white font-bold mt-0.5 block truncate">
+                          {selectedParking.chargingProvider || selectedParking.chargingInfo?.provider || '現場充電商'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                        <span className="text-white/40 block text-[10px]">快充功率與槍數</span>
+                        <span className="text-[#d4ff00] font-bold mt-0.5 block">
+                          快充 {selectedParking.maxKw || selectedParking.chargingInfo?.officialKw || 60} kW × {selectedParking.totalGuns || 2} 槍
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                        <span className="text-white/40 block text-[10px]">充電計費單價</span>
+                        <span className="text-white font-bold mt-0.5 block truncate">
+                          {selectedParking.chargingPriceNote || (selectedParking.tariffs && selectedParking.tariffs.length > 0 ? `${selectedParking.tariffs[0].price} 元/${selectedParking.tariffs[0].unit}` : '免費 / 依現場公布')}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5">
+                        <span className="text-white/40 block text-[10px]">逾時佔位費</span>
+                        <span className="text-red-400 font-bold mt-0.5 block truncate">
+                          {selectedParking.idleFeeNote || '無逾時佔位費'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs font-mono text-white/40 m-0 py-1">
+                    此場地目前未登記充電設施。
+                  </p>
+                )}
+
+                {/* 輔助規格：限高與實測星星 */}
+                <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-white/5">
+                  {selectedParking.heightLimit && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-white/70 bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">
+                      📏 限高 {selectedParking.heightLimit}
+                    </span>
+                  )}
+                  {selectedParking.chargingInfo?.rating && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-300 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded-lg">
+                      ⭐ {selectedParking.chargingInfo.rating} 評分 ({selectedParking.chargingInfo.ratingCount || selectedParking.chargingInfo.userFeedbacks?.length || 1} 次實測)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 5. 🚗 Smart #5 專屬心得區塊 (盲位提醒與首位實測車友按鈕) */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-[#d4ff00]/30 space-y-2 text-left shadow-[0_0_15px_rgba(212,255,0,0.05)]">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[#d4ff00] text-xs font-mono font-bold flex items-center gap-1.5">
+                    <Car size={15} />
+                    <span>Smart #5 專屬泊位心得與轉彎盲位：</span>
+                  </div>
+                  {(!selectedParking.difficultyTag || selectedParking.difficultyTag === '未有回報') && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFeedbackForm(true)}
+                      className="px-2.5 py-1 rounded-lg bg-[#d4ff00] text-black text-[11px] font-mono font-bold hover:bg-[#b0f000] transition-colors cursor-pointer shrink-0"
+                    >
+                      ✍️ 我是第一個實測車友
+                    </button>
+                  )}
+                </div>
+                <p className="text-[13px] text-[#ddd] leading-relaxed font-sans m-0">
+                  {selectedParking.difficultyNote || selectedParking.adminNotes || (
+                    (!selectedParking.difficultyTag || selectedParking.difficultyTag === '未有回報')
+                      ? '⚠️ 本停車場目前尚無 Smart #5 車友實測回報！歡迎點擊右上角按鈕成為第一位實測車友，回報過彎與盲位心得！'
+                      : '本停車場出入通道平整，車體寬闊亦可平順通過，請隨時留意柱位視角與行車引道劃線。'
+                  )}
+                </p>
+              </div>
+
+              {/* 6. 提示上滑查看更多細節按鈕（若在 Half 模式） */}
+              {sheetStage === 'half' && (
+                <button
+                  type="button"
+                  onClick={() => setSheetStage('full')}
+                  className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white text-xs font-mono flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <span>向上展開收費表、充電槍清單與車友回報 ({selectedParking.chargingInfo?.userFeedbacks?.length || 0})</span>
+                  <ChevronUp size={14} />
+                </button>
+              )}
+
+              {/* 6. 停車時租收費表與時段電費明細 */}
+              <div className="space-y-3 pt-2 border-t border-white/10 text-left">
+                {/* 時段電費收費明細 */}
+                {selectedParking.tariffs && selectedParking.tariffs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-mono font-bold text-white/60 flex items-center gap-1">
+                      <Clock size={13} className="text-[#d4ff00]" />
+                      時段充電收費明細 (TARIFFS)
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {selectedParking.tariffs.map((t, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/5 px-3 py-2 rounded-xl text-xs font-mono">
+                          <span className="text-white/80">⏳ {t.timeSlot}</span>
+                          <span className="text-[#d4ff00] font-bold">HKD ${t.price} / {t.unit || '度'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 充電槍規格清單 */}
+                {selectedParking.gunGroups && selectedParking.gunGroups.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-mono font-bold text-white/60 flex items-center gap-1">
+                      <Zap size={13} className="text-[#d4ff00]" />
+                      充電槍詳細配備 (GUN GROUPS)
+                    </span>
+                    <div className="space-y-1.5">
+                      {selectedParking.gunGroups.map((g, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/5 px-3 py-2 rounded-xl text-xs font-mono">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-[#d4ff00]/15 text-[#d4ff00] font-bold text-[10px]">
+                              {g.gunType}
+                            </span>
+                            <span className="text-white font-bold">{g.kw} kW</span>
+                          </div>
+                          <span className="text-white/60 text-xs">
+                            {g.count} 支 {g.note ? `· ${g.note}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. 車友實測回報清單 (大數據 Wiki) */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] font-mono font-bold text-white/70 flex items-center gap-1">
+                      <Star size={13} className="text-amber-400" />
+                      車友實測回報 ({selectedParking.chargingInfo?.userFeedbacks?.length || 0} 則)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowFeedbackForm(prev => !prev)}
+                      className="text-xs font-mono text-[#d4ff00] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      {showFeedbackForm ? '取消填寫' : '＋ 我要回報實測'}
+                    </button>
+                  </div>
+
+                  {/* 回報表單 */}
+                  {showFeedbackForm && (
+                    <form onSubmit={handleFeedbackSubmit} className="p-3.5 rounded-2xl bg-black/60 border border-[#d4ff00]/40 space-y-3 animate-fade-in text-left">
+                      <div className="text-xs font-mono font-bold text-[#d4ff00] flex items-center gap-1">
+                        ✍️ 填寫 Smart #5 充電實測數據
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-white/50 block">實測最高功率 (kW) *</label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            max="300"
+                            placeholder="例如: 120"
+                            value={feedbackKw}
+                            onChange={(e) => setFeedbackKw(e.target.value)}
+                            className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-[#d4ff00]"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-white/50 block">協議相容評級</label>
+                          <div className="flex gap-1 h-9 items-center bg-white/5 border border-white/15 rounded-xl px-2.5">
+                            {[1, 2, 3, 4, 5].map(st => (
+                              <button
+                                key={st}
+                                type="button"
+                                onClick={() => setFeedbackRating(st)}
+                                className={`text-base cursor-pointer transition-colors ${st <= feedbackRating ? "text-amber-400" : "text-white/20"}`}
+                              >
+                                ★
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-white/50 block">實測心得 / 是否跳槍 (選填)</label>
+                        <input
+                          type="text"
+                          placeholder="例: 即插即充順暢，全程維持 110kW 以上"
+                          value={feedbackNote}
+                          onChange={(e) => setFeedbackNote(e.target.value)}
+                          className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-[#d4ff00]"
+                        />
+                      </div>
+
+                      {feedbackError && <p className="text-xs text-red-400 font-mono">{feedbackError}</p>}
+                      {feedbackSuccess && <p className="text-xs text-[#d4ff00] font-mono">{feedbackSuccess}</p>}
+
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full py-2 bg-[#d4ff00] text-black font-mono font-bold text-xs rounded-xl shadow-[0_0_12px_rgba(212,255,0,0.3)] disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSubmitting ? '提交報告中...' : '確認發布實測大數據'}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* 回報清單渲染 */}
+                  {selectedParking.chargingInfo?.userFeedbacks && selectedParking.chargingInfo.userFeedbacks.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedParking.chargingInfo.userFeedbacks.map((fb, idx) => {
+                        const feedbackId = `${selectedParking.id}_fb_${idx}`;
+                        const likes = (fb as any).likes || 0 + (likedFeedbacks[feedbackId] || 0);
+
+                        return (
+                          <div key={idx} className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5 text-xs font-mono">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-white">
+                                  {fb.userDisplayName || `車友 #${fb.userId?.substring(0, 5) || '852'}`}
+                                </span>
+                                <span className="text-amber-400">
+                                  {'★'.repeat(fb.rating || 5)}
+                                </span>
+                              </div>
+                              <span className="text-[#d4ff00] font-bold">
+                                實測 {fb.realKw} kW
+                              </span>
+                            </div>
+
+                            {fb.note && (
+                              <p className="text-white/70 text-[11px] font-sans m-0 leading-relaxed">
+                                {fb.note}
+                              </p>
+                            )}
+
+                            <div className="flex justify-between items-center pt-1 text-[10px] text-white/30 border-t border-white/5">
+                              <span>實測分享</span>
+                              <button
+                                type="button"
+                                onClick={() => handleLikeFeedback(feedbackId)}
+                                className="flex items-center gap-1 text-white/50 hover:text-[#d4ff00] transition-colors cursor-pointer"
+                              >
+                                <ThumbsUp size={11} />
+                                <span>{likes > 0 ? likes : '實用'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-4 text-center text-xs font-mono text-white/30 bg-white/[0.01] rounded-xl border border-white/5">
+                      尚無車友回報實測紀錄，歡迎率先提供第一筆數據！
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* ======================================================== */
+            /* B. 若未選中特定停車場：展示搜尋列、分區膠囊與全港列表 */
+            /* ======================================================== */
+            <div className="space-y-3 pb-8 text-left">
+              {/* 搜尋列 */}
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={15} />
+                <input
+                  type="text"
+                  placeholder="搜尋停車場名稱、商場或地址..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 pr-9 py-2.5 text-xs text-white placeholder:text-white/30 font-mono focus:outline-none focus:border-[#d4ff00] transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* 分區快速篩選膠囊 */}
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
+                {(['all', '港島', '九龍', '新界'] as const).map(reg => (
+                  <button
+                    key={reg}
+                    type="button"
+                    onClick={() => setRegionFilter(reg)}
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                      regionFilter === reg
+                        ? 'bg-[#d4ff00] text-black shadow-[0_0_12px_rgba(212,255,0,0.3)]'
+                        : 'bg-white/5 text-white/50 hover:bg-white/10'
+                    }`}
+                  >
+                    {reg === 'all' ? '全部區域' : reg}
+                  </button>
+                ))}
+              </div>
+
+              {/* 停車場列表卡片 */}
+              <div className="space-y-2 pt-1">
+                <div className="text-[10px] font-mono text-white/40 uppercase tracking-widest flex items-center justify-between">
+                  <span>附近推薦停車場 ({filteredLots.length})</span>
+                  <span>點擊對焦地圖</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {filteredLots.map(lot => {
+                    const diffColor = getDifficultyColor(lot.difficultyTag, lot.hasDifficulty);
+                    return (
+                      <div
+                        key={lot.id}
+                        onClick={() => handleSelectLot(lot)}
+                        className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-[#d4ff00]/40 transition-all cursor-pointer flex flex-col justify-between gap-2 text-left group"
+                      >
+                        <div>
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-white group-hover:text-[#d4ff00] transition-colors truncate">
+                              {lot.name}
+                            </span>
+                            {lot.hasDifficulty !== false && lot.difficultyTag && (
+                              <span 
+                                style={{
+                                  fontSize: '9px',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor: lot.difficultyTag === '地獄' ? '#ff3b30' : '#d4ff00',
+                                  color: lot.difficultyTag === '地獄' ? '#fff' : '#000',
+                                  fontWeight: 'bold',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {lot.difficultyTag}
+                              </span>
+                            )}
+                          </div>
+                          {lot.address && (
+                            <p className="text-[10px] text-white/40 truncate font-mono mt-0.5 m-0">
+                              {lot.address}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[9px] font-mono text-white/50">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-white/40">{lot.region}</span>
+                            {lot.hasCharging && (
+                              <span className="text-[#d4ff00] font-bold">
+                                ⚡ {lot.chargingInfo?.realKw || lot.chargingInfo?.officialKw || lot.maxKw || ''}kW
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openNavigation(lot.lat, lot.lng, lot.name);
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-[#d4ff00] text-black font-bold text-[9px] flex items-center gap-1 hover:bg-[#b0f000] transition-all cursor-pointer shadow-sm"
+                            title="一鍵導航"
+                          >
+                            <Navigation size={9} />
+                            <span>導航</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 };
