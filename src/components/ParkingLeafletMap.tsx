@@ -32,7 +32,8 @@ import { CCTV_CAMERAS, TrafficCamera } from '../data/cctvCameras';
 import { TrafficCCTVModal } from './TrafficCCTVModal';
 import { TunnelDashboard } from './TunnelDashboard';
 import { TrafficNewsModal } from './TrafficNewsModal';
-import { fetchParkingMeterVacancy } from '../services/parkingMeterService';
+import { fetchParkingMeterVacancy } from '../utils/parkingMeterApi';
+import { CyberMarkerClusterLayer, ClusterMarkerItem } from './CyberMarkerClusterLayer';
 
 interface ParkingLeafletMapProps {
   parkingLots: ParkingLot[];
@@ -184,18 +185,10 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
     });
   }, [cctvRegion, cctvSearch]);
 
-  // 地圖上渲染攝影機 Marker
-  const visibleCctvMarkers = useMemo(() => {
-    if (cctvSearch.trim().length > 0) {
-      return filteredCctvCameras.slice(0, 150);
-    }
-    if (cctvRegion !== 'all') {
-      return filteredCctvCameras.slice(0, 120);
-    }
-    return filteredCctvCameras.slice(0, 80);
-  }, [filteredCctvCameras, cctvSearch, cctvRegion]);
+  // 全量渲染攝影機 Marker (取消 80/120/150 筆數上限限制，由 MarkerClusterGroup 聚合以確保流暢)
+  const visibleCctvMarkers = filteredCctvCameras;
 
-  // 篩選路旁停車收費錶 (咪錶)
+  // 篩選路旁停車收費錶 (咪錶) - 嚴禁過濾 0 空位，保留全量數據
   const filteredMeters = useMemo(() => {
     return meters.filter(m => {
       const matchRegion = meterRegion === 'all' || m.region === meterRegion;
@@ -206,23 +199,26 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
     });
   }, [meters, meterRegion, meterSearch]);
 
-  // 自定義路旁咪錶 Marker 圖標 (小圓點，有空位時標記綠色圓圈，選中時帶光暈與外圈)
+  // 自定義路旁咪錶 Marker 圖標 (小圓點，有空位時標記綠色圓圈；空置為 0 時標記灰色/紅色 [0 空位]，確保全港所有點位均可見)
   const createMeterMarkerIcon = (meter: ParkingMeter, isSelected: boolean) => {
     const hasVacancy = meter.vacantSpaces > 0;
-    const dotColor = hasVacancy ? '#d4ff00' : '#ef4444';
-    const ringColor = hasVacancy ? 'rgba(212, 255, 0, 0.9)' : 'rgba(239, 68, 68, 0.7)';
-    const glow = hasVacancy ? '0 0 10px rgba(212, 255, 0, 0.8)' : '0 0 6px rgba(239, 68, 68, 0.4)';
+    const dotColor = hasVacancy ? '#d4ff00' : '#71717a';
+    const ringColor = hasVacancy ? 'rgba(212, 255, 0, 0.9)' : 'rgba(113, 113, 122, 0.7)';
+    const glow = hasVacancy ? '0 0 10px rgba(212, 255, 0, 0.8)' : '0 0 4px rgba(113, 113, 122, 0.3)';
+    const badgeBg = hasVacancy ? '#000000' : '#18181b';
+    const badgeText = hasVacancy ? `${meter.vacantSpaces}空位` : '0 空位';
+    const textColor = hasVacancy ? '#d4ff00' : '#a1a1aa';
 
     const html = `
       <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
         <!-- 頂部微型空位標籤 -->
         <div class="px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-md border text-[9.5px] font-mono font-bold whitespace-nowrap mb-0.5"
-             style="background-color: #000000; border-color: ${isSelected ? '#d4ff00' : ringColor}; color: ${dotColor};">
-          <span>🅿️</span>
-          <span>${hasVacancy ? `${meter.vacantSpaces}空位` : '滿額'}</span>
+             style="background-color: ${badgeBg}; border-color: ${isSelected ? '#d4ff00' : ringColor}; color: ${textColor};">
+          <span style="font-size: 8px;">${hasVacancy ? '🟢' : '⚪'}</span>
+          <span>${badgeText}</span>
         </div>
 
-        <!-- 小圓點帶綠色圓圈 -->
+        <!-- 小圓點帶圓圈 (有空位綠色圓圈，0 空位灰色圓圈) -->
         <div class="relative flex items-center justify-center">
           ${isSelected ? `<div class="absolute -inset-1.5 rounded-full animate-ping opacity-60" style="background-color: ${dotColor};"></div>` : ''}
           <div class="w-4 h-4 rounded-full flex items-center justify-center border-2"
@@ -407,6 +403,52 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
     });
   }, [parkingLots, searchQuery, regionFilter, difficultyFilter, onlyChargingFilter, onlyVideoFilter]);
 
+  // 聚合點位列表 - 停車場
+  const parkingClusterItems = useMemo<ClusterMarkerItem[]>(() => {
+    return filteredLots.map(lot => ({
+      id: lot.id,
+      lat: lot.lat,
+      lng: lot.lng,
+      icon: createMarkerIcon(lot, selectedParking?.id === lot.id),
+      onClick: () => handleSelectLot(lot)
+    }));
+  }, [filteredLots, selectedParking]);
+
+  // 聚合點位列表 - 交通快拍 CCTV (全量 183 支攝影機)
+  const cctvClusterItems = useMemo<ClusterMarkerItem[]>(() => {
+    return visibleCctvMarkers.map(cam => ({
+      id: cam.key,
+      lat: cam.lat,
+      lng: cam.lng,
+      icon: createCCTVMarkerIcon(cam, selectedCamera?.key === cam.key),
+      onClick: () => {
+        setSelectedCamera(cam);
+        setMapCenter([cam.lat, cam.lng]);
+        setMapZoom(16);
+        setFlyTrigger(prev => prev + 1);
+      }
+    }));
+  }, [visibleCctvMarkers, selectedCamera]);
+
+  // 聚合點位列表 - 實時停車收費錶 (咪錶全量 1500+ 群組)
+  const meterClusterItems = useMemo<ClusterMarkerItem[]>(() => {
+    return filteredMeters.map(meter => ({
+      id: meter.meterId,
+      lat: meter.lat,
+      lng: meter.lng,
+      icon: createMeterMarkerIcon(meter, selectedMeter?.meterId === meter.meterId),
+      onClick: () => {
+        setSelectedMeter(meter);
+        setSelectedParking(null);
+        setSelectedCamera(null);
+        setMapCenter([meter.lat, meter.lng]);
+        setMapZoom(16);
+        setFlyTrigger(prev => prev + 1);
+        setSheetStage('half');
+      }
+    }));
+  }, [filteredMeters, selectedMeter]);
+
   // 回報實測提交
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -503,63 +545,32 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
 
           <MapController center={mapCenter} zoom={mapZoom} flyTrigger={flyTrigger} />
 
-          {/* 渲染停車場 Markers (parking 模式) */}
-          {activeMapMode === 'parking' && filteredLots.map(lot => {
-            const isSelected = selectedParking?.id === lot.id;
-            return (
-              <Marker
-                key={lot.id}
-                position={[lot.lat, lot.lng]}
-                icon={createMarkerIcon(lot, isSelected)}
-                eventHandlers={{
-                  click: () => handleSelectLot(lot)
-                }}
-              />
-            );
-          })}
+          {/* 渲染停車場 Markers (parking 模式，支援聚合以優化大量點位效能) */}
+          {activeMapMode === 'parking' && (
+            <CyberMarkerClusterLayer
+              items={parkingClusterItems}
+              mode="parking"
+              maxClusterRadius={45}
+            />
+          )}
 
-          {/* 渲染香港運輸署實時路面 CCTV Markers (cctv 模式) */}
-          {activeMapMode === 'cctv' && visibleCctvMarkers.map(cam => {
-            const isSelected = selectedCamera?.key === cam.key;
-            return (
-              <Marker
-                key={cam.key}
-                position={[cam.lat, cam.lng]}
-                icon={createCCTVMarkerIcon(cam, isSelected)}
-                eventHandlers={{
-                  click: () => {
-                    setSelectedCamera(cam);
-                    setMapCenter([cam.lat, cam.lng]);
-                    setMapZoom(16);
-                    setFlyTrigger(prev => prev + 1);
-                  }
-                }}
-              />
-            );
-          })}
+          {/* 渲染香港運輸署實時路面 CCTV Markers (cctv 模式，全港 183 支攝影機聚合) */}
+          {activeMapMode === 'cctv' && (
+            <CyberMarkerClusterLayer
+              items={cctvClusterItems}
+              mode="cctv"
+              maxClusterRadius={55}
+            />
+          )}
 
-          {/* 渲染香港運輸署實時停車收費錶 Markers (meter 模式) */}
-          {activeMapMode === 'meter' && filteredMeters.map(meter => {
-            const isSelected = selectedMeter?.meterId === meter.meterId;
-            return (
-              <Marker
-                key={meter.meterId}
-                position={[meter.lat, meter.lng]}
-                icon={createMeterMarkerIcon(meter, isSelected)}
-                eventHandlers={{
-                  click: () => {
-                    setSelectedMeter(meter);
-                    setSelectedParking(null);
-                    setSelectedCamera(null);
-                    setMapCenter([meter.lat, meter.lng]);
-                    setMapZoom(16);
-                    setFlyTrigger(prev => prev + 1);
-                    setSheetStage('half');
-                  }
-                }}
-              />
-            );
-          })}
+          {/* 渲染香港運輸署實時停車收費錶 Markers (meter 模式，全港 1500+ 群組點位聚合，包含 0 空位標示) */}
+          {activeMapMode === 'meter' && (
+            <CyberMarkerClusterLayer
+              items={meterClusterItems}
+              mode="meter"
+              maxClusterRadius={50}
+            />
+          )}
         </MapContainer>
       </div>
 
@@ -1467,9 +1478,9 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
                             <span className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold inline-block ${
                               hasVacancy
                                 ? 'bg-[#d4ff00]/15 text-[#d4ff00] border border-[#d4ff00]/30 shadow-[0_0_8px_rgba(212,255,0,0.15)]'
-                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                                : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                             }`}>
-                              {hasVacancy ? `${meter.vacantSpaces} 空位` : '滿額'}
+                              {hasVacancy ? `${meter.vacantSpaces} 空位` : '0 空位 (滿額)'}
                             </span>
                             <div className="text-[10px] font-mono text-white/30 mt-0.5">
                               共 {meter.totalSpaces} 位
