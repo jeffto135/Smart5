@@ -83,6 +83,20 @@ input[type="range"] {
   @apply accent-cyber-green;
 }
 
+/* Leaflet Marker transparent reset and meter-pill-box */
+.custom-meter-marker,
+.custom-leaflet-marker,
+.custom-leaflet-cctv-marker,
+.custom-cyber-cluster-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.meter-pill-box {
+  width: 70px;
+  height: 24px;
+}
+
 /* Leaflet Map Dark Tile Filter (免 Key 穩定暗黑地圖) */
 .map-tiles-dark {
   filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);

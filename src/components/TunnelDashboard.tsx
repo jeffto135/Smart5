@@ -123,24 +123,25 @@ export function calculateCurrentTunnelToll(now: Date = new Date()): {
     periodType = '早晨繁忙時段';
     periodNote = '西隧 $60 │ 紅隧/東隧 $40';
   }
-  // 10:15 - 10:43 (615m - 643m) -> 遞減至一般時段 ($30)
+  // 10:15 - 10:43 (615m - 643m) -> 遞減至一般時段 (西隧 $36, 紅東 $30)
   else if (timeInMinutes < 643) {
     const step = Math.floor((timeInMinutes - 615) / 2);
-    whc = Math.max(30, 60 - (step + 1) * 2);
+    whc = Math.max(36, 60 - (step + 1) * 2);
     cht = ehc = Math.max(30, 40 - (step + 1) * 1);
     periodType = '午間過渡 (遞減中)';
     periodNote = '過渡至一般時段';
   }
-  // 10:43 - 16:30 (643m - 990m) -> 一般時段 (三隧均為 $30)
+  // 10:43 - 16:30 (643m - 990m) -> 一般時段 (西隧 $36, 紅東 $30)
   else if (timeInMinutes < 990) {
-    whc = cht = ehc = 30;
+    whc = 36;
+    cht = ehc = 30;
     periodType = '日間一般時段';
-    periodNote = '三隧一律 $30';
+    periodNote = '西隧 $36 │ 紅隧/東隧 $30';
   }
   // 16:30 - 16:58 (990m - 1018m) -> 傍晚過渡遞增 (西隧升至 $60，紅東升至 $40)
   else if (timeInMinutes < 1018) {
     const step = Math.floor((timeInMinutes - 990) / 2);
-    whc = Math.min(60, 30 + (step + 1) * 2);
+    whc = Math.min(60, 36 + (step + 1) * 2);
     cht = ehc = Math.min(40, 30 + (step + 1) * 1);
     periodType = '傍晚過渡 (遞增中)';
     periodNote = '即將進入傍晚繁忙時段';

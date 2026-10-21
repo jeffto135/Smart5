@@ -32,7 +32,7 @@ import { CCTV_CAMERAS, TrafficCamera } from '../data/cctvCameras';
 import { TrafficCCTVModal } from './TrafficCCTVModal';
 import { TunnelDashboard } from './TunnelDashboard';
 import { TrafficNewsModal } from './TrafficNewsModal';
-import { fetchParkingMeterVacancy } from '../utils/parkingMeterApi';
+import { fetchParkingMeterVacancy, aggregateMetersBySection } from '../utils/parkingMeterApi';
 import { CyberMarkerClusterLayer, ClusterMarkerItem } from './CyberMarkerClusterLayer';
 
 interface ParkingLeafletMapProps {
@@ -188,69 +188,69 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
   // 全量渲染攝影機 Marker (取消 80/120/150 筆數上限限制，由 MarkerClusterGroup 聚合以確保流暢)
   const visibleCctvMarkers = filteredCctvCameras;
 
+  // 實裝路段級別聚合邏輯 (GroupBy by Section)：將同一條街、同一路段整合成單一路段標記
+  const sectionMeters = useMemo(() => {
+    return aggregateMetersBySection(meters);
+  }, [meters]);
+
   // 篩選路旁停車收費錶 (咪錶) - 嚴禁過濾 0 空位，保留全量數據
   const filteredMeters = useMemo(() => {
-    return meters.filter(m => {
+    return sectionMeters.filter(m => {
       const matchRegion = meterRegion === 'all' || m.region === meterRegion;
       const matchSearch = !meterSearch || 
         m.streetName.toLowerCase().includes(meterSearch.toLowerCase()) ||
         m.district.toLowerCase().includes(meterSearch.toLowerCase());
       return matchRegion && matchSearch;
     });
-  }, [meters, meterRegion, meterSearch]);
+  }, [sectionMeters, meterRegion, meterSearch]);
 
-  // 自定義路旁咪錶 Marker 圖標 (小圓點，有空位時標記綠色圓圈；空置為 0 時標記灰色/紅色 [0 空位]，確保全港所有點位均可見)
+  // 自定義路旁咪錶 Marker 圖標 (以路段為單位呈現單一標記，iconAnchor 設定為 [35, 12] 水平垂直置中)
   const createMeterMarkerIcon = (meter: ParkingMeter, isSelected: boolean) => {
     const hasVacancy = meter.vacantSpaces > 0;
-    const dotColor = hasVacancy ? '#d4ff00' : '#71717a';
     const ringColor = hasVacancy ? 'rgba(212, 255, 0, 0.9)' : 'rgba(113, 113, 122, 0.7)';
-    const glow = hasVacancy ? '0 0 10px rgba(212, 255, 0, 0.8)' : '0 0 4px rgba(113, 113, 122, 0.3)';
-    const badgeBg = hasVacancy ? '#000000' : '#18181b';
-    const badgeText = hasVacancy ? `${meter.vacantSpaces}空位` : '0 空位';
+    const glow = hasVacancy ? '0 0 10px rgba(212, 255, 0, 0.5)' : 'none';
+    const badgeBg = hasVacancy ? '#0a0a0c' : '#18181b';
+    const pBg = hasVacancy ? '#d4ff00' : '#3f3f46';
+    const pText = hasVacancy ? '#000000' : '#a1a1aa';
     const textColor = hasVacancy ? '#d4ff00' : '#a1a1aa';
+    const badgeText = hasVacancy ? `${meter.vacantSpaces}空位` : '0空位';
 
     const html = `
-      <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
-        <!-- 頂部微型空位標籤 -->
-        <div class="px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-md border text-[9.5px] font-mono font-bold whitespace-nowrap mb-0.5"
-             style="background-color: ${badgeBg}; border-color: ${isSelected ? '#d4ff00' : ringColor}; color: ${textColor};">
-          <span style="font-size: 8px;">${hasVacancy ? '🟢' : '⚪'}</span>
-          <span>${badgeText}</span>
-        </div>
-
-        <!-- 小圓點帶圓圈 (有空位綠色圓圈，0 空位灰色圓圈) -->
-        <div class="relative flex items-center justify-center">
-          ${isSelected ? `<div class="absolute -inset-1.5 rounded-full animate-ping opacity-60" style="background-color: ${dotColor};"></div>` : ''}
-          <div class="w-4 h-4 rounded-full flex items-center justify-center border-2"
-               style="background-color: #0d0d0d; border-color: ${isSelected ? '#ffffff' : ringColor}; box-shadow: ${glow};">
-            <div class="w-2 h-2 rounded-full" style="background-color: ${dotColor};"></div>
-          </div>
+      <div class="meter-pill-box relative flex items-center justify-center cursor-pointer select-none transition-transform duration-200 ${isSelected ? 'scale-110 z-50 ring-2 ring-[#d4ff00]' : 'hover:scale-105'}"
+           style="width: 70px; height: 24px;">
+        <div class="w-full h-full px-1.5 py-0.5 rounded-full flex items-center justify-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.85)] border text-[10px] font-mono font-bold whitespace-nowrap"
+             style="background-color: ${badgeBg}; border-color: ${isSelected ? '#ffffff' : ringColor}; color: ${textColor}; box-shadow: ${glow};">
+          <span class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-black shrink-0"
+                style="background-color: ${pBg}; color: ${pText};">P</span>
+          <span class="truncate">${badgeText}</span>
         </div>
       </div>
     `;
 
     return L.divIcon({
+      className: 'custom-meter-marker',
       html,
-      className: 'custom-leaflet-meter-marker',
-      iconSize: [0, 0],
-      iconAnchor: [0, 0]
+      iconSize: [70, 24],      // 標籤寬度 70px, 高度 24px
+      iconAnchor: [35, 12],    // 🌟 關鍵：[35, 12] (水平置中、垂直置中)，嚴禁使用 [0, 0] 導致向右下方偏移
+      popupAnchor: [0, -12]
     });
   };
 
   // 自定義 CCTV Marker 圖標
   const createCCTVMarkerIcon = (cam: TrafficCamera, isSelected: boolean) => {
     const html = `
-      <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+      <div style="width: 64px; height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; user-select: none;"
+           class="transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
         <div class="px-2 py-0.5 rounded-full flex items-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.85)] border text-[10px] font-mono font-bold whitespace-nowrap mb-0.5"
              style="background-color: #09090b; border-color: ${isSelected ? '#ff3b30' : 'rgba(239,68,68,0.5)'}; color: #ffffff;">
           <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-          <span class="max-w-[75px] truncate">${cam.key}</span>
+          <span class="max-w-[48px] truncate">${cam.key}</span>
         </div>
-        <div class="w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2"
+        <div class="w-5 h-5 rounded-full flex items-center justify-center shadow-md border-2"
              style="background-color: ${isSelected ? '#ff3b30' : '#dc2626'}; border-color: #ffffff; color: #ffffff;">
-          <span style="font-size: 11px;">📹</span>
+          <span style="font-size: 9px;">📹</span>
         </div>
-        <div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] mx-auto"
+        <div class="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[4px] mx-auto -mt-0.5"
              style="border-top-color: #dc2626;"></div>
       </div>
     `;
@@ -258,8 +258,9 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
     return L.divIcon({
       html,
       className: 'custom-leaflet-cctv-marker',
-      iconSize: [0, 0],
-      iconAnchor: [0, 0]
+      iconSize: [64, 44],
+      iconAnchor: [32, 44],    // 🌟 關鍵：X軸置中(32px)，Y軸貼底(44px)
+      popupAnchor: [0, -44]
     });
   };
 
@@ -279,25 +280,26 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
     }
 
     const html = `
-      <div class="relative flex flex-col items-center select-none cursor-pointer transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
+      <div style="width: 60px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; user-select: none;"
+           class="transform transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110'}">
         <!-- 1. 頂部常駐黑色圓角膠囊價格標籤 -->
-        <div class="px-2 py-0.5 rounded-full flex items-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.85)] border text-[11px] font-mono font-bold whitespace-nowrap mb-0.5"
+        <div class="px-2 py-0.5 rounded-full flex items-center gap-1 shadow-[0_2px_8px_rgba(0,0,0,0.85)] border text-[10px] font-mono font-bold whitespace-nowrap mb-0.5"
              style="background-color: #09090b; border-color: ${isSelected ? '#d4ff00' : 'rgba(255,255,255,0.2)'}; color: ${isSelected ? '#d4ff00' : '#ffffff'};">
-          ${hasCharging ? `<span style="color: #d4ff00; font-size: 10px;">⚡</span>` : ''}
+          ${hasCharging ? `<span style="color: #d4ff00; font-size: 9px;">⚡</span>` : ''}
           <span>${priceText}</span>
         </div>
 
         <!-- 2. 下方經典藍色圓形停車場 Pin (帶難度外圈高亮) -->
         <div class="relative flex items-center justify-center">
           ${isSelected ? `<div class="absolute -inset-1.5 rounded-full animate-ping opacity-60" style="background-color: ${diffColor};"></div>` : ''}
-          <div class="w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2"
+          <div class="w-5 h-5 rounded-full flex items-center justify-center shadow-md border-2"
                style="background-color: ${isSelected ? '#0284c7' : '#007aff'}; border-color: ${isSelected ? '#d4ff00' : '#ffffff'}; color: #ffffff;">
-            <span style="font-size: 11px; font-weight: 900; font-family: monospace;">P</span>
+            <span style="font-size: 10px; font-weight: 900; font-family: monospace;">P</span>
           </div>
         </div>
 
         <!-- 3. 指向地圖的尖端小箭頭 -->
-        <div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] mx-auto"
+        <div class="w-0 h-0 border-l-[3px] border-l-transparent border-r-[3px] border-r-transparent border-t-[4px] mx-auto -mt-0.5"
              style="border-top-color: ${isSelected ? '#d4ff00' : '#007aff'};"></div>
       </div>
     `;
@@ -305,8 +307,9 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
     return L.divIcon({
       html,
       className: 'custom-leaflet-marker',
-      iconSize: [0, 0],
-      iconAnchor: [0, 0]
+      iconSize: [60, 46],
+      iconAnchor: [30, 46],    // 🌟 關鍵：X軸置中(30px)，Y軸貼底(46px)
+      popupAnchor: [0, -46]
     });
   };
 
@@ -405,48 +408,78 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
 
   // 聚合點位列表 - 停車場
   const parkingClusterItems = useMemo<ClusterMarkerItem[]>(() => {
-    return filteredLots.map(lot => ({
-      id: lot.id,
-      lat: lot.lat,
-      lng: lot.lng,
-      icon: createMarkerIcon(lot, selectedParking?.id === lot.id),
-      onClick: () => handleSelectLot(lot)
-    }));
+    return filteredLots.map(lot => {
+      let lat = Number(lot.lat);
+      let lng = Number(lot.lng);
+      if (lat > 100 && lng < 30) {
+        const temp = lat;
+        lat = lng;
+        lng = temp;
+      }
+      return {
+        id: lot.id,
+        lat,
+        lng,
+        region: lot.region,
+        icon: createMarkerIcon(lot, selectedParking?.id === lot.id),
+        onClick: () => handleSelectLot(lot)
+      };
+    });
   }, [filteredLots, selectedParking]);
 
   // 聚合點位列表 - 交通快拍 CCTV (全量 183 支攝影機)
   const cctvClusterItems = useMemo<ClusterMarkerItem[]>(() => {
-    return visibleCctvMarkers.map(cam => ({
-      id: cam.key,
-      lat: cam.lat,
-      lng: cam.lng,
-      icon: createCCTVMarkerIcon(cam, selectedCamera?.key === cam.key),
-      onClick: () => {
-        setSelectedCamera(cam);
-        setMapCenter([cam.lat, cam.lng]);
-        setMapZoom(16);
-        setFlyTrigger(prev => prev + 1);
+    return visibleCctvMarkers.map(cam => {
+      let lat = Number(cam.lat);
+      let lng = Number(cam.lng);
+      if (lat > 100 && lng < 30) {
+        const temp = lat;
+        lat = lng;
+        lng = temp;
       }
-    }));
+      return {
+        id: cam.key,
+        lat,
+        lng,
+        region: cam.region,
+        icon: createCCTVMarkerIcon(cam, selectedCamera?.key === cam.key),
+        onClick: () => {
+          setSelectedCamera(cam);
+          setMapCenter([lat, lng]);
+          setMapZoom(16);
+          setFlyTrigger(prev => prev + 1);
+        }
+      };
+    });
   }, [visibleCctvMarkers, selectedCamera]);
 
   // 聚合點位列表 - 實時停車收費錶 (咪錶全量 1500+ 群組)
   const meterClusterItems = useMemo<ClusterMarkerItem[]>(() => {
-    return filteredMeters.map(meter => ({
-      id: meter.meterId,
-      lat: meter.lat,
-      lng: meter.lng,
-      icon: createMeterMarkerIcon(meter, selectedMeter?.meterId === meter.meterId),
-      onClick: () => {
-        setSelectedMeter(meter);
-        setSelectedParking(null);
-        setSelectedCamera(null);
-        setMapCenter([meter.lat, meter.lng]);
-        setMapZoom(16);
-        setFlyTrigger(prev => prev + 1);
-        setSheetStage('half');
+    return filteredMeters.map(meter => {
+      let lat = Number(meter.lat);
+      let lng = Number(meter.lng);
+      if (lat > 100 && lng < 30) {
+        const temp = lat;
+        lat = lng;
+        lng = temp;
       }
-    }));
+      return {
+        id: meter.meterId,
+        lat,
+        lng,
+        region: meter.region,
+        icon: createMeterMarkerIcon(meter, selectedMeter?.meterId === meter.meterId),
+        onClick: () => {
+          setSelectedMeter(meter);
+          setSelectedParking(null);
+          setSelectedCamera(null);
+          setMapCenter([lat, lng]);
+          setMapZoom(16);
+          setFlyTrigger(prev => prev + 1);
+          setSheetStage('half');
+        }
+      };
+    });
   }, [filteredMeters, selectedMeter]);
 
   // 回報實測提交
@@ -550,7 +583,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
             <CyberMarkerClusterLayer
               items={parkingClusterItems}
               mode="parking"
-              maxClusterRadius={45}
+              maxClusterRadius={38}
             />
           )}
 
@@ -559,7 +592,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
             <CyberMarkerClusterLayer
               items={cctvClusterItems}
               mode="cctv"
-              maxClusterRadius={55}
+              maxClusterRadius={38}
             />
           )}
 
@@ -568,7 +601,7 @@ export const ParkingLeafletMap: React.FC<ParkingLeafletMapProps> = ({
             <CyberMarkerClusterLayer
               items={meterClusterItems}
               mode="meter"
-              maxClusterRadius={50}
+              maxClusterRadius={38}
             />
           )}
         </MapContainer>

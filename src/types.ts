@@ -59,6 +59,8 @@ export interface RecordItem {
   currentSOC?: number;
   consumption?: number;
   tripKM?: number;
+  totalKM?: number;
+  diffKM?: number;
   deltaSOC?: number;
   calculatedConsumption?: string;
 }

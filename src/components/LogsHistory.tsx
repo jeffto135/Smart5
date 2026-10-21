@@ -66,6 +66,8 @@ export type TimelineItem = {
   consumption?: number;
   calculatedConsumption?: string;
   tripKM?: number;
+  diffKM?: number;
+  totalKM?: number;
   deltaSOC?: number;
 };
 
@@ -212,21 +214,38 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const isDriving = item.type === 'driving' || item.type === 'drive';
+      const isCharging = item.type === 'charging';
+
+      // 1. 計算增量里程（Trip KM / diffKM Calculation）
+      // 無論該筆記錄是「日常行車」還是「充電補能」，只要當前記錄的 totalKM（或 odoKM）大於上一筆記錄的 totalKM，就必須計算行駛差額：
+      const currentKM = Number(
+        item.rawRecord?.odoKM ??
+        (item.rawRecord as any)?.totalKM ??
+        (item.rawRecord as any)?.odometer ??
+        item.odometer ??
+        item.rawLog?.odo ??
+        item.rawLog?.odometer ??
+        0
+      );
+
+      let diffKM = 0;
+      if (item.tripKM && item.tripKM > 0) {
+        diffKM = item.tripKM;
+      } else if (item.rawLog?.odoDiff && item.rawLog.odoDiff > 0) {
+        diffKM = item.rawLog.odoDiff;
+      } else if (currentKM > 0 && lastKnownOdo && lastKnownOdo > 0 && currentKM > lastKnownOdo) {
+        const diff = currentKM - lastKnownOdo;
+        if (diff > 0 && diff < 5000) {
+          diffKM = diff;
+        }
+      }
+
+      item.diffKM = diffKM;
+      if (diffKM > 0) item.tripKM = diffKM;
 
       if (isDriving) {
-        const currentOdo = item.odometer ?? item.rawRecord?.odoKM ?? item.rawLog?.odo;
         const currentSOC = item.currentSOC ?? item.rawRecord?.currentSOC ?? item.batteryPercent ?? item.rawLog?.soc;
-
-        // 1. 該程里程 (tripKM): 優先讀取紀錄保存值或 rawLog 的 odoDiff
-        let tripKM: number | undefined = item.tripKM || (item.rawRecord as any)?.tripKM || item.rawLog?.odoDiff;
-
-        // 若無直接記錄，自動比對計算差額：比對當前筆 odoKM 與上一筆已知里程
-        if ((tripKM === undefined || tripKM <= 0) && currentOdo && lastKnownOdo && currentOdo > lastKnownOdo) {
-          const diff = currentOdo - lastKnownOdo;
-          if (diff > 0 && diff < 3000) {
-            tripKM = diff;
-          }
-        }
+        let tripKM = diffKM > 0 ? diffKM : (item.tripKM || (item.rawRecord as any)?.tripKM || item.rawLog?.odoDiff);
 
         // 2. 該程耗電百分比 (deltaSOC)
         let deltaSOC: number | undefined = item.deltaSOC || (item.rawRecord as any)?.deltaSOC;
@@ -259,13 +278,40 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
         item.calculatedConsumption = calculatedConsumption;
 
         // 更新最新已知里程與電量供下一節點比對
-        if (currentOdo && currentOdo > 0) lastKnownOdo = currentOdo;
+        if (currentKM > 0) lastKnownOdo = currentKM;
         if (currentSOC !== undefined && currentSOC >= 0) lastKnownSOC = currentSOC;
-      } else {
-        // 充電或保養等節點：若帶有行駛里程或充後 SOC，更新為下一趟行車的起始基準
-        const nodeOdo = item.odometer ?? item.rawRecord?.odoKM ?? item.rawRecord?.odometer;
+      } else if (isCharging) {
+        // 充電補能節點：計算插槍充電前該段行程的電耗
+        let calculatedConsumption: string | undefined = item.calculatedConsumption || (item.rawRecord as any)?.calculatedConsumption;
+
+        // 情況 A：若記錄有 startSoc 且上一節點有已知 SOC，依行車耗電 SOC 計算電耗
+        if (!calculatedConsumption && diffKM > 0 && item.rawRecord?.startSoc !== undefined && lastKnownSOC !== null && lastKnownSOC > item.rawRecord.startSoc) {
+          const dropPercent = lastKnownSOC - item.rawRecord.startSoc;
+          const energyUsedKwh = (dropPercent / 100) * batteryCapacity;
+          const kwhPer100Km = (energyUsedKwh / diffKM) * 100;
+          if (kwhPer100Km > 0 && kwhPer100Km < 80) {
+            calculatedConsumption = kwhPer100Km.toFixed(1);
+          }
+        }
+
+        // 情況 B：若無 startSoc，但充電補充了 kwhAdded，估算充電前行駛電耗
+        if (!calculatedConsumption && diffKM >= 5 && item.kwhAdded > 0) {
+          const kwhPer100Km = (item.kwhAdded / diffKM) * 100;
+          if (kwhPer100Km >= 6 && kwhPer100Km <= 70) {
+            calculatedConsumption = kwhPer100Km.toFixed(1);
+          }
+        }
+
+        item.calculatedConsumption = calculatedConsumption;
+
+        // 更新最新已知里程與充後電量供下一節點比對
+        if (currentKM > 0) lastKnownOdo = currentKM;
         const nodeSOC = item.rawRecord?.endSoc ?? item.currentSOC ?? item.batteryPercent;
-        if (nodeOdo && nodeOdo > 0) lastKnownOdo = nodeOdo;
+        if (nodeSOC !== undefined && nodeSOC >= 0) lastKnownSOC = nodeSOC;
+      } else {
+        // 保養或其他節點：若帶有行駛里程或電量，更新為下一趟的起始基準
+        if (currentKM > 0) lastKnownOdo = currentKM;
+        const nodeSOC = item.rawRecord?.endSoc ?? item.currentSOC ?? item.batteryPercent;
         if (nodeSOC !== undefined && nodeSOC >= 0) lastKnownSOC = nodeSOC;
       }
     }
@@ -933,14 +979,22 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[11px] font-mono text-white/50 truncate">
+                          <div className="flex items-center gap-2 text-[11px] font-mono text-white/50 truncate flex-wrap">
+                            {(item.rawRecord?.odoKM || (item.rawRecord as any)?.totalKM || item.odometer) ? (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span>總里程: {((item.rawRecord?.odoKM ?? (item.rawRecord as any)?.totalKM ?? item.odometer) as number).toLocaleString()} KM</span>
+                                {item.diffKM !== undefined && item.diffKM > 0 && (
+                                  <span className="text-[#d4ff00] font-bold text-[10px] bg-[#d4ff00]/15 border border-[#d4ff00]/30 px-1.5 py-0.2 rounded-md inline-flex items-center">
+                                    (+{item.diffKM} KM)
+                                  </span>
+                                )}
+                              </div>
+                            ) : null}
                             {item.notes ? (
                               <span className="truncate">{item.notes}</span>
-                            ) : (item.rawRecord?.odoKM || item.odometer) ? (
-                              <span>總里程: {(item.rawRecord?.odoKM ?? item.odometer)?.toLocaleString()} KM</span>
-                            ) : (
+                            ) : !(item.rawRecord?.odoKM || (item.rawRecord as any)?.totalKM || item.odometer) ? (
                               <span className="text-white/20">無詳細備註</span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -956,7 +1010,7 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
                           </div>
                           {/* 第二行（里程與電量變化）：顯示該程里程增量與耗電百分比 */}
                           <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
-                            {item.tripKM ? `+${item.tripKM} KM · ` : ''}
+                            {item.diffKM !== undefined && item.diffKM > 0 ? `+${item.diffKM} KM · ` : (item.tripKM ? `+${item.tripKM} KM · ` : '')}
                             {item.currentSOC !== undefined ? (
                               <span style={{ color: '#5ac8fa' }}>剩餘 {item.currentSOC}%</span>
                             ) : null}
@@ -965,20 +1019,41 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
                             ) : null}
                           </div>
                         </div>
+                      ) : isCharging ? (
+                        /* 充電補能卡片右側資訊欄 */
+                        <div style={{ textAlign: 'right' }} className="shrink-0 font-mono">
+                          <div style={{ color: '#d4ff00', fontSize: '15px', fontWeight: 'bold' }}>
+                            {item.amountHKD > 0 ? `HK$ ${item.amountHKD.toLocaleString()}` : '免費 / $0'}
+                          </div>
+                          <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
+                            {item.diffKM !== undefined && item.diffKM > 0 && (
+                              <span style={{ color: '#d4ff00', marginRight: '6px' }}>+{item.diffKM} KM</span>
+                            )}
+                            <span style={{ color: '#5ac8fa' }}>
+                              +{item.kwhAdded > 0 ? (Number.isInteger(item.kwhAdded) ? item.kwhAdded : item.kwhAdded.toFixed(1)) : 0} kWh
+                            </span>
+                            {unitPrice && (
+                              <span className="text-[10px] text-white/40 font-normal ml-1">
+                                (${unitPrice}/度)
+                              </span>
+                            )}
+                          </div>
+                          {/* 充電前行駛電耗 */}
+                          {item.calculatedConsumption && item.diffKM && item.diffKM > 0 && (
+                            <div className="text-[10px] text-white/50 mt-0.5">
+                              電耗: <span className="text-white/80 font-bold">{item.calculatedConsumption}</span> kWh/100km
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        /* 充電與其他支出的原有收費顯示 */
+                        /* 其他支出的原有收費顯示 */
                         <div style={{ textAlign: 'right' }} className="shrink-0 space-y-0.5 font-mono">
                           <div style={{ color: '#d4ff00', fontSize: '15px', fontWeight: 'bold' }}>
                             {item.amountHKD > 0 ? `HK$ ${item.amountHKD.toLocaleString()}` : '免費 / $0'}
                           </div>
-                          {item.type === 'charging' && (
-                            <div style={{ color: '#d4ff00', fontSize: '12px' }}>
-                              +{item.kwhAdded.toFixed(1)} kWh
-                              {unitPrice && (
-                                <span className="text-[10px] text-white/40 font-normal ml-1">
-                                  (${unitPrice}/度)
-                                </span>
-                              )}
+                          {item.diffKM !== undefined && item.diffKM > 0 && (
+                            <div style={{ color: '#888', fontSize: '12px', marginTop: '2px' }}>
+                              <span style={{ color: '#d4ff00' }}>+{item.diffKM} KM</span>
                             </div>
                           )}
                         </div>

@@ -13,6 +13,7 @@ export interface ClusterMarkerItem {
   lng: number;
   icon: L.DivIcon;
   onClick?: () => void;
+  region?: string;
 }
 
 interface CyberMarkerClusterLayerProps {
@@ -24,7 +25,7 @@ interface CyberMarkerClusterLayerProps {
 export const CyberMarkerClusterLayer: React.FC<CyberMarkerClusterLayerProps> = ({
   items,
   mode,
-  maxClusterRadius = 45
+  maxClusterRadius = 38 // 依據需求調低至 38 像素，杜絕跨越海域把港島與九龍強行合併在海中心
 }) => {
   const map = useMap();
 
@@ -80,12 +81,9 @@ export const CyberMarkerClusterLayer: React.FC<CyberMarkerClusterLayerProps> = (
       });
     };
 
-    // 檢查 leaflet.markercluster 是否已掛載至 L
-    const markerClusterFn = (L as any).markerClusterGroup || (L as any).MarkerClusterGroup;
-    let clusterGroup: any;
-
-    if (typeof (L as any).markerClusterGroup === 'function') {
-      clusterGroup = (L as any).markerClusterGroup({
+    const createGroup = () => {
+      const markerClusterFn = (L as any).markerClusterGroup || (L as any).MarkerClusterGroup;
+      const clusterOptions = {
         chunkedLoading: true,
         chunkInterval: 100,
         chunkDelay: 20,
@@ -93,38 +91,61 @@ export const CyberMarkerClusterLayer: React.FC<CyberMarkerClusterLayerProps> = (
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
         zoomToBoundsOnClick: true,
+        disableClusteringAtZoom: 16, // 放大至路段等級時完全展開各點位
         iconCreateFunction: createClusterIcon
-      });
-    } else if (typeof (L as any).MarkerClusterGroup === 'function') {
-      clusterGroup = new (L as any).MarkerClusterGroup({
-        chunkedLoading: true,
-        chunkInterval: 100,
-        chunkDelay: 20,
-        maxClusterRadius,
-        spiderfyOnMaxZoom: true,
-        showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        iconCreateFunction: createClusterIcon
-      });
-    } else {
-      clusterGroup = L.featureGroup();
-    }
+      };
 
-    // 批次加入點位
+      if (typeof (L as any).markerClusterGroup === 'function') {
+        return (L as any).markerClusterGroup(clusterOptions);
+      } else if (typeof (L as any).MarkerClusterGroup === 'function') {
+        return new (L as any).MarkerClusterGroup(clusterOptions);
+      } else {
+        return L.featureGroup();
+      }
+    };
+
+    // 🌟 核心防護：將點位按維港地理分區 (港島岸 vs 九龍/新界岸) 分開聚合
+    // 徹底杜絕跨越維多利亞港海峽將南北兩岸點位平均至海面中心的問題！
+    const islandGroup = createGroup();
+    const kowloonNtGroup = createGroup();
+
     items.forEach(item => {
-      const marker = L.marker([item.lat, item.lng], { icon: item.icon });
+      // 坐標防呆過濾
+      let lat = item.lat;
+      let lng = item.lng;
+      if (lat > 100 && lng < 30) {
+        const temp = lat;
+        lat = lng;
+        lng = temp;
+      }
+
+      const marker = L.marker([lat, lng], { icon: item.icon });
       if (item.onClick) {
         marker.on('click', item.onClick);
       }
-      clusterGroup.addLayer(marker);
+
+      // 判斷是否為港島區 (緯度 <= 22.288 或 region 為港島)
+      const isIsland = item.region === '港島' || lat < 22.288;
+      if (isIsland) {
+        islandGroup.addLayer(marker);
+      } else {
+        kowloonNtGroup.addLayer(marker);
+      }
     });
 
-    map.addLayer(clusterGroup);
+    map.addLayer(islandGroup);
+    map.addLayer(kowloonNtGroup);
 
     return () => {
       try {
-        map.removeLayer(clusterGroup);
-        clusterGroup.clearLayers();
+        map.removeLayer(islandGroup);
+        islandGroup.clearLayers();
+      } catch (err) {
+        // cleanup safety
+      }
+      try {
+        map.removeLayer(kowloonNtGroup);
+        kowloonNtGroup.clearLayers();
       } catch (err) {
         // cleanup safety
       }
