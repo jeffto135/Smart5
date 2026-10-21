@@ -199,6 +199,35 @@ const JTIS_DESTINATIONS: Record<string, string> = {
   WH: '西區海底隧道 (西隧)'
 };
 
+export interface TrafficStatus {
+  label: string;
+  color: string;
+}
+
+// 根據過海行車時間與運輸署代碼判定路況狀態 (避免深夜 4-5 分鐘誤判為擁塞)
+export const getTrafficStatus = (minutes: number | string, apiColour?: string | number): TrafficStatus => {
+  const mins = Number(minutes);
+
+  // 依據實際分鐘數判定標準（避免深夜 4-5 分鐘誤判為擁塞）
+  if (!isNaN(mins) && mins > 0) {
+    if (mins <= 8) {
+      return { label: '暢通', color: '#34c759' }; // 8 分鐘或以下：綠色暢通
+    } else if (mins <= 15) {
+      return { label: '繁忙', color: '#ff9500' }; // 9 至 15 分鐘：橙黃色繁忙
+    } else {
+      return { label: '擁塞', color: '#ff3b30' }; // 超過 15 分鐘：紅色嚴重擁塞
+    }
+  }
+
+  // 優先讀取運輸署官方回傳的 colour 屬性 (若有)
+  const col = String(apiColour ?? '').trim().toUpperCase();
+  if (col === '1' || col === 'GREEN' || col === '3') return { label: '暢通', color: '#34c759' };
+  if (col === '2' || col === 'YELLOW' || col === 'AMBER') return { label: '緩慢', color: '#ffcc00' };
+  if (col === 'RED') return { label: '擁塞', color: '#ff3b30' };
+
+  return { label: '暢通', color: '#34c759' };
+};
+
 interface TunnelDashboardProps {
   onClose?: () => void;
   isCompact?: boolean;
@@ -294,18 +323,6 @@ export const TunnelDashboard: React.FC<TunnelDashboardProps> = ({ onClose, isCom
       return true;
     });
   }, [journeyTimes, selectedDirection]);
-
-  const getColorBadge = (colorId: number) => {
-    switch (colorId) {
-      case 1:
-        return { text: '暢通', bg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400', dot: 'bg-emerald-400' };
-      case 2:
-        return { text: '繁忙', bg: 'bg-yellow-500/15 border-yellow-500/30 text-yellow-400', dot: 'bg-yellow-400' };
-      case 3:
-      default:
-        return { text: '擁塞', bg: 'bg-red-500/15 border-red-500/30 text-red-400', dot: 'bg-red-400' };
-    }
-  };
 
   return (
     <div className="space-y-4 text-left font-sans">
@@ -414,7 +431,7 @@ export const TunnelDashboard: React.FC<TunnelDashboardProps> = ({ onClose, isCom
         <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
           {filteredJourneyTimes.length > 0 ? (
             filteredJourneyTimes.map((item, idx) => {
-              const badge = getColorBadge(item.colorId);
+              const status = getTrafficStatus(item.timeMinutes, item.colorId);
               return (
                 <div
                   key={idx}
@@ -436,9 +453,25 @@ export const TunnelDashboard: React.FC<TunnelDashboardProps> = ({ onClose, isCom
                         {item.timeMinutes} <span className="text-[10px] font-normal text-white/50">分鐘</span>
                       </div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-1 ${badge.bg}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`}></span>
-                      <span>{badge.text}</span>
+                    <span style={{
+                      backgroundColor: `${status.color}22`,
+                      color: status.color,
+                      border: `1px solid ${status.color}`,
+                      borderRadius: '12px',
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <span style={{ 
+                        width: '6px', 
+                        height: '6px', 
+                        borderRadius: '50%', 
+                        backgroundColor: status.color 
+                      }} />
+                      {status.label}
                     </span>
                   </div>
                 </div>
