@@ -404,6 +404,9 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
     let otherCost = 0;
     let kwh = 0;
 
+    const odoValues: number[] = [];
+    let sumTripKm = 0;
+
     filteredItems.forEach(item => {
       cost += item.amountHKD;
       if (item.type === 'charging') {
@@ -412,7 +415,40 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
       } else if (item.type !== 'drive' && item.type !== 'driving') {
         otherCost += item.amountHKD;
       }
+
+      // Collect Odometer values
+      const odo = Number(
+        item.rawRecord?.odoKM ??
+        (item.rawRecord as any)?.totalKM ??
+        (item.rawRecord as any)?.odometer ??
+        item.odometer ??
+        item.rawLog?.odo ??
+        item.rawLog?.odometer ??
+        0
+      );
+      if (odo > 0) {
+        odoValues.push(odo);
+      }
+
+      // Accumulate incremental trips
+      const trip = Number(item.tripKM || item.diffKM || item.rawLog?.odoDiff || 0);
+      if (trip > 0) {
+        sumTripKm += trip;
+      }
     });
+
+    // 當月總行駛里程 = max(ODO) - min(ODO)，若只有單筆或ODO無效則以累積 tripKM 為準
+    let totalDistance = 0;
+    if (odoValues.length >= 2) {
+      const maxOdo = Math.max(...odoValues);
+      const minOdo = Math.min(...odoValues);
+      const diff = maxOdo - minOdo;
+      totalDistance = diff > 0 ? diff : sumTripKm;
+    } else if (sumTripKm > 0) {
+      totalDistance = sumTripKm;
+    } else if (odoValues.length === 1 && vehicle?.initialOdometer && odoValues[0] > vehicle.initialOdometer) {
+      totalDistance = odoValues[0] - vehicle.initialOdometer;
+    }
 
     const avgPrice = kwh > 0 ? (chargingCost / kwh).toFixed(2) : null;
 
@@ -421,10 +457,11 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
       chargingCost,
       otherCost,
       totalKwh: kwh,
+      totalDistance,
       avgPrice,
       totalCount: filteredItems.length
     };
-  }, [filteredItems]);
+  }, [filteredItems, vehicle]);
 
   // Chart data for energy curve
   const chartData = useMemo(() => {
@@ -589,47 +626,54 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300 pb-20">
       {/* 1. Header & Navigation */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between w-full gap-2 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
           <button 
             type="button" 
             onClick={onClose} 
-            className="p-2 -ml-2 text-white/40 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 -ml-1 sm:p-2 sm:-ml-2 text-white/50 hover:text-white transition-colors cursor-pointer shrink-0"
+            title="返回上一頁"
           >
-            <ArrowLeft size={22} />
+            <ArrowLeft size={20} className="sm:w-[22px] sm:h-[22px]" />
           </button>
-          <div>
-            <h2 className="text-2xl font-mono font-bold uppercase tracking-tight flex items-center gap-2">
-              <span>開支與充電記錄</span>
-              <span className="text-xs font-normal text-cyber-green border border-cyber-green/30 bg-cyber-green/10 px-2 py-0.5 rounded-full">
-                RECORDS
-              </span>
-            </h2>
-            <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mt-0.5">
-              MONTHLY EXPENSE & CHARGING TIMELINE
-            </p>
+          <div className="min-w-0 flex items-center gap-1.5 sm:gap-2">
+            <h1 
+              style={{ 
+                fontSize: '18px', 
+                fontWeight: 'bold', 
+                color: '#fff', 
+                whiteSpace: 'nowrap', 
+                margin: 0 
+              }}
+              className="font-mono flex items-center gap-1.5 leading-none shrink-0"
+            >
+              開支與充電記錄
+            </h1>
+            <span className="text-[10px] font-mono text-cyber-green border border-cyber-green/30 bg-cyber-green/10 px-1.5 py-0.5 rounded-full shrink-0 font-normal">
+              RECORDS
+            </span>
           </div>
         </div>
 
         {/* Quick Tools */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {onOpenTimer && (
             <button
               onClick={onOpenTimer}
-              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyber-green/50 text-white/80 hover:text-cyber-green transition-all flex items-center gap-1.5 text-xs font-mono cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyber-green/50 text-white/80 hover:text-cyber-green transition-all flex items-center gap-1 text-xs font-mono cursor-pointer shrink-0"
               title="停車/充電計時器"
             >
-              <Clock size={16} className="text-cyber-green" />
-              <span className="hidden sm:inline">計時器</span>
+              <Clock size={16} className="text-cyber-green shrink-0" />
+              <span className="hidden md:inline">計時器</span>
             </button>
           )}
 
           {onOpenNewRecord && (
             <button
               onClick={onOpenNewRecord}
-              className="p-2 px-3 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs flex items-center gap-1 hover:bg-cyber-green/80 transition-all shadow-[0_0_15px_rgba(204,255,0,0.25)] cursor-pointer"
+              className="py-1.5 px-2.5 sm:py-2 sm:px-3 rounded-xl bg-cyber-green text-black font-mono font-bold text-xs flex items-center gap-1 hover:bg-cyber-green/80 transition-all shadow-[0_0_15px_rgba(204,255,0,0.25)] cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Plus size={16} strokeWidth={2.5} />
+              <Plus size={15} strokeWidth={2.5} className="shrink-0" />
               <span>記一筆</span>
             </button>
           )}
@@ -649,13 +693,21 @@ export const LogsHistory: React.FC<LogsHistoryProps> = ({
         </button>
 
         {/* Current Month Display & All Toggle */}
-        <div className="flex items-center gap-2">
-          <div className="text-center">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="text-center min-w-0">
             <span className="text-sm sm:text-base font-mono font-black text-white tracking-wide">
               {currentMonthDisplay}
             </span>
-            <div className="text-[9px] font-mono text-white/40">
-              共 {monthSummary.totalCount} 筆 · 支出 HK$ {monthSummary.totalCost.toLocaleString()}
+            <div className="text-[10px] sm:text-[11px] font-mono text-white/50 mt-0.5 flex items-center justify-center gap-1 sm:gap-1.5 flex-wrap">
+              <span>共 {monthSummary.totalCount} 筆</span>
+              <span>·</span>
+              <span>
+                總行駛 <span style={{ color: '#d4ff00', fontWeight: 'bold' }}>{monthSummary.totalDistance.toLocaleString()} KM</span>
+              </span>
+              <span>·</span>
+              <span>
+                總支出 HK$ {monthSummary.totalCost.toLocaleString(undefined, { minimumFractionDigits: monthSummary.totalCost % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 })}
+              </span>
             </div>
           </div>
 
