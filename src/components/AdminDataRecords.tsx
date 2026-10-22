@@ -352,6 +352,7 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                             {isEditing ? (
                               <input 
                                 type="number" 
+                                step="any"
                                 value={editOdometer} 
                                 onChange={e => setEditOdometer(Number(e.target.value))} 
                                 className="w-full bg-white/10 rounded px-1 outline-none text-cyber-green border border-white/10 focus:border-cyber-green/50" 
@@ -365,6 +366,7 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                             {isEditing ? (
                               <input 
                                 type="number" 
+                                step="any"
                                 value={editBatteryPercent} 
                                 onChange={e => setEditBatteryPercent(Number(e.target.value))} 
                                 className="w-full bg-white/10 rounded px-1 outline-none text-cyber-green border border-white/10 focus:border-cyber-green/50" 
@@ -378,6 +380,7 @@ export const AdminDataRecords: React.FC<AdminDataRecordsProps> = ({
                             {isEditing ? (
                               <input 
                                 type="number" 
+                                step="any"
                                 value={editCost} 
                                 onChange={e => setEditCost(Number(e.target.value))} 
                                 className="w-full bg-white/10 rounded px-1 outline-none text-cyber-green border border-white/10 focus:border-cyber-green/50" 

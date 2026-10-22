@@ -211,7 +211,7 @@ export const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = (
       return;
     }
 
-    const parsedCost = Number(newCost) || 0;
+    const parsedCost = newCost ? parseFloat(Number(newCost).toFixed(2)) : 0;
 
     setIsAdding(true);
     try {
@@ -293,7 +293,7 @@ export const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = (
     try {
       const parsedDate = new Date(editDate);
       const parsedKM = Number(editKM);
-      const parsedCost = Number(editCost) || 0;
+      const parsedCost = editCost ? parseFloat(Number(editCost).toFixed(2)) : 0;
 
       // Update in subcollections
       const logUpdate = {
@@ -480,6 +480,7 @@ export const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = (
                     </label>
                     <input
                       type="number"
+                      step="any"
                       value={newKM}
                       onChange={(e) => setNewKM(e.target.value)}
                       placeholder="例如：10000"
@@ -496,6 +497,7 @@ export const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = (
                     </label>
                     <input
                       type="number"
+                      step="any"
                       min="0"
                       value={newCost}
                       onChange={(e) => setNewCost(e.target.value)}
@@ -610,6 +612,7 @@ export const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = (
                                 <Gauge size={12} className="absolute left-3 top-3.5 text-cyber-green" />
                                 <input
                                   type="number"
+                                  step="any"
                                   value={editKM}
                                   onChange={(e) => setEditKM(e.target.value)}
                                   className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-2 font-mono text-xs text-white focus:outline-none focus:border-cyber-green"
@@ -624,6 +627,7 @@ export const MaintenanceHistoryModal: React.FC<MaintenanceHistoryModalProps> = (
                                 <DollarSign size={12} className="absolute left-3 top-3.5 text-cyber-green" />
                                 <input
                                   type="number"
+                                  step="any"
                                   min="0"
                                   value={editCost}
                                   onChange={(e) => setEditCost(e.target.value)}

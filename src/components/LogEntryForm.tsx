@@ -260,8 +260,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
       const fullDate = new Date(year, month - 1, day, hours || 0, minutes || 0, 0);
       const recordTimestamp = Timestamp.fromDate(fullDate);
 
-      const parsedAmount = Number(amountHKD) || 0;
-      const parsedKwh = selectedType === 'charging' ? (Number(kwhAdded) || 0) : 0;
+      const parsedAmount = amountHKD ? parseFloat(Number(amountHKD).toFixed(2)) : 0;
+      const parsedKwh = selectedType === 'charging' && kwhAdded ? parseFloat(Number(kwhAdded).toFixed(2)) : 0;
       
       let parsedOdo = 0;
       let parsedSoc = 100;
@@ -355,8 +355,8 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
       if (!navigator.onLine || err?.code === 'unavailable' || err?.message?.toLowerCase().includes('network') || err?.message?.toLowerCase().includes('offline')) {
         const payloadFallback: any = {
           type: selectedType,
-          amountHKD: Number(amountHKD) || 0,
-          kwhAdded: selectedType === 'charging' ? (Number(kwhAdded) || 0) : 0,
+          amountHKD: amountHKD ? parseFloat(Number(amountHKD).toFixed(2)) : 0,
+          kwhAdded: selectedType === 'charging' && kwhAdded ? parseFloat(Number(kwhAdded).toFixed(2)) : 0,
           location: location.trim(),
           notes: notes.trim(),
           vehicleId: vehicle?.id || '',
@@ -592,7 +592,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
             </span>
             <input
               type="number"
-              step="0.1"
+              step="any"
               min="0"
               placeholder="0.0"
               value={amountHKD}
@@ -677,7 +677,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
                 <input
                   type="number"
                   min="0"
-                  step="1"
+                  step="any"
                   required
                   placeholder={previousODO > 0 ? String(previousODO) : '例如: 12500'}
                   value={odoKM}
@@ -710,7 +710,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
                   type="number"
                   min="0"
                   max="100"
-                  step="1"
+                  step="any"
                   required
                   placeholder="例如: 76"
                   value={currentSOC}
@@ -741,7 +741,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
                 <input
                   type="number"
                   min="0"
-                  step="0.1"
+                  step="any"
                   placeholder="例如: 15.6"
                   value={consumption}
                   onChange={(e) => setConsumption(e.target.value)}
@@ -780,7 +780,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
               </label>
               <input
                 type="number"
-                step="0.01"
+                step="any"
                 min="0"
                 placeholder="例如: 35.5"
                 value={kwhAdded}
@@ -799,6 +799,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
                 <label className="text-[10px] font-mono uppercase text-white/50">充電前電量 (%)</label>
                 <input
                   type="number"
+                  step="any"
                   min="0"
                   max="100"
                   value={startSoc}
@@ -811,6 +812,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
                 <label className="text-[10px] font-mono uppercase text-cyber-green font-bold">充電後電量 (%)</label>
                 <input
                   type="number"
+                  step="any"
                   min="0"
                   max="100"
                   value={endSoc}
@@ -918,6 +920,7 @@ export const LogEntryForm: React.FC<LogEntryFormProps> = ({
               </span>
               <input
                 type="number"
+                step="any"
                 min="0"
                 placeholder={String(vehicle?.lastOdometer || 0)}
                 value={odometer}

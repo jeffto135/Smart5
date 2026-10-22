@@ -7,13 +7,15 @@ interface CyberInputProps extends React.InputHTMLAttributes<HTMLInputElement | H
   as?: 'input' | 'textarea';
 }
 
-export const CyberInput: React.FC<CyberInputProps> = ({ label, prefix, className, as = 'input', ...props }) => {
+export const CyberInput: React.FC<CyberInputProps> = ({ label, prefix, className, as = 'input', step, ...props }) => {
   const Component = as;
+  const computedStep = props.type === 'number' && step === undefined ? 'any' : step;
   return (
     <div className="space-y-2">
       {label && <label className="text-xs font-mono uppercase text-cyber-green/70 ml-1">{label}</label>}
       <div className="relative">
         <Component
+          step={computedStep}
           className={cn(
             "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyber-green/50 focus:ring-1 focus:ring-cyber-green/20 transition-all font-mono",
             prefix && "pl-12",

@@ -1176,7 +1176,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               if (!onRecordMaintenance) return;
               setIsSubmitting(true);
               try {
-                await onRecordMaintenance(Number(actualKM), actualDate, remarks, Number(actualCost) || 0);
+                const finalCost = actualCost ? parseFloat(Number(actualCost).toFixed(2)) : 0;
+                await onRecordMaintenance(Number(actualKM), actualDate, remarks, finalCost);
                 alert('保養紀錄成功 / MAINTENANCE LOGGED SUCCESSFULLY');
                 setRemarks('');
                 setActualKM('');
@@ -1204,6 +1205,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <label className="text-[10px] font-mono uppercase text-cyber-green/70">回廠里程 (KM) / Mileage</label>
                   <input
                     type="number"
+                    step="any"
                     value={actualKM}
                     onChange={(e) => setActualKM(e.target.value)}
                     placeholder="例：10000"
@@ -1216,6 +1218,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <label className="text-[10px] font-mono uppercase text-cyber-green/70">💰 保養費用 (HKD)</label>
                   <input
                     type="number"
+                    step="any"
                     min="0"
                     value={actualCost}
                     onChange={(e) => setActualCost(e.target.value)}

@@ -36,8 +36,8 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
     try {
       const updateData: Partial<RecordItem> = {
         type,
-        amountHKD: Number(amountHKD) || 0,
-        kwhAdded: type === 'charging' ? (Number(kwhAdded) || 0) : 0,
+        amountHKD: amountHKD ? parseFloat(Number(amountHKD).toFixed(2)) : 0,
+        kwhAdded: type === 'charging' && kwhAdded ? parseFloat(Number(kwhAdded).toFixed(2)) : 0,
         location: location.trim(),
         notes: notes.trim(),
         recordDate: new Date(dateStr) as any
@@ -142,7 +142,7 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
               <div className="relative">
                 <input
                   type="number"
-                  step="0.1"
+                  step="any"
                   min="0"
                   value={amountHKD}
                   onChange={(e) => setAmountHKD(e.target.value)}
@@ -157,7 +157,7 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
                 <label className="text-[10px] font-mono uppercase text-cyber-green/70">充入度數 (kWh)</label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="any"
                   min="0"
                   value={kwhAdded}
                   onChange={(e) => setKwhAdded(e.target.value)}
@@ -213,6 +213,7 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
                   <label className="text-[10px] font-mono uppercase text-white/70">總里程 (ODO KM)</label>
                   <input
                     type="number"
+                    step="any"
                     min="0"
                     value={odoKM}
                     onChange={(e) => setOdoKM(e.target.value)}
@@ -224,6 +225,7 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
                   <label className="text-[10px] font-mono uppercase text-white/70">電量 (SOC %)</label>
                   <input
                     type="number"
+                    step="any"
                     min="0"
                     max="100"
                     value={currentSOC}
@@ -237,7 +239,7 @@ export const RecordEditModal: React.FC<RecordEditModalProps> = ({
                 <label className="text-[10px] font-mono uppercase text-white/70">平均能耗 (kWh/100km，選填)</label>
                 <input
                   type="number"
-                  step="0.1"
+                  step="any"
                   min="0"
                   value={consumption}
                   onChange={(e) => setConsumption(e.target.value)}
