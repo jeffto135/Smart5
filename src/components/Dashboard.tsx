@@ -21,7 +21,7 @@ import { getStoredTimer } from './ParkingTimerModal';
 import { TrafficNewsCard } from './TrafficNewsCard';
 import { TrafficNewsModal } from './TrafficNewsModal';
 import { TunnelFeeBar } from './TunnelFeeBar';
-import { TunnelDashboard } from './TunnelDashboard';
+import { TunnelDetailModal } from './TunnelDetailModal';
 
 interface DashboardProps {
   logs: LogEntry[];
@@ -80,7 +80,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [tempInsuranceDate, setTempInsuranceDate] = useState('');
   const [isUpdatingReminder, setIsUpdatingReminder] = useState(false);
   const [showTrafficNewsModal, setShowTrafficNewsModal] = useState(false);
-  const [showTunnelModal, setShowTunnelModal] = useState(false);
+  const [isTunnelModalOpen, setIsTunnelModalOpen] = useState(false);
 
   const toggleDate = (date: string, e: React.MouseEvent) => {
     // Prevent event bubbling if necessary, but keep it simple
@@ -775,7 +775,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* 三隧分時段收費即時狀態條 (Tunnel Fee Bar) */}
-      <TunnelFeeBar onOpenTunnelDashboard={() => setShowTunnelModal(true)} />
+      <TunnelFeeBar onOpenTunnelDashboard={() => setIsTunnelModalOpen(true)} />
 
       {/* 2. EV 智能續航與能耗卡片 (EV Smart Insights & Efficiency) */}
       <div className="space-y-4">
@@ -1331,10 +1331,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 三隧分時段收費與即時行車時間詳情彈窗 */}
+      {/* 專屬彈窗：三隧分流即時收費與過海時間 (Tunnel Detail Modal / Bottom Sheet) */}
       <AnimatePresence>
-        {showTunnelModal && (
-          <TunnelDashboard onClose={() => setShowTunnelModal(false)} />
+        {isTunnelModalOpen && (
+          <TunnelDetailModal onClose={() => setIsTunnelModalOpen(false)} />
         )}
       </AnimatePresence>
     </div>

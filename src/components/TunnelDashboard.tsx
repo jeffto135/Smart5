@@ -357,9 +357,11 @@ export const TunnelDashboard: React.FC<TunnelDashboardProps> = ({ onClose, isCom
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all cursor-pointer flex items-center gap-1 font-mono text-xs border border-white/10 shadow-sm"
+              title="關閉視窗"
             >
-              <X size={18} />
+              <X size={16} />
+              <span>關閉</span>
             </button>
           )}
         </div>

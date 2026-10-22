@@ -358,8 +358,8 @@ export const TunnelFeeBar: React.FC<TunnelFeeBarProps> = ({ onOpenTunnelDashboar
           </div>
         </div>
 
-        {/* 右側：西隧、紅隧、東隧 當前收費膠囊 + 展開箭頭 */}
-        <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0">
+        {/* 右側：西隧、紅隧、東隧 當前收費膠囊 + [ 查看全港過海時間 ❯ ] */}
+        <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
           <div className="flex items-center gap-1.5">
             {/* 西隧 */}
             <div className={`px-2 py-0.5 rounded-md border flex items-center gap-1 font-mono text-[11px] font-bold ${whcStyle.bg} ${whcStyle.border} ${whcStyle.text}`}>
@@ -380,7 +380,11 @@ export const TunnelFeeBar: React.FC<TunnelFeeBarProps> = ({ onOpenTunnelDashboar
             </div>
           </div>
 
-          <ChevronRight size={14} className="text-white/30 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all ml-0.5 shrink-0" />
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyber-green/10 hover:bg-cyber-green/20 border border-cyber-green/30 text-cyber-green font-mono text-[10px] sm:text-xs font-bold transition-all shrink-0 shadow-[0_0_10px_rgba(204,255,0,0.15)] group-hover:scale-105">
+            <span className="hidden sm:inline">查看全港過海時間</span>
+            <span className="sm:hidden">過海時間</span>
+            <ChevronRight size={13} className="text-cyber-green group-hover:translate-x-0.5 transition-transform" />
+          </div>
         </div>
       </div>
     </div>
