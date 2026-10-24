@@ -22,12 +22,29 @@ export const WeatherIcon: React.FC<WeatherIconProps> = ({
   const sub = subtype?.toUpperCase() || '';
   const searchName = name || '';
 
+  const isMonsoon = 
+    upperCode === 'WMS' || 
+    upperCode === 'SMS' || 
+    upperCode === 'WMSGD' || 
+    sub === 'SMS' || 
+    searchName.includes('季候風') || 
+    searchName.includes('Monsoon');
+
   const isRain = upperCode === 'WRAIN' || searchName.includes('暴雨') || searchName.includes('雨');
   const isYellowRain = sub === 'WRAINY' || searchName.includes('黃色暴雨') || searchName.includes('黃雨');
   const isRedRain = sub === 'WRAINR' || searchName.includes('紅色暴雨') || searchName.includes('紅雨');
   const isBlackRain = sub === 'WRAINB' || searchName.includes('黑色暴雨') || searchName.includes('黑雨');
 
   if (imgError) {
+    // 1️⃣ 強烈季候風信號 (Strong Monsoon Signal)
+    if (isMonsoon) {
+      return (
+        <div className="bg-[#5ac8fa] text-black font-black text-[11px] px-1.5 py-0.5 rounded shadow-sm inline-flex items-center justify-center shrink-0 whitespace-nowrap leading-none select-none">
+          💨 季候風
+        </div>
+      );
+    }
+
     if (isRain) {
       if (isYellowRain) {
         return (
@@ -57,7 +74,13 @@ export const WeatherIcon: React.FC<WeatherIconProps> = ({
       );
     }
 
-    const isTC = upperCode === 'TC' || sub.startsWith('TC') || searchName.includes('風球') || searchName.includes('熱帶氣旋') || searchName.includes('信號');
+    const isTC = !isMonsoon && (
+      upperCode === 'TC' || 
+      upperCode === 'WTCSIGNAL' || 
+      sub.startsWith('TC') || 
+      searchName.includes('風球') || 
+      searchName.includes('熱帶氣旋')
+    );
     if (isTC) {
       let tcText = '1號';
       if (sub.includes('8') || searchName.includes('8號') || searchName.includes('八號')) tcText = '8號風球';

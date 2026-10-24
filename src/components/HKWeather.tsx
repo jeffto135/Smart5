@@ -32,62 +32,80 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
     const sub = item.subtype ? item.subtype.toString().toUpperCase() : '';
     const contentsStr = item.contents ? item.contents.join(' ') : (item.name || '');
 
-    // 1. 熱帶氣旋（風球）嚴格解析 Subtype
-    if (code === 'TC') {
+    // 1️⃣ 強烈季候風信號 (Strong Monsoon Signal) 🌟 核心修復：優先判定，禁止誤判為風球
+    if (
+      code === 'WMS' || 
+      code === 'SMS' || 
+      code === 'WMSGD' || 
+      sub === 'SMS' || 
+      contentsStr.includes('季候風') || 
+      contentsStr.includes('Monsoon')
+    ) {
+      return { 
+        name: '強烈季候風信號', 
+        color: '#5ac8fa', 
+        severity: 'minor', 
+        code: 'WMS', 
+        subtype: 'SMS' 
+      };
+    }
+
+    // 2️⃣ 熱帶氣旋（風球）嚴格解析 Subtype
+    if (code === 'TC' || code === 'WTCSIGNAL' || sub.startsWith('TC') || contentsStr.includes('風球') || contentsStr.includes('熱帶氣旋')) {
       if (sub.includes('TC8') || ['TC8NE', 'TC8SE', 'TC8NW', 'TC8SW'].includes(sub)) {
         let tcName = '八號烈風或暴風信號';
         if (sub === 'TC8NE') tcName = '八號東北烈風或暴風信號';
         else if (sub === 'TC8SE') tcName = '八號東南烈風或暴風信號';
         else if (sub === 'TC8NW') tcName = '八號西北烈風或暴風信號';
         else if (sub === 'TC8SW') tcName = '八號西南烈風或暴風信號';
-        return { name: tcName, color: '#ff3b30', severity: 'high', code, subtype: sub || 'TC8NE' };
+        return { name: tcName, color: '#ff3b30', severity: 'high', code: 'TC', subtype: sub || 'TC8NE' };
       }
-      if (sub === 'TC3') {
-        return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code, subtype: 'TC3' };
+      if (sub === 'TC3' || contentsStr.includes('三號') || contentsStr.includes('3號')) {
+        return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code: 'TC', subtype: 'TC3' };
       }
-      if (sub === 'TC9') {
-        return { name: '九號烈風或暴風風力增強信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC9' };
+      if (sub === 'TC9' || contentsStr.includes('九號') || contentsStr.includes('9號')) {
+        return { name: '九號烈風或暴風風力增強信號', color: '#ff3b30', severity: 'extreme', code: 'TC', subtype: 'TC9' };
       }
-      if (sub === 'TC10') {
-        return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC10' };
+      if (sub === 'TC10' || contentsStr.includes('十號') || contentsStr.includes('10號')) {
+        return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code: 'TC', subtype: 'TC10' };
       }
-      if (sub === 'TC1') {
-        return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code, subtype: 'TC1' };
+      if (sub === 'TC1' || contentsStr.includes('一號') || contentsStr.includes('1號')) {
+        return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code: 'TC', subtype: 'TC1' };
       }
 
       // If subtype is not explicitly TC1/3/8/9/10, check contents string
       if (contentsStr.includes('八號東北') || contentsStr.includes('8號東北')) {
-        return { name: '八號東北烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8NE' };
+        return { name: '八號東北烈風或暴風信號', color: '#ff3b30', severity: 'high', code: 'TC', subtype: 'TC8NE' };
       }
       if (contentsStr.includes('八號東南') || contentsStr.includes('8號東南')) {
-        return { name: '八號東南烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8SE' };
+        return { name: '八號東南烈風或暴風信號', color: '#ff3b30', severity: 'high', code: 'TC', subtype: 'TC8SE' };
       }
       if (contentsStr.includes('八號西北') || contentsStr.includes('8號西北')) {
-        return { name: '八號西北烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8NW' };
+        return { name: '八號西北烈風或暴風信號', color: '#ff3b30', severity: 'high', code: 'TC', subtype: 'TC8NW' };
       }
       if (contentsStr.includes('八號西南') || contentsStr.includes('8號西南')) {
-        return { name: '八號西南烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8SW' };
+        return { name: '八號西南烈風或暴風信號', color: '#ff3b30', severity: 'high', code: 'TC', subtype: 'TC8SW' };
       }
       if (contentsStr.includes('八號') || contentsStr.includes('8號')) {
-        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high', code, subtype: 'TC8NE' };
+        return { name: '八號烈風或暴風信號', color: '#ff3b30', severity: 'high', code: 'TC', subtype: 'TC8NE' };
       }
       if (contentsStr.includes('九號') || contentsStr.includes('9號')) {
-        return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC9' };
+        return { name: '九號風力增強信號', color: '#ff3b30', severity: 'extreme', code: 'TC', subtype: 'TC9' };
       }
       if (contentsStr.includes('十號') || contentsStr.includes('10號')) {
-        return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code, subtype: 'TC10' };
+        return { name: '十號颶風信號', color: '#ff3b30', severity: 'extreme', code: 'TC', subtype: 'TC10' };
       }
       if (contentsStr.includes('三號') || contentsStr.includes('3號')) {
-        return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code, subtype: 'TC3' };
+        return { name: '三號強風信號', color: '#ff9500', severity: 'moderate', code: 'TC', subtype: 'TC3' };
       }
       if (contentsStr.includes('一號') || contentsStr.includes('1號')) {
-        return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code, subtype: 'TC1' };
+        return { name: '一號戒備信號', color: '#5ac8fa', severity: 'minor', code: 'TC', subtype: 'TC1' };
       }
 
-      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high', code, subtype: sub };
+      return { name: '熱帶氣旋警告', color: '#ff3b30', severity: 'high', code: 'TC', subtype: sub || 'TC1' };
     }
 
-    // 2. 暴雨警告精準細分
+    // 3️⃣ 暴雨警告精準細分
     if (code === 'WRAIN') {
       if (sub === 'WRAINY' || contentsStr.includes('黃色')) return { name: '黃色暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype: 'WRAINY' };
       if (sub === 'WRAINR' || contentsStr.includes('紅色')) return { name: '紅色暴雨警告', color: '#ff3b30', severity: 'moderate', code, subtype: 'WRAINR' };
@@ -95,18 +113,13 @@ const parseHKOWarnings = (warningList: any[]): WeatherWarning[] => {
       return { name: '暴雨警告', color: '#ffcc00', severity: 'minor', code, subtype: sub };
     }
 
-    // 3. 雷暴警告
-    if (code === 'WTS') {
+    // 4️⃣ 雷暴警告
+    if (code === 'WTS' || code === 'WTCS') {
       return { name: '雷暴警告', color: '#ff9500', severity: 'minor', code, subtype: sub };
     }
 
-    // 4. 強烈季候風
-    if (code === 'WMSGD') {
-      return { name: '強烈季候風信號', color: '#5ac8fa', severity: 'minor', code, subtype: sub };
-    }
-
-    // 5. 山泥傾瀉
-    if (code === 'WL') {
+    // 5️⃣ 山泥傾瀉
+    if (code === 'WL' || code === 'WLANDSLIP') {
       return { name: '山泥傾瀉警告', color: '#ff9500', severity: 'minor', code, subtype: sub };
     }
 
@@ -270,12 +283,15 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
       ? simulatedWarnings.map(name => {
           let code = '';
           let subtype = '';
-          if (name.includes('暴雨')) {
+          if (name.includes('季候風') || name.includes('Monsoon')) {
+            code = 'WMS';
+            subtype = 'SMS';
+          } else if (name.includes('暴雨')) {
             code = 'WRAIN';
             if (name.includes('黃色')) subtype = 'WRAINY';
             else if (name.includes('紅色')) subtype = 'WRAINR';
             else if (name.includes('黑色')) subtype = 'WRAINB';
-          } else if (name.includes('風球') || name.includes('信號') || name.includes('熱帶氣旋')) {
+          } else if (name.includes('風球') || name.includes('熱帶氣旋') || (!name.includes('季候風') && (name.includes('戒備') || name.includes('颶風')))) {
             code = 'TC';
             if (name.includes('一號') || name.includes('1號')) subtype = 'TC1';
             else if (name.includes('三號') || name.includes('3號')) subtype = 'TC3';
@@ -288,8 +304,6 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
             else if (name.includes('十號') || name.includes('10號')) subtype = 'TC10';
           } else if (name.includes('雷暴')) {
             code = 'WTS';
-          } else if (name.includes('季候風')) {
-            code = 'WMSGD';
           } else if (name.includes('山泥傾瀉')) {
             code = 'WL';
           } else if (name.includes('火災')) {
@@ -319,12 +333,15 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
     ? simulatedWarnings.map(name => {
         let code = '';
         let subtype = '';
-        if (name.includes('暴雨')) {
+        if (name.includes('季候風') || name.includes('Monsoon')) {
+          code = 'WMS';
+          subtype = 'SMS';
+        } else if (name.includes('暴雨')) {
           code = 'WRAIN';
           if (name.includes('黃色')) subtype = 'WRAINY';
           else if (name.includes('紅色')) subtype = 'WRAINR';
           else if (name.includes('黑色')) subtype = 'WRAINB';
-        } else if (name.includes('風球') || name.includes('信號') || name.includes('熱帶氣旋')) {
+        } else if (name.includes('風球') || name.includes('熱帶氣旋') || (!name.includes('季候風') && (name.includes('戒備') || name.includes('颶風')))) {
           code = 'TC';
           if (name.includes('一號') || name.includes('1號')) subtype = 'TC1';
           else if (name.includes('三號') || name.includes('3號')) subtype = 'TC3';
@@ -337,8 +354,6 @@ export const HKWeather: React.FC<HKWeatherProps> = ({ onWarningsUpdate, simulate
           else if (name.includes('十號') || name.includes('10號')) subtype = 'TC10';
         } else if (name.includes('雷暴')) {
           code = 'WTS';
-        } else if (name.includes('季候風')) {
-          code = 'WMSGD';
         } else if (name.includes('山泥傾瀉')) {
           code = 'WL';
         } else if (name.includes('火災')) {

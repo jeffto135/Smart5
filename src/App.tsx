@@ -40,6 +40,9 @@ const getWeatherTip = (warnings: any[]) => {
   if (names.includes('八號') || names.includes('九號') || names.includes('十號') || names.includes('黑色暴雨')) {
     return '⚠️ 極端天氣路面極度危險，請尋找安全地方暫泊，非必要切勿駕駛！';
   }
+  if (names.includes('季候風') || names.includes('Monsoon')) {
+    return '💨 強烈季候風信號生效，風勢強勁，行經昂船洲大橋、青馬大橋及開闊路段時請緊握方向盤，注意橫風！';
+  }
   if (names.includes('一號') || names.includes('三號') || names.includes('熱帶氣旋')) {
     return '⚠️ 受熱帶氣旋影響，強風下行經橋面及沿岸切記握緊方向盤，注意安全！';
   }
